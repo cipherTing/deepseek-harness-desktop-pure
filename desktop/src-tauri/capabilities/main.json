@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The main Harness window can call only application-owned Desktop bridge commands.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

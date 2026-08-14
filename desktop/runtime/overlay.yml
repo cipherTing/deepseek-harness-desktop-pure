@@ -1,0 +1,34 @@
+- id: web-startup
+  disabled: true
+
+- id: webserver
+  disabled: true
+
+- id: web-runtime
+  disabled: true
+
+- id: directory-picker
+  disabled: true
+
+- id: api-gateway
+  disabled: true
+
+- id: client-hmr
+  disabled: true
+
+- insert:
+    - id: desktop-webserver
+      name: '@deepseek-ai/dsh-desktop-runtime/webserver'
+
+    - id: desktop-surface
+      name: '@deepseek-ai/dsh-desktop-runtime/surface'
+      inject: [webServer]
+
+    - id: desktop-directory-picker
+      name: '@deepseek-ai/dsh-desktop-runtime/directory-picker'
+
+    - id: desktop-directory-picker-ui
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-native'
+
+    - id: desktop-api-gateway
+      name: '@deepseek-ai/dsh-desktop-runtime/api-gateway'

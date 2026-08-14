@@ -1,3 +1,55 @@
+# DeepSeek Harness Desktop Fork
+
+This repository is an independent desktop distribution fork of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It packages the upstream Web client with Tauri; it is not the upstream project, a second Harness implementation, or a place to add Harness features.
+
+Tauri directly hosts the built Web assets. A bundled Node.js sidecar runs the upstream Harness backend composition without the Harness WebServer, and the two sides communicate through Desktop IPC. The Desktop application must not start `dsh web`, serve the frontend over localhost, or open a localhost TCP listener for its own transport.
+
+## Fork scope
+
+- Do not add Harness features, change Harness behavior, or refactor unrelated upstream code.
+- Pursue the smallest complete Desktop solution with extremely low intrusion. Every change outside `desktop/` must be backed by a concrete integration blocker that cannot be solved in the packaging or adapter layer; speculative seams, broad transport refactors, and "cleaner for Desktop" rewrites are prohibited.
+- Keep changes isolated to the Desktop packaging layer whenever possible. Modify upstream code only when the Tauri integration cannot work without a minimal, directly justified change.
+- Use official Tauri plugins and APIs for system interaction when an official capability exists. Do not replace an official plugin with an ad hoc native bridge.
+- A released Desktop package must be self-contained. Users must not need to install Node.js, pnpm, or another runtime or package manager.
+- Desktop packaging must support only macOS Apple Silicon and Windows x64 unless this instruction is explicitly changed.
+- The repository's `desktop/` directory contains packaging source and build resources only. It is not a Harness profile, workspace, configuration home, or user-data directory.
+
+## Upstream synchronization
+
+Upstream synchronization is entirely manual. Do not add automation that selects, validates, fetches, merges, rebases, or records an upstream revision.
+
+The maintainer fetches upstream commits and tags, then normally synchronizes a commit carrying an upstream tag. If upstream has no tag, the maintainer may synchronize its latest commit. Upstream changes must be inspected and integrated manually because this fork carries a Desktop adapter that may conflict with a direct merge or rebase. Preserve the Desktop path and behavior invariants, resolve conflicts deliberately, and verify the resulting fork before updating the synchronization record.
+
+[`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) contains only the full SHA of the latest upstream commit incorporated into this fork. Replace its single value only after synchronization and verification; do not append history, record the fork HEAD, or make build tooling infer or rewrite this file. When the synchronized commit has an upstream tag, mirror that same tag into the fork and keep it pointing to the synchronized upstream commit.
+
+## Desktop version and releases
+
+- Desktop has an independent SemVer version beginning at `0.1.0`. Upstream tags and commit hashes never determine the Desktop version or artifact names.
+- `desktop/package.json` is the only Desktop version source. When changing it, run `pnpm desktop:version:set -- <version>` to update the Desktop runtime manifest, `Cargo.toml`, and the Desktop package entry in `Cargo.lock` together, or run `pnpm desktop:version:check` to verify that all mirrors are already aligned. Do not change the root package version for a Desktop release; it belongs to the upstream Harness release family.
+- Build locally from the repository root with `pnpm desktop:dev` for development and `pnpm desktop:build` for a platform package. The package filename must derive from `desktop/package.json` and end in the Desktop version.
+- `.github/workflows/build-desktop.yml` is packaging-only and may run only from `workflow_dispatch`. It never fetches or synchronizes upstream commits, creates GitHub Releases, or changes version files; it checks out the selected fork ref, reads the version from `desktop/package.json`, builds both supported platform packages, and uploads them as workflow artifacts.
+- Artifacts are named `deepseek-harness-desktop-macos-arm64-<version>.dmg` and `deepseek-harness-desktop-windows-x64-<version>.exe`.
+- Releases are created manually. The GitHub Release description must state the Desktop version, the SHA from `desktop/UPSTREAM_COMMIT`, the matching upstream tag when one exists, and the fork commit used for the build.
+- Windows packaging uses the system Evergreen WebView2 Runtime with Tauri's `downloadBootstrapper` fallback. Do not bundle the offline WebView2 installer.
+
+## Runtime and path invariants
+
+The Desktop client adds a transport adapter, not a Desktop-specific Harness mode. Native Web startup and Desktop startup use the same Harness configuration files, environment layering, `DSH_HOME` resolution, profiles, sessions, workspaces, caches, and user directories.
+
+Do not redirect existing Harness paths to the Tauri installation directory, bundle resource directory, or Tauri application-data directory. Do not set a Desktop-only `DSH_HOME` or replace the existing `.env` lookup rules. The GUI has no invoking terminal directory, so the sidecar starts with the OS user home as its explicit working directory; relative-path and project `.env` behavior therefore matches a native Harness launch from that directory. Tauri-owned temporary files may use Tauri-owned locations only when they remain separate from Harness data paths.
+
+The packaged runtime may carry Node.js and compiled Harness dependencies inside the application bundle, but those files are implementation resources, not user data and must never become the Harness working directory or configuration home.
+
+## Tauri integration
+
+The Tauri layer owns the window, packaged assets, sidecar process, readiness, IPC, native dialogs and open operations, shutdown, and distribution. It must expose only business-level Desktop commands to the main WebView; do not grant frontend code generic shell or filesystem access.
+
+The sidecar uses the upstream `web` profile plus a highest-priority read-only Desktop overlay that replaces only the Web transport and Web-only surface glue. User profile patches must not be able to re-enable the Harness WebServer inside Desktop. The production package includes the Node runtime, compiled Harness packages, Web assets, client plugin bundles, and production dependency closure; the sidecar must stop with Tauri and leave no unmanaged process tree.
+
+---
+
+# Original AGENTS.md
+
 # AGENTS.md
 
 DeepSeek Harness is a plugin-based agent harness on vendored Cordis: **everything is a plugin**. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.

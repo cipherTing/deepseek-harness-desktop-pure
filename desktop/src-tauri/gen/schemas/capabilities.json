@@ -1,0 +1,1 @@
+{"main":{"identifier":"main","description":"The main Harness window can call only application-owned Desktop bridge commands.","local":true,"windows":["main"],"permissions":["core:default"]}}

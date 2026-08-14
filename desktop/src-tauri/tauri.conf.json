@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DeepSeek Harness Desktop",
+  "version": "../package.json",
+  "identifier": "ai.deepseek.harness.desktop",
+  "build": {
+    "beforeBuildCommand": "pnpm run bundle:prepare",
+    "beforeDevCommand": {
+      "script": "pnpm run bundle:prepare",
+      "wait": true
+    },
+    "frontendDist": "resources/web"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "../assets/deepseek.png",
+      "../assets/deepseek.icns",
+      "../assets/deepseek.ico"
+    ],
+    "externalBin": [
+      "binaries/node"
+    ],
+    "resources": [
+      "resources/runtime/**/*",
+      "resources/web/**/*"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      }
+    }
+  }
+}

@@ -31,6 +31,13 @@ python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/
 python/**/__pycache__/
 python/**/.pytest_cache/
 apps/web/dist/
+desktop/runtime/lib/
+desktop/runtime/config/
+desktop/src-tauri/binaries/
+desktop/src-tauri/resources/runtime/
+desktop/src-tauri/resources/web/
+desktop/src-tauri/target/
+desktop/dist/
 .artifacts/
 .playwright-mcp/
 .orig
