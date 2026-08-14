@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build:harness": "pnpm -w run build",
-    "build:runtime": "node ./scripts/build-runtime.mjs",
+    "build:runtime": "node ./scripts/build-runtime.mjs && pnpm run deploy:runtime && node ./scripts/finalize-runtime.mjs",
+    "deploy:runtime": "pnpm -C .. --config.inject-workspace-packages=true --config.node-linker=hoisted --config.strict-dep-builds=false --filter @deepseek-ai/dsh-desktop-runtime deploy --prod desktop/src-tauri/resources/runtime",
     "prepare:assets": "node ./scripts/prepare-assets.mjs",
     "prepare:node": "node ./scripts/prepare-node.mjs",
     "bundle:prepare": "pnpm run build:harness && pnpm run build:runtime && pnpm run prepare:assets && pnpm run prepare:node",
@@ -15,7 +16,7 @@
     "lint": "oxlint ./bridge/src ./runtime/src",
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "node ./scripts/build-desktop.mjs",
+    "build": "tauri build",
     "test": "node --test ./tests/*.test.mjs"
   },
   "dependencies": {

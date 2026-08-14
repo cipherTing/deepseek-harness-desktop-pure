@@ -28,8 +28,11 @@ test('Desktop packaging workflow is manual-only and uploads versioned packages',
 
   assert.match(workflow, /on:\n  workflow_dispatch:/)
   assert.doesNotMatch(workflow, /^\s*(push|pull_request):/m)
-  assert.match(workflow, /pnpm desktop:build/)
-  assert.match(workflow, /deepseek-harness-desktop-\$\{\{ matrix\.platform \}\}-\$\{\{ steps\.desktop-version\.outputs\.version \}\}/)
+  assert.match(workflow, /uses: tauri-apps\/tauri-action@v1/)
+  assert.match(workflow, /uploadWorkflowArtifacts: true/)
+  assert.match(workflow, /releaseAssetNamePattern: deepseek-harness-desktop-\$\{\{ matrix\.platform \}\}-\[version\]\[ext\]/)
+  assert.match(workflow, /platform: macos-arm64/)
+  assert.match(workflow, /platform: windows-x64/)
   assert.doesNotMatch(workflow, /action-gh-release|create-release|gh release create/)
 })
 
@@ -38,7 +41,9 @@ test('Tauri prepares the bundle exactly once', () => {
   const tauriConfig = readJson(new URL('../src-tauri/tauri.conf.json', import.meta.url))
 
   assert.equal(desktopPackage.scripts.dev, 'tauri dev')
-  assert.equal(desktopPackage.scripts.build, 'node ./scripts/build-desktop.mjs')
+  assert.equal(desktopPackage.scripts.build, 'tauri build')
+  assert.equal(existsSync(new URL('../scripts/build-desktop.mjs', import.meta.url)), false)
+  assert.match(desktopPackage.scripts['build:runtime'], /pnpm run deploy:runtime/)
   assert.deepEqual(tauriConfig.build.beforeDevCommand, {
     script: 'pnpm run bundle:prepare',
     wait: true,
@@ -66,7 +71,7 @@ test('macOS preserves the Node sidecar JIT and native addon permissions', () => 
   const config = readJson(new URL('../src-tauri/tauri.conf.json', import.meta.url))
   const entitlements = readFileSync(new URL('../src-tauri/node-entitlements.plist', import.meta.url), 'utf8')
 
-  assert.equal(config.bundle.macOS.entitlements, undefined)
+  assert.equal(config.bundle.macOS.entitlements, 'node-entitlements.plist')
   assert.deepEqual(config.bundle.externalBin, ['binaries/node'])
   assert.match(entitlements, /<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\/>/)
   assert.match(entitlements, /<key>com\.apple\.security\.cs\.disable-library-validation<\/key>\s*<true\/>/)

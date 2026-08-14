@@ -20,9 +20,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - platform: macos-arm64
+            runner: macos-14
+            target: aarch64-apple-darwin
+            bundle: dmg
           - platform: windows-x64
             runner: windows-latest
-            extension: exe
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
 
     steps:
       - name: Checkout fork ref
@@ -50,17 +55,12 @@ jobs:
       - name: Check Desktop version mirrors
         run: pnpm desktop:version:check
 
-      - name: Resolve Desktop version
-        id: desktop-version
-        shell: bash
-        run: node -e 'const { version } = require("./desktop/package.json"); require("node:fs").appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`)'
-
-      - name: Build Desktop package
-        run: pnpm desktop:build
-
-      - name: Upload Desktop package
-        uses: actions/upload-artifact@v7
+      - name: Build and upload Desktop package
+        uses: tauri-apps/tauri-action@v1
         with:
-          name: deepseek-harness-desktop-${{ matrix.platform }}-${{ steps.desktop-version.outputs.version }}
-          path: desktop/dist/deepseek-harness-desktop-${{ matrix.platform }}-${{ steps.desktop-version.outputs.version }}.${{ matrix.extension }}
-          if-no-files-found: error
+          projectPath: desktop
+          tauriScript: pnpm tauri
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
+          releaseAssetNamePattern: deepseek-harness-desktop-${{ matrix.platform }}-[version][ext]
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: deepseek-harness-desktop-${{ matrix.platform }}-[version]
