@@ -34,7 +34,8 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "entitlements": "node-entitlements.plist"
     },
     "windows": {
       "webviewInstallMode": {
