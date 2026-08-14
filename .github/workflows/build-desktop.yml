@@ -20,9 +20,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-arm64
-            runner: macos-14
-            extension: dmg
           - platform: windows-x64
             runner: windows-latest
             extension: exe
@@ -56,7 +53,7 @@ jobs:
       - name: Resolve Desktop version
         id: desktop-version
         shell: bash
-        run: echo "version=$(node -p \"require('./desktop/package.json').version\")" >> "$GITHUB_OUTPUT"
+        run: node -e 'const { version } = require("./desktop/package.json"); require("node:fs").appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`)'
 
       - name: Build Desktop package
         run: pnpm desktop:build
