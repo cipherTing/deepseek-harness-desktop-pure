@@ -1,20 +1,65 @@
-name: Build Desktop packages
+name: Build and release Desktop
 
 on:
   workflow_dispatch:
-    inputs:
-      ref:
-        description: Fork branch, tag, or commit to build
-        required: true
-        default: master
-        type: string
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  metadata:
+    name: Resolve release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.release.outputs.source_sha }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+
+    steps:
+      - name: Require master
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
+            echo "::error::Desktop releases must be dispatched from master."
+            exit 1
+          fi
+
+      - name: Checkout release source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - id: release
+        name: Resolve Desktop version and source
+        shell: bash
+        run: |
+          version="$(node -p "require('./desktop/package.json').version")"
+          tag="v$version"
+          source_sha="$(git rev-parse HEAD)"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::error::Release tag $tag already exists. Bump the Desktop version before rebuilding."
+            exit 1
+          else
+            status=$?
+            if [[ "$status" -ne 2 ]]; then
+              echo "::error::Unable to check whether release tag $tag exists."
+              exit "$status"
+            fi
+          fi
+
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.platform }}
+    needs: metadata
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -30,10 +75,10 @@ jobs:
             bundle: nsis
 
     steps:
-      - name: Checkout fork ref
+      - name: Checkout release source
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ needs.metadata.outputs.source_sha }}
           fetch-depth: 1
 
       - name: Install pnpm and Node.js
@@ -62,3 +107,55 @@ jobs:
           releaseAssetNamePattern: deepseek-harness-desktop-${{ matrix.platform }}-[version][ext]
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: deepseek-harness-desktop-${{ matrix.platform }}-[version]
+
+  release:
+    name: Publish v${{ needs.metadata.outputs.version }}
+    needs:
+      - metadata
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Download Desktop packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: deepseek-harness-desktop-*-${{ needs.metadata.outputs.version }}
+          path: release-input
+          merge-multiple: true
+
+      - name: Prepare versioned release assets
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          shopt -s nullglob
+          dmg=(release-input/*.dmg)
+          exe=(release-input/*.exe)
+
+          if [[ "${#dmg[@]}" -ne 1 || "${#exe[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one DMG and one EXE artifact."
+            find release-input -maxdepth 2 -type f -print
+            exit 1
+          fi
+
+          mkdir -p release-assets
+          cp "${dmg[0]}" "release-assets/deepseek-harness-desktop-macos-arm64-$VERSION.dmg"
+          cp "${exe[0]}" "release-assets/deepseek-harness-desktop-windows-x64-$VERSION.exe"
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "$RELEASE_TAG" \
+            --generate-notes \
+            --fail-on-no-commits

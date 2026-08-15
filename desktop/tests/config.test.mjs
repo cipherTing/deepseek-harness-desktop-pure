@@ -23,17 +23,35 @@ test('Desktop version and root shortcuts use the Desktop package', () => {
   assert.equal(rootPackage.scripts['desktop:version:set'], 'pnpm --filter @deepseek-ai/dsh-desktop run version:set')
 })
 
-test('Desktop packaging workflow is manual-only and uploads versioned packages', () => {
+test('Desktop release workflow is manual-only and publishes versioned packages from one master SHA', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/build-desktop.yml', import.meta.url), 'utf8')
 
   assert.match(workflow, /on:\n  workflow_dispatch:/)
   assert.doesNotMatch(workflow, /^\s*(push|pull_request):/m)
+  assert.doesNotMatch(workflow, /inputs:\n\s+ref:/)
+  assert.match(workflow, /group: desktop-release/)
+  assert.match(workflow, /cancel-in-progress: false/)
+  assert.match(workflow, /Desktop releases must be dispatched from master/)
+  assert.match(workflow, /source_sha: \$\{\{ steps\.release\.outputs\.source_sha \}\}/)
+  assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/)
+  assert.match(workflow, /ref: \$\{\{ needs\.metadata\.outputs\.source_sha \}\}/)
+  assert.match(workflow, /Release tag \$tag already exists/)
   assert.match(workflow, /uses: tauri-apps\/tauri-action@v1/)
   assert.match(workflow, /uploadWorkflowArtifacts: true/)
   assert.match(workflow, /releaseAssetNamePattern: deepseek-harness-desktop-\$\{\{ matrix\.platform \}\}-\[version\]\[ext\]/)
   assert.match(workflow, /platform: macos-arm64/)
   assert.match(workflow, /platform: windows-x64/)
-  assert.doesNotMatch(workflow, /action-gh-release|create-release|gh release create/)
+  assert.match(workflow, /uses: actions\/download-artifact@[0-9a-f]{40} # v8/)
+  assert.match(workflow, /merge-multiple: true/)
+  assert.match(workflow, /Expected exactly one DMG and one EXE artifact/)
+  assert.match(workflow, /actions: read/)
+  assert.match(workflow, /contents: write/)
+  assert.match(workflow, /gh release create "\$RELEASE_TAG"/)
+  assert.match(workflow, /--target "\$SOURCE_SHA"/)
+  assert.match(workflow, /--title "\$RELEASE_TAG"/)
+  assert.match(workflow, /--generate-notes/)
+  assert.match(workflow, /--fail-on-no-commits/)
+  assert.doesNotMatch(workflow, /(?:^|\s)--notes(?:\s|=)/m)
 })
 
 test('Tauri prepares the bundle exactly once', () => {
@@ -49,6 +67,18 @@ test('Tauri prepares the bundle exactly once', () => {
     wait: true,
   })
   assert.equal(tauriConfig.build.beforeBuildCommand, 'pnpm run bundle:prepare')
+})
+
+test('Desktop uses native title bars and suppresses the default WebView context menu', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(rust, /TitleBarStyle::Overlay|hidden_title\(true\)/)
+  assert.doesNotMatch(rust, /\.devtools\(false\)/)
+  assert.match(rust, /initialization_script\(DISABLE_CONTEXT_MENU_SCRIPT\)/)
+  assert.match(rust, /window\.location\.protocol === "dsh-app:"/)
+  assert.match(rust, /window\.location\.hostname === "dsh-app\.localhost"/)
+  assert.match(rust, /addEventListener\("contextmenu"/)
+  assert.match(rust, /event\.preventDefault\(\)/)
 })
 
 test('Windows uses downloadBootstrapper without an offline installer', () => {

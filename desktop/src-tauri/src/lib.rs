@@ -30,6 +30,15 @@ use url::Url;
 
 const PROTOCOL_VERSION: u32 = 1;
 const INITIAL_STREAM_CREDIT: u32 = 32;
+const DISABLE_CONTEXT_MENU_SCRIPT: &str = r#"
+(() => {
+  const isDesktopApp =
+    window.location.protocol === "dsh-app:" ||
+    window.location.hostname === "dsh-app.localhost";
+  if (!isDesktopApp) return;
+  window.addEventListener("contextmenu", (event) => event.preventDefault(), true);
+})();
+"#;
 
 #[derive(Default)]
 struct DesktopState {
@@ -948,11 +957,8 @@ pub fn run() {
                         )
                         .title("DeepSeek Harness Desktop")
                         .inner_size(1280.0, 820.0)
-                        .min_inner_size(900.0, 640.0);
-                        #[cfg(target_os = "macos")]
-                        let window = window
-                            .title_bar_style(tauri::TitleBarStyle::Overlay)
-                            .hidden_title(true);
+                        .min_inner_size(900.0, 640.0)
+                        .initialization_script(DISABLE_CONTEXT_MENU_SCRIPT);
                         let _ = window.build();
                     }
                     Err(error) => {

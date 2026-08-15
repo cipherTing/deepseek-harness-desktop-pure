@@ -11,7 +11,7 @@
 - 将上游 Web 客户端打包为自包含的 Desktop 应用。
 - 随包提供 Node.js 和 Harness 编译依赖闭包，正式安装包不要求用户自行安装 Node.js 或包管理器。
 - 通过 Desktop IPC 适配层连接 Web 客户端与 Harness，不使用 HTTP 或 WebSocket 作为 Desktop 传输。
-- 由维护者运行本地命令或手动触发打包 workflow，构建带版本号的 macOS Apple Silicon 和 Windows x64 安装包。
+- 由维护者运行本地命令或手动触发发布 workflow，构建带版本号的 macOS Apple Silicon 和 Windows x64 安装包。
 - Desktop 使用从 `0.1.0` 开始的独立版本号；`desktop/package.json` 是唯一版本源，上游版本记录仅用于 Release 追溯。
 
 ## 本仓库不改变什么
@@ -20,7 +20,7 @@
 - Desktop 启动和原生 Web 启动使用相同的 Harness 配置文件、环境规则、配置档、会话、工作区、缓存和用户目录。
 - 不把原有 Harness 路径重定向到 Tauri 安装目录、打包资源目录或 Tauri 应用数据目录。
 - 仓库中的 `desktop/` 仅存放打包源码和资源，不是另一套 Harness 工作区或用户数据目录。
-- 上游同步和 GitHub Release 均由维护者手动完成。打包 workflow 仅支持手动触发，不选择或同步上游 commit，也不创建 Release。
+- 上游同步仍由维护者手动完成。发布 workflow 仅支持手动触发，固定同一个 `master` commit 在两个平台构建，并在两端都成功后发布对应的 GitHub Release。
 
 ## 运行
 
@@ -48,7 +48,7 @@ pnpm desktop:build
 
 该命令会在 Apple Silicon Mac 上构建 macOS Apple Silicon 包，或在 Windows x64 机器上构建 Windows x64 包，并将带版本号的产物写入 `desktop/dist/`：`deepseek-harness-desktop-macos-arm64-<version>.dmg` 或 `deepseek-harness-desktop-windows-x64-<version>.exe`。
 
-GitHub Release 由维护者手动创建。Release 描述必须记录 Desktop 版本、已同步的上游 commit、存在时对应的上游 tag，以及本次构建使用的 fork commit。CI 只负责手动触发的打包并上传 workflow artifact，不创建 Release。当前已同步的上游 commit 存放在 [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT)。
+手动 GitHub workflow 会在两个平台都构建成功后发布 `v<version>`。Release Notes 由 GitHub 根据上一个 Release tag 之后的 commit 和已合并 Pull Request 自动生成，不添加手写发布正文。当前已同步的上游 commit 仍存放在 [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT)。
 
 ## 上游项目
 

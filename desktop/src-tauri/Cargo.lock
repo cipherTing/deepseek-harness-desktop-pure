@@ -663,7 +663,7 @@ dependencies = [
 
 [[package]]
 name = "deepseek-harness-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "mime_guess",
  "rmp-serde",

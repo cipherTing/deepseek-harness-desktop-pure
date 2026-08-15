@@ -1,5 +1,7 @@
 # Desktop brand asset
 
+English | [中文](README.zh.md)
+
 `deepseek-color.svg` is the DeepSeek color icon from LobeHub's `@lobehub/icons-static-svg` package, pinned to version `1.94.0` and distributed by that package under the MIT license.
 
 Source page: <https://lobehub.com/icons/deepseek>
