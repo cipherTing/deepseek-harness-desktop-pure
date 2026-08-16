@@ -8,7 +8,7 @@ const root = resolve(desktop, '..')
 const runtime = resolve(desktop, 'runtime')
 const outdir = resolve(runtime, 'lib')
 const config = resolve(runtime, 'config')
-const deployDir = resolve(desktop, 'src-tauri/resources/runtime')
+const deployDir = resolve(desktop, 'src-tauri/rt')
 
 await rm(outdir, { recursive: true, force: true })
 await rm(config, { recursive: true, force: true })

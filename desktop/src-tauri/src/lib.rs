@@ -531,7 +531,7 @@ async fn spawn_sidecar(
         .path()
         .resource_dir()
         .map_err(|error| error.to_string())?;
-    let script = resource.join("resources/runtime/lib/sidecar.mjs");
+    let script = resource.join("rt/lib/sidecar.mjs");
     let cwd = app.path().home_dir().map_err(|error| error.to_string())?;
     let (ready_tx, ready_rx) = oneshot::channel();
     let (events, child) = app

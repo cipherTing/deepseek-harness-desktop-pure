@@ -6,7 +6,7 @@
   "scripts": {
     "build:harness": "pnpm -w run build",
     "build:runtime": "node ./scripts/build-runtime.mjs && pnpm run deploy:runtime && node ./scripts/finalize-runtime.mjs",
-    "deploy:runtime": "pnpm -C .. --config.inject-workspace-packages=true --config.node-linker=hoisted --config.strict-dep-builds=false --filter @deepseek-ai/dsh-desktop-runtime deploy --prod desktop/src-tauri/resources/runtime",
+    "deploy:runtime": "pnpm -C .. --config.inject-workspace-packages=true --config.node-linker=hoisted --config.strict-dep-builds=false --filter @deepseek-ai/dsh-desktop-runtime deploy --prod desktop/src-tauri/rt",
     "prepare:node": "node ./scripts/prepare-node.mjs",
     "bundle:prepare": "node ./scripts/bundle-prepare.mjs",
     "version:check": "node ./scripts/sync-version.mjs --check",

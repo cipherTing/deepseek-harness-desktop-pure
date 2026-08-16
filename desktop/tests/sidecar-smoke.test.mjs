@@ -17,8 +17,8 @@ const triple = process.platform === 'darwin' && process.arch === 'arm64'
 test('bundled Node sidecar serves the loopback web host', { timeout: 120_000, skip: triple === undefined }, async () => {
   const dshHome = await mkdtemp(resolve(tmpdir(), 'dsh-desktop-smoke-'))
   const executable = resolve(desktop, `src-tauri/binaries/node-${triple}${process.platform === 'win32' ? '.exe' : ''}`)
-  const sidecar = resolve(desktop, 'src-tauri/resources/runtime/lib/sidecar.mjs')
-  const clientUi = resolve(desktop, 'src-tauri/resources/runtime/node_modules/@deepseek-ai/dsh-desktop-client-ui/lib')
+  const sidecar = resolve(desktop, 'src-tauri/rt/lib/sidecar.mjs')
+  const clientUi = resolve(desktop, 'src-tauri/rt/node_modules/@deepseek-ai/dsh-desktop-client-ui/lib')
   assert.equal(existsSync(join(clientUi, 'index.js')), true, 'deployed client-ui Host entry is missing')
   assert.equal(existsSync(join(clientUi, 'client.js')), true, 'deployed client-ui Web entry is missing')
   const child = spawn(executable, [sidecar], {

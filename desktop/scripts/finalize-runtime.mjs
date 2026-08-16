@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const modules = resolve(desktop, 'src-tauri/resources/runtime/node_modules')
+const modules = resolve(desktop, 'src-tauri/rt/node_modules')
 
 await validateRuntimeLayout(modules)
 

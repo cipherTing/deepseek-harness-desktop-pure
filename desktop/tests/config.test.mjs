@@ -99,7 +99,7 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   assert.match(rust, /on_navigation/)
   // The bundled frontend dist is served by the harness itself.
   assert.equal(tauriConfig.build.frontendDist, 'resources/shell')
-  assert.deepEqual(tauriConfig.bundle.resources, ['resources/runtime/**/*'])
+  assert.deepEqual(tauriConfig.bundle.resources, ['rt/**/*'])
   assert.equal(existsSync(new URL('../src-tauri/resources/web', import.meta.url)), false)
   // Remote IPC is granted only to the loopback web host.
   assert.deepEqual(capability.remote, { urls: ['http://127.0.0.1:*'] })

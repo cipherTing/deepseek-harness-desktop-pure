@@ -29,7 +29,7 @@
       "binaries/node"
     ],
     "resources": [
-      "resources/runtime/**/*"
+      "rt/**/*"
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",

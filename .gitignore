@@ -34,7 +34,7 @@ apps/web/dist/
 desktop/runtime/lib/
 desktop/runtime/config/
 desktop/src-tauri/binaries/
-desktop/src-tauri/resources/runtime/
+desktop/src-tauri/rt/
 desktop/src-tauri/target/
 desktop/dist/
 .artifacts/
