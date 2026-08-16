@@ -430,6 +430,8 @@ importers:
         specifier: 0.25.10
         version: 0.25.10
 
+  desktop/client-ui: {}
+
   desktop/runtime:
     dependencies:
       '@deepseek-ai/cordis':
@@ -480,6 +482,9 @@ importers:
       '@deepseek-ai/dsh-compaction':
         specifier: workspace:^
         version: link:../../packages/compaction/compaction
+      '@deepseek-ai/dsh-desktop-client-ui':
+        specifier: workspace:^
+        version: link:../client-ui
       '@deepseek-ai/dsh-fs':
         specifier: workspace:^
         version: link:../../packages/fs/fs

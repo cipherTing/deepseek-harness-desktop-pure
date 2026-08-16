@@ -1,11 +1,15 @@
 {
   "name": "@deepseek-ai/dsh-desktop-runtime",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cipherTing/deepseek-harness"
+  },
+  "author": "cipherTing",
   "exports": {
     ".": "./lib/sidecar.mjs",
-    "./webserver": "./lib/webserver.mjs",
     "./surface": "./lib/surface.mjs",
     "./directory-picker": "./lib/directory-picker.mjs",
     "./api-gateway": "./lib/api-gateway.mjs",
@@ -31,6 +35,7 @@
     "@deepseek-ai/dsh-cmdline": "workspace:^",
     "@deepseek-ai/dsh-client-modules": "workspace:^",
     "@deepseek-ai/dsh-client-ui-directory-picker-native": "workspace:^",
+    "@deepseek-ai/dsh-desktop-client-ui": "workspace:^",
     "@deepseek-ai/dsh-code-runtime": "workspace:^",
     "@deepseek-ai/dsh-compaction": "workspace:^",
     "@deepseek-ai/dsh-fs": "workspace:^",

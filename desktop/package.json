@@ -1,15 +1,14 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "scripts": {
     "build:harness": "pnpm -w run build",
     "build:runtime": "node ./scripts/build-runtime.mjs && pnpm run deploy:runtime && node ./scripts/finalize-runtime.mjs",
     "deploy:runtime": "pnpm -C .. --config.inject-workspace-packages=true --config.node-linker=hoisted --config.strict-dep-builds=false --filter @deepseek-ai/dsh-desktop-runtime deploy --prod desktop/src-tauri/resources/runtime",
-    "prepare:assets": "node ./scripts/prepare-assets.mjs",
     "prepare:node": "node ./scripts/prepare-node.mjs",
-    "bundle:prepare": "pnpm run build:harness && pnpm run build:runtime && pnpm run prepare:assets && pnpm run prepare:node",
+    "bundle:prepare": "node ./scripts/bundle-prepare.mjs",
     "version:check": "node ./scripts/sync-version.mjs --check",
     "version:set": "node ./scripts/sync-version.mjs --set",
     "typecheck": "tsc -p ./tsconfig.json",

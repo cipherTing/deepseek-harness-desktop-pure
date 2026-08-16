@@ -4,6 +4,16 @@
    panel is a two-column layout — 188px nav rail + content column with a
    54px header and the 24px-padded options area. */
 
+/* Trigger row: the settings trigger plus optional badge seats to its right
+   (e.g. the desktop update badge); match the other wide sidebar controls'
+   compact vertical rhythm. */
+.triggerRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
 /* Trigger row: match the other wide sidebar controls' compact vertical rhythm. */
 .trigger {
   flex: none;

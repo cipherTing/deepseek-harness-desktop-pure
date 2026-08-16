@@ -9,7 +9,7 @@
       "script": "pnpm run bundle:prepare",
       "wait": true
     },
-    "frontendDist": "resources/web"
+    "frontendDist": "resources/shell"
   },
   "app": {
     "windows": [],
@@ -29,8 +29,7 @@
       "binaries/node"
     ],
     "resources": [
-      "resources/runtime/**/*",
-      "resources/web/**/*"
+      "resources/runtime/**/*"
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",

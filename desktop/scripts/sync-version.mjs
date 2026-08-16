@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 const desktopDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packagePath = resolve(desktopDir, 'package.json')
 const runtimePackagePath = resolve(desktopDir, 'runtime/package.json')
+const clientUiPackagePath = resolve(desktopDir, 'client-ui/package.json')
 const cargoPath = resolve(desktopDir, 'src-tauri/Cargo.toml')
 const cargoLockPath = resolve(desktopDir, 'src-tauri/Cargo.lock')
 const argumentsList = process.argv.slice(2).filter((argument) => argument !== '--')
@@ -28,14 +29,17 @@ const version = requestedVersion ?? desktopPackage.version
 if (!isSemver(version)) throw new Error(`Invalid Desktop SemVer: ${version}`)
 
 const runtimePackage = JSON.parse(await readFile(runtimePackagePath, 'utf8'))
+const clientUiPackage = JSON.parse(await readFile(clientUiPackagePath, 'utf8'))
 const cargo = await readFile(cargoPath, 'utf8')
 const cargoLock = await readFile(cargoLockPath, 'utf8')
 const expectedRuntimePackage = { ...runtimePackage, version }
+const expectedClientUiPackage = { ...clientUiPackage, version }
 const expectedCargo = replaceCargoVersion(cargo, version)
 const expectedCargoLock = replaceCargoLockVersion(cargoLock, version)
 
 const mirrors = [
   [runtimePackagePath, JSON.stringify(expectedRuntimePackage, null, 2) + '\n', JSON.stringify(runtimePackage, null, 2) + '\n'],
+  [clientUiPackagePath, JSON.stringify(expectedClientUiPackage, null, 2) + '\n', JSON.stringify(clientUiPackage, null, 2) + '\n'],
   [cargoPath, expectedCargo, cargo],
   [cargoLockPath, expectedCargoLock, cargoLock],
 ]

@@ -1,7 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The main Harness window can call only application-owned Desktop bridge commands.",
+  "description": "The main Harness window can call only application-owned Desktop bridge commands, and only while it is served from the loopback web host.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "opener:allow-open-url"
+  ],
+  "remote": {
+    "urls": ["http://127.0.0.1:*"]
+  }
 }

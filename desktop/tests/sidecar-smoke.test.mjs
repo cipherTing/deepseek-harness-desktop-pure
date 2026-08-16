@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import test from 'node:test'
 import { decode, encode } from '@msgpack/msgpack'
 
@@ -13,10 +14,13 @@ const triple = process.platform === 'darwin' && process.arch === 'arm64'
     ? 'x86_64-pc-windows-msvc'
     : undefined
 
-test('bundled Node sidecar reaches ready without a Web listener', { timeout: 120_000, skip: triple === undefined }, async () => {
+test('bundled Node sidecar serves the loopback web host', { timeout: 120_000, skip: triple === undefined }, async () => {
   const dshHome = await mkdtemp(resolve(tmpdir(), 'dsh-desktop-smoke-'))
   const executable = resolve(desktop, `src-tauri/binaries/node-${triple}${process.platform === 'win32' ? '.exe' : ''}`)
   const sidecar = resolve(desktop, 'src-tauri/resources/runtime/lib/sidecar.mjs')
+  const clientUi = resolve(desktop, 'src-tauri/resources/runtime/node_modules/@deepseek-ai/dsh-desktop-client-ui/lib')
+  assert.equal(existsSync(join(clientUi, 'index.js')), true, 'deployed client-ui Host entry is missing')
+  assert.equal(existsSync(join(clientUi, 'client.js')), true, 'deployed client-ui Web entry is missing')
   const child = spawn(executable, [sidecar], {
     cwd: homedir(),
     env: { ...process.env, DSH_HOME: dshHome, DSH_TELEMETRY_DISABLED: '1' },
@@ -57,86 +61,111 @@ test('bundled Node sidecar reaches ready without a Web listener', { timeout: 120
     })
     assert.equal(ready.kind, 'ready', stderr || ready.error)
     assert.equal(ready.protocolVersion, 1)
-    assert.ok(Array.isArray(ready.graph.entries) && ready.graph.entries.length > 0)
-    assert.ok(ready.graph.entries.some(entry =>
+    assert.match(ready.url, /^http:\/\/127\.0\.0\.1:\d+$/)
+    const origin = ready.url
+
+    // The index document is the REAL web host's per-request output: it carries
+    // the fresh boot manifest plus the desktop index taps.
+    const index = await fetch(`${origin}/`)
+    assert.equal(index.status, 200)
+    const html = await index.text()
+    assert.match(html, /window\.__DSH_BOOT__/)
+    assert.match(html, /desktop-bridge\.js/)
+    assert.match(html, /html,body\{overscroll-behavior:none\}/)
+
+    // The bridge script route is served by the desktop surface plugin.
+    const bridge = await fetch(`${origin}/desktop-bridge.js`)
+    assert.equal(bridge.status, 200)
+    assert.match(bridge.headers.get('content-type') ?? '', /text\/javascript/)
+    assert.match(await bridge.text(), /desktop_save_session/)
+
+    // Desktop facts for the About section and the update badge.
+    const desktopInfo = await fetch(`${origin}/desktop-info.json`)
+    assert.equal(desktopInfo.status, 200)
+    const info = await desktopInfo.json()
+    assert.equal(typeof info.desktopVersion, 'string')
+    assert.equal(typeof info.repository, 'string')
+    assert.equal(typeof info.author, 'string')
+
+    // Plugin bundles come from the live module table with the manifest rev.
+    const manifest = JSON.parse(html.match(/window\.__DSH_BOOT__ = (.*?)<\/script>/s)[1])
+    const nativePicker = manifest.entries.find(entry => (
       entry.id === '@deepseek-ai/dsh-client-ui-directory-picker-native'))
-    assert.match(ready.indexHtml, /desktop-bridge\.js/)
-    assert.match(ready.indexHtml, /html,body\{overscroll-behavior:none\}/)
-    assert.match(ready.indexHtml, /window\.__DSH_BOOT__/)
+    assert.ok(nativePicker !== undefined, 'desktop overlay must keep the native picker entry')
+    const clientUi = manifest.entries.find(entry => (
+      entry.id === '@deepseek-ai/dsh-desktop-client-ui'))
+    assert.ok(clientUi !== undefined, 'desktop overlay must mount the desktop client UI entry')
+    const bundle = await fetch(`${origin}${nativePicker.url}`)
+    assert.equal(bundle.status, 200)
+    assert.match(bundle.headers.get('content-type') ?? '', /text\/javascript/)
+    const clientUiBundle = await fetch(`${origin}${clientUi.url}`)
+    assert.equal(clientUiBundle.status, 200)
+    assert.match(await clientUiBundle.text(), /desktop_save_session|settings\.section/)
 
-    for (const [id, path] of [[1, '/api/events.mux'], [2, '/api/events.host']]) {
-      send({ kind: 'request', id, method: 'stream.events', payload: { path } })
-      const opened = await waitFor(() => messages.find(message => message.kind === 'response' && message.id === id))
-      assert.equal(opened.ok, true)
-      send({ kind: 'credit', streamId: opened.payload.streamId, count: 1 })
-      await waitFor(() => messages.find(message =>
-        message.kind === 'stream-open' && message.streamId === opened.payload.streamId))
-      send({ kind: 'cancel', streamId: opened.payload.streamId })
-    }
-
-    send({ kind: 'request', id: 3, method: 'stream.events', payload: { path: '/api/events.missing' } })
-    const rejectedStream = await waitFor(() => messages.find(message => message.kind === 'response' && message.id === 3))
-    assert.equal(rejectedStream.ok, false)
-
-    const body = Buffer.from(JSON.stringify({
+    // The /api transport and the system bridge roundtrip over real HTTP.
+    const pickBody = Buffer.from(JSON.stringify({
       type: 'client-request', rpcId: 'desktop-picker', method: 'host.pickDirectory', payload: {},
     }))
-    send({
-      kind: 'request', id: 4, method: 'http.fetch',
-      payload: {
-        method: 'POST', url: '/api/host.pickDirectory',
-        headers: { 'content-type': 'application/json' }, body,
-      },
+    const pickPromise = fetch(`${origin}/api/host.pickDirectory`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: pickBody,
     })
     const systemRequest = await waitFor(() => messages.find(message =>
       message.kind === 'system-request' && message.method === 'pick-directory'))
     send({ kind: 'system-response', id: systemRequest.id, ok: true, payload: null })
-    const pickerResponse = await waitFor(() => messages.find(message => message.kind === 'response' && message.id === 4))
-    assert.equal(pickerResponse.ok, true)
-    assert.deepEqual(JSON.parse(Buffer.from(pickerResponse.payload.body).toString('utf8')).result, {
+    const pickerResponse = await pickPromise
+    assert.equal(pickerResponse.status, 200)
+    assert.deepEqual((await pickerResponse.json()).result, {
       ok: true, value: { path: null },
     })
 
     const openBody = Buffer.from(JSON.stringify({
       type: 'client-request', rpcId: 'desktop-open', method: 'host.openPath', payload: { path: '/tmp' },
     }))
-    send({
-      kind: 'request', id: 5, method: 'http.fetch',
-      payload: {
-        method: 'POST', url: '/api/host.openPath',
-        headers: { 'content-type': 'application/json' }, body: openBody,
-      },
+    const openPromise = fetch(`${origin}/api/host.openPath`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: openBody,
     })
     const openRequest = await waitFor(() => messages.find(message =>
       message.kind === 'system-request' && message.method === 'open-path'))
     send({ kind: 'system-response', id: openRequest.id, ok: true, payload: null })
-    const openResponse = await waitFor(() => messages.find(message => message.kind === 'response' && message.id === 5))
-    assert.equal(openResponse.ok, true)
+    const openResponse = await openPromise
+    assert.equal(openResponse.status, 200)
 
+    // Cancellation propagates end to end: aborting the page fetch tears down
+    // the in-flight system request, which announces itself as system-cancel.
+    const cancelController = new AbortController()
     const cancelledBody = Buffer.from(JSON.stringify({
       type: 'client-request', rpcId: 'desktop-picker-cancelled', method: 'host.pickDirectory', payload: {},
     }))
-    send({
-      kind: 'request', id: 6, method: 'http.fetch',
-      payload: {
-        method: 'POST', url: '/api/host.pickDirectory',
-        headers: { 'content-type': 'application/json' }, body: cancelledBody,
-      },
+    const cancelledPromise = fetch(`${origin}/api/host.pickDirectory`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: cancelledBody,
+      signal: cancelController.signal,
     })
+    // Attach the settlement handler immediately so an abort-triggered
+    // rejection is never observed unhandled before the assertion below.
+    const cancelledOutcome = cancelledPromise.then(
+      () => 'fulfilled',
+      () => 'rejected',
+    )
     const cancelledSystemRequest = await waitFor(() => messages.find(message =>
       message.kind === 'system-request' && message.id !== systemRequest.id && message.method === 'pick-directory'))
-    send({ kind: 'request-cancel', id: 6 })
+    cancelController.abort()
     await waitFor(() => messages.find(message =>
       message.kind === 'system-cancel' && message.id === cancelledSystemRequest.id))
-    const cancelledResponse = await waitFor(
-      () => messages.find(message => message.kind === 'response' && message.id === 6),
-      10_000,
-    )
-    assert.equal(cancelledResponse.ok, false)
-    assert.match(cancelledResponse.error, /AbortError|aborted|cancelled/i)
+    assert.equal(await cancelledOutcome, 'rejected')
 
-    send({ kind: 'request', id: 7, method: 'shutdown', payload: {} })
-    await waitFor(() => messages.find(message => message.kind === 'response' && message.id === 7))
+    // The session-export endpoint answers over the plain loopback transport
+    // (the Rust shell streams it to disk itself — no protocol stream carrier).
+    const exportResponse = await fetch(`${origin}/api/session.export?sessionId=smoke-missing`)
+    assert.equal(typeof exportResponse.status, 'number')
+
+    send({ kind: 'request', id: 8, method: 'shutdown', payload: {} })
+    await waitFor(() => messages.find(message => message.kind === 'response' && message.id === 8))
     const exit = await exitPromise
     assert.equal(exit.signal, null)
     assert.equal(exit.code, 0, stderr)

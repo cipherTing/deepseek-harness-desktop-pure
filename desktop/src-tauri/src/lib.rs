@@ -1,18 +1,18 @@
 use std::{
     collections::HashMap,
-    path::{Component, Path, PathBuf},
+    io::copy,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex, RwLock,
     },
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use rmpv::Value;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tauri::{
-    http::{header, Request, Response, StatusCode},
-    ipc::Channel,
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_dialog::DialogExt;
@@ -22,35 +22,27 @@ use tauri_plugin_shell::{
     ShellExt,
 };
 use tokio::{
-    io::AsyncWriteExt,
-    sync::{mpsc, oneshot},
-    time::{timeout, Duration},
+    sync::{oneshot, Notify},
+    time::timeout,
 };
 use url::Url;
 
 const PROTOCOL_VERSION: u32 = 1;
-const INITIAL_STREAM_CREDIT: u32 = 32;
-const DISABLE_CONTEXT_MENU_SCRIPT: &str = r#"
-(() => {
-  const isDesktopApp =
-    window.location.protocol === "dsh-app:" ||
-    window.location.hostname === "dsh-app.localhost";
-  if (!isDesktopApp) return;
-  window.addEventListener("contextmenu", (event) => event.preventDefault(), true);
-})();
-"#;
-
+/** Respawn attempts after an unexpected sidecar exit (exponential backoff). */
+const RESPAWN_ATTEMPTS: u32 = 3;
+/** Total cap for one session-export download (10 minutes). */
+const EXPORT_TIMEOUT: Duration = Duration::from_secs(600);
 #[derive(Default)]
 struct DesktopState {
     peer: RwLock<Option<Arc<SidecarPeer>>>,
-    ready: RwLock<Option<ReadyData>>,
+    /**
+     * Origin of the currently serving sidecar web host. Refreshed on every
+     * `ready`: a respawn serves from a NEW random port, so the window's
+     * navigation allowlist must read this live value instead of a startup
+     * string captured when the window was built.
+     */
+    origin: RwLock<Option<String>>,
     exiting: AtomicBool,
-}
-
-#[derive(Clone)]
-struct ReadyData {
-    index_html: Arc<Vec<u8>>,
-    plugins: Arc<HashMap<(String, String), ()>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -60,16 +52,6 @@ struct DesktopHttpRequest {
     url: String,
     #[serde(default)]
     headers: HashMap<String, String>,
-    #[serde(default, with = "serde_bytes")]
-    body: Vec<u8>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct DesktopHttpResponse {
-    status: u16,
-    headers: HashMap<String, String>,
-    #[serde(with = "serde_bytes")]
-    body: Vec<u8>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -81,14 +63,8 @@ struct InboundMessage {
     error: Option<String>,
     payload: Option<Value>,
     method: Option<String>,
-    stream_id: Option<u64>,
-    count: Option<u32>,
     protocol_version: Option<u32>,
-    graph: Option<Value>,
-    graph_json: Option<String>,
-    index_html: Option<String>,
-    status: Option<u16>,
-    headers: Option<HashMap<String, String>>,
+    url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -100,27 +76,6 @@ struct RequestMessage<'a, P> {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CreditMessage {
-    kind: &'static str,
-    stream_id: u64,
-    count: u32,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CancelMessage {
-    kind: &'static str,
-    stream_id: u64,
-}
-
-#[derive(Serialize)]
-struct RequestCancelMessage {
-    kind: &'static str,
-    id: u64,
-}
-
-#[derive(Serialize)]
 struct SystemResponseMessage<P> {
     kind: &'static str,
     id: u64,
@@ -128,20 +83,6 @@ struct SystemResponseMessage<P> {
     #[serde(skip_serializing_if = "Option::is_none")]
     payload: Option<P>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct StreamId {
-    stream_id: u64,
-}
-
-#[derive(Debug, Clone)]
-struct StreamPacket {
-    kind: String,
-    payload: Option<Value>,
-    status: Option<u16>,
     error: Option<String>,
 }
 
@@ -181,9 +122,9 @@ struct SidecarPeer {
     child: Mutex<Option<CommandChild>>,
     next_id: AtomicU64,
     pending: Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>,
-    request_keys: Mutex<HashMap<String, u64>>,
-    streams: Mutex<HashMap<u64, mpsc::UnboundedSender<StreamPacket>>>,
     ready: Mutex<Option<oneshot::Sender<Result<InboundMessage, String>>>>,
+    terminated: AtomicBool,
+    terminated_notify: Notify,
 }
 
 impl SidecarPeer {
@@ -205,21 +146,9 @@ impl SidecarPeer {
         method: &str,
         payload: &P,
     ) -> Result<R, String> {
-        self.request_with_key(method, payload, None).await
-    }
-
-    async fn request_with_key<P: Serialize, R: DeserializeOwned>(
-        &self,
-        method: &str,
-        payload: &P,
-        request_key: Option<String>,
-    ) -> Result<R, String> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(id, tx);
-        if let Some(key) = request_key.as_ref() {
-            self.request_keys.lock().unwrap().insert(key.clone(), id);
-        }
         if let Err(error) = self.send(&RequestMessage {
             kind: "request",
             id,
@@ -227,22 +156,12 @@ impl SidecarPeer {
             payload,
         }) {
             self.pending.lock().unwrap().remove(&id);
-            if let Some(key) = request_key.as_ref() {
-                self.request_keys.lock().unwrap().remove(key);
-            }
             return Err(error);
         }
         let received = timeout(Duration::from_secs(120), rx).await;
-        if let Some(key) = request_key.as_ref() {
-            self.request_keys.lock().unwrap().remove(key);
-        }
         let value = match received {
             Err(_) => {
                 self.pending.lock().unwrap().remove(&id);
-                let _ = self.send(&RequestCancelMessage {
-                    kind: "request-cancel",
-                    id,
-                });
                 return Err(format!("Desktop sidecar request timed out: {method}"));
             }
             Ok(Err(_)) => return Err(format!("Desktop sidecar stopped during request: {method}")),
@@ -252,42 +171,7 @@ impl SidecarPeer {
             .map_err(|error| format!("invalid Desktop response for {method}: {error}"))
     }
 
-    fn cancel_request(&self, request_key: &str) -> Result<(), String> {
-        let Some(id) = self.request_keys.lock().unwrap().remove(request_key) else {
-            return Ok(());
-        };
-        if let Some(waiter) = self.pending.lock().unwrap().remove(&id) {
-            let _ = waiter.send(Err("Desktop request cancelled".into()));
-        }
-        self.send(&RequestCancelMessage {
-            kind: "request-cancel",
-            id,
-        })
-    }
-
-    fn register_stream(&self, stream_id: u64) -> mpsc::UnboundedReceiver<StreamPacket> {
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.streams.lock().unwrap().insert(stream_id, tx);
-        rx
-    }
-
-    fn credit(&self, stream_id: u64, count: u32) -> Result<(), String> {
-        self.send(&CreditMessage {
-            kind: "credit",
-            stream_id,
-            count,
-        })
-    }
-
-    fn cancel(&self, stream_id: u64) -> Result<(), String> {
-        self.streams.lock().unwrap().remove(&stream_id);
-        self.send(&CancelMessage {
-            kind: "cancel",
-            stream_id,
-        })
-    }
-
-    fn dispatch(&self, message: InboundMessage, app: &AppHandle) {
+    fn dispatch(self: &Arc<Self>, message: InboundMessage, app: &AppHandle) {
         match message.kind.as_str() {
             "response" => {
                 if let Some(id) = message.id {
@@ -315,55 +199,55 @@ impl SidecarPeer {
                     let _ = waiter.send(result);
                 }
             }
-            "stream-open" | "stream-data" | "stream-end" => {
-                if let Some(stream_id) = message.stream_id {
-                    let packet = StreamPacket {
-                        kind: message.kind.clone(),
-                        payload: message.payload,
-                        status: message.status,
-                        error: message.error,
-                    };
-                    let sender = self.streams.lock().unwrap().get(&stream_id).cloned();
-                    if let Some(sender) = sender {
-                        let _ = sender.send(packet);
+            "graph-changed" => {
+                // The composed client graph changed (a profile patch hot-reload):
+                // reload the page so the fresh boot manifest takes effect — the
+                // desktop equivalent of refreshing a browser tab.
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.reload();
                     }
-                    if message.kind == "stream-end" {
-                        self.streams.lock().unwrap().remove(&stream_id);
-                    }
-                }
+                });
             }
             "system-request" => {
                 let Some(id) = message.id else { return };
                 let Some(method) = message.method else { return };
                 let payload = message.payload.unwrap_or(Value::Nil);
-                let peer = app.state::<DesktopState>().peer.read().unwrap().clone();
+                // Keep the response tied to the generation that requested it.
+                // A native dialog can outlive a sidecar crash and respawn; using
+                // DesktopState.peer here would otherwise send an old response to
+                // the new process, whose request ids start from one again.
+                let peer = self.clone();
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
                     let result = handle_system_request(&app, &method, payload).await;
-                    if let Some(peer) = peer {
-                        match result {
-                            Ok(payload) => {
-                                let _ = peer.send(&SystemResponseMessage {
-                                    kind: "system-response",
-                                    id,
-                                    ok: true,
-                                    payload: Some(payload),
-                                    error: None,
-                                });
-                            }
-                            Err(error) => {
-                                let _ = peer.send(&SystemResponseMessage::<Value> {
-                                    kind: "system-response",
-                                    id,
-                                    ok: false,
-                                    payload: None,
-                                    error: Some(error),
-                                });
-                            }
+                    match result {
+                        Ok(payload) => {
+                            let _ = peer.send(&SystemResponseMessage {
+                                kind: "system-response",
+                                id,
+                                ok: true,
+                                payload: Some(payload),
+                                error: None,
+                            });
+                        }
+                        Err(error) => {
+                            let _ = peer.send(&SystemResponseMessage::<Value> {
+                                kind: "system-response",
+                                id,
+                                ok: false,
+                                payload: None,
+                                error: Some(error),
+                            });
                         }
                     }
                 });
             }
+            // The page aborted a system request (the native dialog may still be
+            // open; its eventual response finds no waiter and is dropped).
+            "system-cancel" => {}
             _ => {}
         }
     }
@@ -378,68 +262,50 @@ impl SidecarPeer {
         if let Some(child) = self.child.lock().unwrap().take() {
             let _ = child.kill();
         }
-        self.request_keys.lock().unwrap().clear();
         if let Some(waiter) = self.ready.lock().unwrap().take() {
             let _ = waiter.send(Err(error.clone()));
         }
         for (_, waiter) in std::mem::take(&mut *self.pending.lock().unwrap()) {
             let _ = waiter.send(Err(error.clone()));
         }
-        for (_, stream) in std::mem::take(&mut *self.streams.lock().unwrap()) {
-            let _ = stream.send(StreamPacket {
-                kind: "stream-end".into(),
-                payload: None,
-                status: None,
-                error: Some(error.clone()),
-            });
+    }
+
+    fn mark_terminated(&self) {
+        self.terminated.store(true, Ordering::SeqCst);
+        self.terminated_notify.notify_one();
+    }
+
+    async fn wait_terminated(&self) {
+        loop {
+            if self.terminated.load(Ordering::SeqCst) {
+                return;
+            }
+            let notified = self.terminated_notify.notified();
+            if self.terminated.load(Ordering::SeqCst) {
+                return;
+            }
+            notified.await;
         }
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct BootGraph {
-    rev: String,
-    entries: Vec<BootEntry>,
+fn is_loopback_hostname(hostname: &str) -> bool {
+    hostname == "127.0.0.1" || hostname == "localhost" || hostname == "[::1]"
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct BootEntry {
-    id: String,
-    url: String,
-    rev: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    inject: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    immediately: Option<bool>,
+/** Return whether a navigation stays on the currently serving sidecar origin. */
+fn is_current_sidecar_origin(current_origin: Option<&str>, target: &Url) -> bool {
+    current_origin == Some(target.origin().ascii_serialization().as_str())
 }
 
-#[derive(Serialize)]
-struct EventStreamRequest<'a> {
-    path: &'a str,
-}
-
-#[derive(Serialize)]
-struct PluginReadRequest<'a> {
-    id: &'a str,
-    rev: &'a str,
-}
-
-#[derive(Deserialize)]
-struct PluginReadResponse {
-    #[serde(with = "serde_bytes")]
-    body: Vec<u8>,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct BrowserStreamEvent {
-    kind: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    stream_id: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    payload: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
+fn clear_peer_if_current(state: &DesktopState, peer: &Arc<SidecarPeer>) {
+    let mut current = state.peer.write().unwrap();
+    if current
+        .as_ref()
+        .is_some_and(|candidate| Arc::ptr_eq(candidate, peer))
+    {
+        *current = None;
+    }
 }
 
 async fn handle_system_request(
@@ -489,108 +355,50 @@ async fn handle_system_request(
     }
 }
 
-fn sidecar_peer(state: &tauri::State<'_, DesktopState>) -> Result<Arc<SidecarPeer>, String> {
-    state
-        .peer
-        .read()
-        .unwrap()
-        .clone()
-        .ok_or_else(|| "Desktop sidecar is not ready".into())
-}
-
-#[tauri::command]
-async fn desktop_fetch(
-    state: tauri::State<'_, DesktopState>,
-    request_id: String,
-    request: DesktopHttpRequest,
-) -> Result<DesktopHttpResponse, String> {
-    sidecar_peer(&state)?
-        .request_with_key("http.fetch", &request, Some(request_id))
-        .await
-}
-
-#[tauri::command]
-fn desktop_fetch_cancel(
-    state: tauri::State<'_, DesktopState>,
-    request_id: String,
-) -> Result<(), String> {
-    sidecar_peer(&state)?.cancel_request(&request_id)
-}
-
-#[tauri::command]
-async fn desktop_stream_open(
-    state: tauri::State<'_, DesktopState>,
-    path: String,
-    on_event: Channel<BrowserStreamEvent>,
-) -> Result<StreamId, String> {
-    let peer = sidecar_peer(&state)?;
-    let opened: StreamId = peer
-        .request("stream.events", &EventStreamRequest { path: &path })
-        .await?;
-    let mut receiver = peer.register_stream(opened.stream_id);
-    if let Err(error) = peer.credit(opened.stream_id, INITIAL_STREAM_CREDIT) {
-        let _ = peer.cancel(opened.stream_id);
-        return Err(error);
+/** Validate that a save request targets the current sidecar's export endpoint. */
+fn validate_export_request(
+    request: &DesktopHttpRequest,
+    current_origin: &str,
+) -> Result<Url, String> {
+    if request.method != "GET" || !request.headers.is_empty() {
+        return Err("Session export must be a header-free GET request".into());
     }
-    let forward = peer.clone();
-    let stream_id = opened.stream_id;
-    tauri::async_runtime::spawn(async move {
-        while let Some(packet) = receiver.recv().await {
-            let event = match packet.kind.as_str() {
-                "stream-open" => BrowserStreamEvent {
-                    kind: "open".into(),
-                    stream_id: Some(stream_id),
-                    payload: None,
-                    error: None,
-                },
-                "stream-data" => {
-                    let payload = packet
-                        .payload
-                        .and_then(|value| value.as_str().map(ToOwned::to_owned));
-                    BrowserStreamEvent {
-                        kind: "message".into(),
-                        stream_id: Some(stream_id),
-                        payload,
-                        error: None,
-                    }
-                }
-                "stream-end" if packet.error.is_some() => BrowserStreamEvent {
-                    kind: "error".into(),
-                    stream_id: Some(stream_id),
-                    payload: None,
-                    error: packet.error,
-                },
-                "stream-end" => BrowserStreamEvent {
-                    kind: "close".into(),
-                    stream_id: Some(stream_id),
-                    payload: None,
-                    error: None,
-                },
-                _ => continue,
-            };
-            let is_data = packet.kind == "stream-data";
-            if let Err(error) = on_event.send(event) {
-                eprintln!("Desktop stream channel failed on {stream_id}: {error}");
-                let _ = forward.cancel(stream_id);
-                break;
-            }
-            if is_data {
-                let _ = forward.credit(stream_id, 1);
-            }
-            if packet.kind == "stream-end" {
-                break;
-            }
-        }
-    });
-    Ok(opened)
+    let url = Url::parse(&request.url).map_err(|error| error.to_string())?;
+    if !is_current_sidecar_origin(Some(current_origin), &url)
+        || url.path() != "/api/session.export"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("Session export URL must target the current Desktop web host".into());
+    }
+    Ok(url)
 }
 
-#[tauri::command]
-fn desktop_stream_close(
-    state: tauri::State<'_, DesktopState>,
-    stream_id: u64,
+/** Fetch the session export directly from the current web host and stream it to disk. */
+fn download_export(
+    request: &DesktopHttpRequest,
+    current_origin: &str,
+    temp: &Path,
+    target: &Path,
 ) -> Result<(), String> {
-    sidecar_peer(&state)?.cancel(stream_id)
+    let url = validate_export_request(request, current_origin)?;
+    let agent = ureq::AgentBuilder::new().redirects(0).build();
+    let response = agent
+        .get(url.as_str())
+        .timeout(EXPORT_TIMEOUT)
+        .call()
+        .map_err(|error| error.to_string())?;
+    let status = response.status();
+    if !(200..300).contains(&status) {
+        return Err(format!("Session export failed: HTTP {status}"));
+    }
+    let mut reader = response.into_reader();
+    let mut file = std::fs::File::create(temp).map_err(|error| error.to_string())?;
+    copy(&mut reader, &mut file).map_err(|error| error.to_string())?;
+    drop(file);
+    std::fs::rename(temp, target).map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -600,6 +408,12 @@ async fn desktop_save_session(
     request: DesktopHttpRequest,
     filename: String,
 ) -> Result<(), String> {
+    let current_origin = state
+        .origin
+        .read()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "Desktop web host is not ready".to_string())?;
     let target = tokio::task::spawn_blocking({
         let app = app.clone();
         move || {
@@ -614,64 +428,15 @@ async fn desktop_save_session(
     .map_err(|error| error.to_string())?;
     let Some(target) = target else { return Ok(()) };
     let target = target.into_path().map_err(|error| error.to_string())?;
-    let peer = sidecar_peer(&state)?;
-    let opened: StreamId = peer.request("stream.http", &request).await?;
-    let mut receiver = peer.register_stream(opened.stream_id);
-    if let Err(error) = peer.credit(opened.stream_id, INITIAL_STREAM_CREDIT) {
-        let _ = peer.cancel(opened.stream_id);
-        return Err(error);
-    }
     let temp = temporary_export_path(&target);
-    let mut file = match tokio::fs::File::create(&temp).await {
-        Ok(file) => file,
-        Err(error) => {
-            let _ = peer.cancel(opened.stream_id);
-            return Err(error.to_string());
-        }
-    };
-    let result = async {
-        let mut completed = false;
-        while let Some(packet) = receiver.recv().await {
-            match packet.kind.as_str() {
-                "stream-open" if !(200..300).contains(&packet.status.unwrap_or(500)) => {
-                    return Err(format!(
-                        "Session export failed: HTTP {}",
-                        packet.status.unwrap_or(500)
-                    ));
-                }
-                "stream-data" => {
-                    let value = packet
-                        .payload
-                        .ok_or_else(|| "Session export stream omitted a chunk".to_string())?;
-                    let bytes: Vec<u8> =
-                        rmpv::ext::from_value(value).map_err(|error| error.to_string())?;
-                    file.write_all(&bytes)
-                        .await
-                        .map_err(|error| error.to_string())?;
-                    peer.credit(opened.stream_id, 1)?;
-                }
-                "stream-end" if packet.error.is_some() => return Err(packet.error.unwrap()),
-                "stream-end" => {
-                    completed = true;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        if !completed {
-            return Err("Session export stream closed before completion".into());
-        }
-        file.flush().await.map_err(|error| error.to_string())?;
-        drop(file);
-        tokio::fs::rename(&temp, &target)
-            .await
-            .map_err(|error| error.to_string())?;
-        Ok(())
-    }
-    .await;
+    let cleanup_temp = temp.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        download_export(&request, &current_origin, &temp, &target)
+    })
+    .await
+    .map_err(|error| error.to_string())?;
     if result.is_err() {
-        let _ = peer.cancel(opened.stream_id);
-        let _ = tokio::fs::remove_file(&temp).await;
+        let _ = std::fs::remove_file(&cleanup_temp);
     }
     result
 }
@@ -685,74 +450,83 @@ fn temporary_export_path(target: &Path) -> PathBuf {
     target.with_file_name(format!(".{name}.{stamp}.part"))
 }
 
-fn safe_asset_path(root: &Path, uri_path: &str) -> Option<PathBuf> {
-    let relative = uri_path.trim_start_matches('/');
-    let path = Path::new(if relative.is_empty() {
-        "index.html"
-    } else {
-        relative
-    });
-    if path
-        .components()
-        .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return None;
-    }
-    Some(root.join(path))
-}
-
-fn response(status: StatusCode, content_type: &str, body: Vec<u8>) -> Response<Vec<u8>> {
-    Response::builder()
-        .status(status)
-        .header(header::CONTENT_TYPE, content_type)
-        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-        .body(body)
-        .unwrap()
-}
-
-fn build_ready(message: InboundMessage) -> Result<ReadyData, String> {
+/** Validate the sidecar readiness message and normalize its loopback origin. */
+fn parse_ready_url(message: &InboundMessage) -> Result<String, String> {
     if message.protocol_version != Some(PROTOCOL_VERSION) {
         return Err(format!(
             "Desktop protocol mismatch: expected {PROTOCOL_VERSION}, got {:?}",
             message.protocol_version
         ));
     }
-    let graph_value = message
-        .graph
-        .ok_or_else(|| "Desktop ready message omitted graph".to_string())?;
-    let mut graph: BootGraph =
-        rmpv::ext::from_value(graph_value).map_err(|error| error.to_string())?;
-    let original_json = message
-        .graph_json
-        .ok_or_else(|| "Desktop ready message omitted graphJson".to_string())?;
-    let mut plugins = HashMap::new();
-    for entry in &mut graph.entries {
-        plugins.insert((entry.id.clone(), entry.rev.clone()), ());
-        let id: String = url::form_urlencoded::byte_serialize(entry.id.as_bytes()).collect();
-        let rev: String = url::form_urlencoded::byte_serialize(entry.rev.as_bytes()).collect();
-        entry.url = if cfg!(windows) {
-            format!("http://dsh-plugin.localhost/client.js?id={id}&rev={rev}")
-        } else {
-            format!("dsh-plugin://localhost/client.js?id={id}&rev={rev}")
-        };
+    let raw = message
+        .url
+        .as_deref()
+        .ok_or_else(|| "Desktop ready message omitted url".to_string())?;
+    let parsed =
+        Url::parse(raw).map_err(|error| format!("Desktop ready URL is invalid: {error}"))?;
+    let hostname = parsed
+        .host_str()
+        .ok_or_else(|| "Desktop ready URL has no hostname".to_string())?;
+    if parsed.scheme() != "http"
+        || !is_loopback_hostname(hostname)
+        || parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.port().is_none()
+    {
+        return Err(format!(
+            "Desktop ready URL must be loopback HTTP with an explicit port: {raw}"
+        ));
     }
-    let rewritten_json = serde_json::to_string(&graph).map_err(|error| error.to_string())?;
-    let index = message
-        .index_html
-        .ok_or_else(|| "Desktop ready message omitted indexHtml".to_string())?;
-    let marker = format!("window.__DSH_BOOT__ = {original_json}");
-    if !index.contains(&marker) {
-        return Err("Desktop index did not contain the expected boot graph".into());
-    }
-    let index = index.replace(&marker, &format!("window.__DSH_BOOT__ = {rewritten_json}"));
-    Ok(ReadyData {
-        index_html: Arc::new(index.into_bytes()),
-        plugins: Arc::new(plugins),
-    })
+    Ok(parsed.origin().ascii_serialization())
 }
 
-async fn spawn_sidecar(app: &AppHandle) -> Result<(Arc<SidecarPeer>, ReadyData), String> {
+/** Own one sidecar generation's event channel and report when it ends. */
+fn spawn_sidecar_reader(
+    peer: Arc<SidecarPeer>,
+    mut events: tauri::async_runtime::Receiver<CommandEvent>,
+    app: AppHandle,
+) -> oneshot::Receiver<()> {
+    let (exit_tx, exit_rx) = oneshot::channel();
+    tauri::async_runtime::spawn(async move {
+        let mut decoder = FrameDecoder::new();
+        while let Some(event) = events.recv().await {
+            match event {
+                CommandEvent::Stdout(bytes) => match decoder.push(&bytes) {
+                    Ok(messages) => {
+                        for message in messages {
+                            peer.dispatch(message, &app);
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("{error}");
+                        peer.fail(error);
+                        break;
+                    }
+                },
+                CommandEvent::Stderr(bytes) => eprint!("{}", String::from_utf8_lossy(&bytes)),
+                CommandEvent::Error(error) => {
+                    eprintln!("Desktop sidecar error: {error}");
+                    peer.fail(format!("Desktop sidecar error: {error}"));
+                    break;
+                }
+                CommandEvent::Terminated(status) => {
+                    peer.fail(format!("Desktop sidecar exited: {:?}", status.code));
+                    break;
+                }
+                _ => {}
+            }
+        }
+        peer.fail("Desktop sidecar event channel closed".into());
+        peer.mark_terminated();
+        let _ = exit_tx.send(());
+    });
+    exit_rx
+}
+
+async fn spawn_sidecar(
+    app: &AppHandle,
+) -> Result<(Arc<SidecarPeer>, String, oneshot::Receiver<()>), String> {
     let resource = app
         .path()
         .resource_dir()
@@ -760,7 +534,7 @@ async fn spawn_sidecar(app: &AppHandle) -> Result<(Arc<SidecarPeer>, ReadyData),
     let script = resource.join("resources/runtime/lib/sidecar.mjs");
     let cwd = app.path().home_dir().map_err(|error| error.to_string())?;
     let (ready_tx, ready_rx) = oneshot::channel();
-    let (mut events, child) = app
+    let (events, child) = app
         .shell()
         .sidecar("node")
         .map_err(|error| error.to_string())?
@@ -773,131 +547,162 @@ async fn spawn_sidecar(app: &AppHandle) -> Result<(Arc<SidecarPeer>, ReadyData),
         child: Mutex::new(Some(child)),
         next_id: AtomicU64::new(1),
         pending: Mutex::new(HashMap::new()),
-        request_keys: Mutex::new(HashMap::new()),
-        streams: Mutex::new(HashMap::new()),
         ready: Mutex::new(Some(ready_tx)),
+        terminated: AtomicBool::new(false),
+        terminated_notify: Notify::new(),
     });
-    let reader = peer.clone();
-    let app_for_reader = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let mut decoder = FrameDecoder::new();
-        while let Some(event) = events.recv().await {
-            match event {
-                CommandEvent::Stdout(bytes) => match decoder.push(&bytes) {
-                    Ok(messages) => {
-                        for message in messages {
-                            reader.dispatch(message, &app_for_reader);
-                        }
-                    }
-                    Err(error) => {
-                        eprintln!("{error}");
-                        reader.kill();
-                        reader.fail(error);
-                        break;
-                    }
-                },
-                CommandEvent::Stderr(bytes) => eprint!("{}", String::from_utf8_lossy(&bytes)),
-                CommandEvent::Error(error) => eprintln!("Desktop sidecar error: {error}"),
-                CommandEvent::Terminated(status) => {
-                    reader.fail(format!("Desktop sidecar exited: {:?}", status.code));
-                    break;
-                }
-                _ => {}
-            }
-        }
-        reader.fail("Desktop sidecar event channel closed".into());
-    });
-    let ready_message = timeout(Duration::from_secs(120), ready_rx)
-        .await
-        .map_err(|_| "Desktop sidecar readiness timed out".to_string())?
-        .map_err(|_| "Desktop sidecar readiness channel closed".to_string())??;
-    let ready = build_ready(ready_message)?;
-    Ok((peer, ready))
-}
-
-fn app_protocol(
-    state: tauri::State<'_, DesktopState>,
-    resource_root: PathBuf,
-    request: Request<Vec<u8>>,
-) -> Response<Vec<u8>> {
-    if request.method() != "GET" && request.method() != "HEAD" {
-        return response(StatusCode::METHOD_NOT_ALLOWED, "text/plain", Vec::new());
-    }
-    let path = request.uri().path();
-    if path == "/" || path == "/index.html" {
-        return match state.ready.read().unwrap().as_ref() {
-            Some(ready) => response(
-                StatusCode::OK,
-                "text/html; charset=utf-8",
-                (*ready.index_html).clone(),
-            ),
-            None => response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "text/plain",
-                b"Desktop is starting".to_vec(),
-            ),
-        };
-    }
-    let Some(file) = safe_asset_path(&resource_root, path) else {
-        return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new());
+    *app.state::<DesktopState>().peer.write().unwrap() = Some(peer.clone());
+    let exited = spawn_sidecar_reader(peer.clone(), events, app.clone());
+    let ready = match timeout(Duration::from_secs(120), ready_rx).await {
+        Err(_) => Err("Desktop sidecar readiness timed out".to_string()),
+        Ok(Err(_)) => Err("Desktop sidecar readiness channel closed".to_string()),
+        Ok(Ok(result)) => result,
     };
-    match std::fs::read(&file) {
-        Ok(body) => response(
-            StatusCode::OK,
-            mime_guess::from_path(file)
-                .first_or_octet_stream()
-                .essence_str(),
-            body,
-        ),
-        Err(_) => response(StatusCode::NOT_FOUND, "text/plain", Vec::new()),
-    }
+    let ready_message = match ready {
+        Ok(message) => message,
+        Err(error) => {
+            peer.fail(error.clone());
+            clear_peer_if_current(&app.state::<DesktopState>(), &peer);
+            return Err(error);
+        }
+    };
+    let url = match parse_ready_url(&ready_message) {
+        Ok(url) => url,
+        Err(error) => {
+            peer.fail(error.clone());
+            clear_peer_if_current(&app.state::<DesktopState>(), &peer);
+            return Err(error);
+        }
+    };
+    Ok((peer, url, exited))
 }
 
-fn plugin_protocol(
-    app: AppHandle,
-    request: Request<Vec<u8>>,
-    responder: tauri::UriSchemeResponder,
-) {
+fn monitor_sidecar_exit(peer: Arc<SidecarPeer>, exited: oneshot::Receiver<()>, app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let parsed = Url::parse(&request.uri().to_string());
-        let result = async {
-            let url = parsed.map_err(|error| error.to_string())?;
-            let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
-            let id = query
-                .get("id")
-                .ok_or_else(|| "plugin id is required".to_string())?;
-            let rev = query
-                .get("rev")
-                .ok_or_else(|| "plugin rev is required".to_string())?;
-            let state = app.state::<DesktopState>();
-            if !state
-                .ready
-                .read()
-                .unwrap()
-                .as_ref()
-                .is_some_and(|ready| ready.plugins.contains_key(&(id.clone(), rev.clone())))
-            {
-                return Err("plugin is not present in the current Desktop manifest".to_string());
-            }
-            let peer = sidecar_peer(&state)?;
-            let bundle: PluginReadResponse = peer
-                .request("plugin.read", &PluginReadRequest { id, rev })
-                .await?;
-            Ok(bundle.body)
+        let _ = exited.await;
+        let state = app.state::<DesktopState>();
+        clear_peer_if_current(&state, &peer);
+        if !state.exiting.load(Ordering::SeqCst) {
+            supervise_sidecar(&app).await;
         }
-        .await;
-        responder.respond(match result {
-            Ok(body) => Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, "text/javascript; charset=utf-8")
-                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-                .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
-                .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-                .body(body)
-                .unwrap(),
-            Err(error) => response(StatusCode::NOT_FOUND, "text/plain", error.into_bytes()),
-        });
     });
+}
+
+/** Bounded respawn after an unexpected exit: retry with backoff, then fail loud. */
+async fn supervise_sidecar(app: &AppHandle) {
+    let state = app.state::<DesktopState>();
+    if state.exiting.load(Ordering::SeqCst) {
+        return;
+    }
+    for attempt in 0..RESPAWN_ATTEMPTS {
+        if state.exiting.load(Ordering::SeqCst) {
+            return;
+        }
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_secs(u64::from(attempt))).await;
+            if state.exiting.load(Ordering::SeqCst) {
+                return;
+            }
+        }
+        match spawn_sidecar(app).await {
+            Ok((peer, url, exited)) => {
+                if state.exiting.load(Ordering::SeqCst) {
+                    peer.kill();
+                    clear_peer_if_current(&state, &peer);
+                    return;
+                }
+                let parsed = Url::parse(&url).expect("validated Desktop origin must parse");
+                // Publish the new origin before navigating so the live
+                // allowlist accepts this generation's random port.
+                *state.origin.write().unwrap() = Some(parsed.origin().ascii_serialization());
+                let navigation = app
+                    .get_webview_window("main")
+                    .ok_or_else(|| "Desktop main window is unavailable".to_string())
+                    .and_then(|window| window.navigate(parsed).map_err(|error| error.to_string()));
+                if let Err(error) = navigation {
+                    peer.kill();
+                    clear_peer_if_current(&state, &peer);
+                    show_error_and_exit(
+                        app,
+                        format!("DeepSeek Harness Desktop failed to reconnect:\n{error}"),
+                        1,
+                    );
+                    return;
+                }
+                monitor_sidecar_exit(peer, exited, app.clone());
+                return;
+            }
+            Err(error) => {
+                eprintln!(
+                    "Desktop sidecar respawn attempt {} failed: {}",
+                    attempt + 1,
+                    error
+                );
+            }
+        }
+    }
+    show_error_and_exit(
+        app,
+        "DeepSeek Harness Desktop 宿主进程多次重启失败，应用即将退出。",
+        1,
+    );
+}
+
+/** Show a modal error on the main thread, then exit with the given code. */
+fn show_error_and_exit(app: &AppHandle, message: impl Into<String>, code: i32) {
+    let message = message.into();
+    let for_dialog = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = for_dialog.dialog().message(message).blocking_show();
+    });
+    app.exit(code);
+}
+
+/** The native menu: app/quit, edit, view (CmdOrCtrl+R reload), window. */
+fn build_desktop_menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let quit = MenuItem::with_id(
+        app,
+        "quit",
+        "Quit DeepSeek Harness Desktop",
+        true,
+        Some("CmdOrCtrl+Q"),
+    )?;
+    let reload = MenuItem::with_id(app, "reload", "Reload Page", true, Some("CmdOrCtrl+R"))?;
+    let view = Submenu::with_items(app, "View", true, &[&reload])?;
+    #[cfg(target_os = "macos")]
+    let menu = {
+        let app_menu = Submenu::with_items(app, "DeepSeek Harness Desktop", true, &[&quit])?;
+        let edit = Submenu::with_items(
+            app,
+            "Edit",
+            true,
+            &[
+                &PredefinedMenuItem::undo(app, None)?,
+                &PredefinedMenuItem::redo(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::cut(app, None)?,
+                &PredefinedMenuItem::copy(app, None)?,
+                &PredefinedMenuItem::paste(app, None)?,
+                &PredefinedMenuItem::select_all(app, None)?,
+            ],
+        )?;
+        let window = Submenu::with_items(
+            app,
+            "Window",
+            true,
+            &[
+                &PredefinedMenuItem::minimize(app, None)?,
+                &PredefinedMenuItem::fullscreen(app, None)?,
+            ],
+        )?;
+        Menu::with_items(app, &[&app_menu, &edit, &view, &window])?
+    };
+    #[cfg(not(target_os = "macos"))]
+    let menu = {
+        let file = Submenu::with_items(app, "File", true, &[&quit])?;
+        Menu::with_items(app, &[&file, &view])?
+    };
+    Ok(menu)
 }
 
 async fn stop_sidecar(app: &AppHandle) {
@@ -911,7 +716,21 @@ async fn stop_sidecar(app: &AppHandle) {
         .await
         .unwrap_or_else(|_| Err("Desktop sidecar shutdown timed out".into()));
         peer.kill();
+        let _ = timeout(Duration::from_secs(3), peer.wait_terminated()).await;
     }
+    *state.peer.write().unwrap() = None;
+}
+
+fn begin_graceful_exit(app: &AppHandle, exit_code: i32) {
+    let state = app.state::<DesktopState>();
+    if state.exiting.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        stop_sidecar(&app).await;
+        app.exit(exit_code);
+    });
 }
 
 pub fn run() {
@@ -926,44 +745,93 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(DesktopState::default())
-        .invoke_handler(tauri::generate_handler![
-            desktop_fetch,
-            desktop_fetch_cancel,
-            desktop_stream_open,
-            desktop_stream_close,
-            desktop_save_session,
-        ])
-        .register_uri_scheme_protocol("dsh-app", |context, request| {
-            let app = context.app_handle();
-            let root = app.path().resource_dir().unwrap().join("resources/web");
-            app_protocol(app.state::<DesktopState>(), root, request)
-        })
-        .register_asynchronous_uri_scheme_protocol("dsh-plugin", |context, request, responder| {
-            plugin_protocol(context.app_handle().clone(), request, responder)
+        .invoke_handler(tauri::generate_handler![desktop_save_session])
+        .on_menu_event(|app, event| match event.id().0.as_str() {
+            "quit" => begin_graceful_exit(app, 0),
+            "reload" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.reload();
+                }
+            }
+            _ => {}
         })
         .setup(|app| {
+            if let Err(error) = app.handle().set_menu(build_desktop_menu(app.handle())?) {
+                eprintln!("Desktop menu setup failed: {error}");
+            }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 match spawn_sidecar(&handle).await {
-                    Ok((peer, ready)) => {
+                    Ok((peer, url, exited)) => {
                         let state = handle.state::<DesktopState>();
-                        *state.peer.write().unwrap() = Some(peer);
-                        *state.ready.write().unwrap() = Some(ready);
-                        let url = Url::parse("dsh-app://localhost/index.html").unwrap();
+                        if state.exiting.load(Ordering::SeqCst) {
+                            peer.kill();
+                            clear_peer_if_current(&state, &peer);
+                            return;
+                        }
+                        let Ok(parsed) = Url::parse(&url) else {
+                            peer.kill();
+                            clear_peer_if_current(&state, &peer);
+                            show_error_and_exit(
+                                &handle,
+                                "Desktop startup failed: validated readiness URL became invalid",
+                                1,
+                            );
+                            return;
+                        };
+                        *state.origin.write().unwrap() =
+                            Some(parsed.origin().ascii_serialization());
+                        let nav_handle = handle.clone();
+                        let opener_handle = handle.clone();
                         let window = WebviewWindowBuilder::new(
                             &handle,
                             "main",
-                            WebviewUrl::CustomProtocol(url),
+                            WebviewUrl::External(parsed),
                         )
                         .title("DeepSeek Harness Desktop")
                         .inner_size(1280.0, 820.0)
                         .min_inner_size(900.0, 640.0)
-                        .initialization_script(DISABLE_CONTEXT_MENU_SCRIPT);
-                        let _ = window.build();
+                        .on_navigation(move |target| {
+                            // Allow only the CURRENT sidecar origin, read fresh
+                            // from shared state: a respawn serves from a new
+                            // random port, and a stale startup-captured origin
+                            // would cancel that navigation and wrongly bounce
+                            // it to the system browser.
+                            let current = nav_handle
+                                .state::<DesktopState>()
+                                .origin
+                                .read()
+                                .unwrap()
+                                .clone();
+                            if is_current_sidecar_origin(current.as_deref(), target) {
+                                return true;
+                            }
+                            if target.scheme() == "http" || target.scheme() == "https" {
+                                let _ = opener_handle
+                                    .opener()
+                                    .open_url(target.clone(), None::<&str>);
+                            }
+                            false
+                        });
+                        match window.build() {
+                            Ok(_) => monitor_sidecar_exit(peer, exited, handle.clone()),
+                            Err(error) => {
+                                peer.kill();
+                                clear_peer_if_current(&state, &peer);
+                                show_error_and_exit(
+                                    &handle,
+                                    format!("Desktop window creation failed: {error}"),
+                                    1,
+                                );
+                            }
+                        }
                     }
                     Err(error) => {
-                        eprintln!("Desktop startup failed: {error}");
-                        handle.exit(1);
+                        show_error_and_exit(
+                            &handle,
+                            format!("DeepSeek Harness Desktop failed to start:\n{error}"),
+                            1,
+                        );
                     }
                 }
             });
@@ -974,15 +842,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build DeepSeek Harness Desktop");
     app.run(|app, event| {
-        if let RunEvent::ExitRequested { api, .. } = event {
+        if let RunEvent::ExitRequested { code, api, .. } = event {
             let state = app.state::<DesktopState>();
-            if !state.exiting.swap(true, Ordering::SeqCst) {
+            if !state.exiting.load(Ordering::SeqCst) {
                 api.prevent_exit();
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    stop_sidecar(&app).await;
-                    app.exit(0);
-                });
+                begin_graceful_exit(app, code.unwrap_or(0));
             }
         }
     });
@@ -993,17 +857,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sidecar_failure_settles_pending_requests_and_streams() {
+    fn sidecar_failure_settles_pending_requests() {
         let (pending_tx, mut pending_rx) = oneshot::channel::<Result<Value, String>>();
-        let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<StreamPacket>();
         let (ready_tx, mut ready_rx) = oneshot::channel::<Result<InboundMessage, String>>();
         let peer = SidecarPeer {
             child: Mutex::new(None),
             next_id: AtomicU64::new(2),
             pending: Mutex::new(HashMap::from([(1, pending_tx)])),
-            request_keys: Mutex::new(HashMap::from([("browser-request".into(), 1)])),
-            streams: Mutex::new(HashMap::from([(7, stream_tx)])),
             ready: Mutex::new(Some(ready_tx)),
+            terminated: AtomicBool::new(false),
+            terminated_notify: Notify::new(),
         };
 
         peer.fail("sidecar stopped".into());
@@ -1013,11 +876,87 @@ mod tests {
             pending_rx.try_recv().unwrap().unwrap_err(),
             "sidecar stopped"
         );
-        let packet = stream_rx.try_recv().unwrap();
-        assert_eq!(packet.kind, "stream-end");
-        assert_eq!(packet.error.as_deref(), Some("sidecar stopped"));
         assert!(peer.pending.lock().unwrap().is_empty());
-        assert!(peer.request_keys.lock().unwrap().is_empty());
-        assert!(peer.streams.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn readiness_url_must_be_loopback_http_with_explicit_port() {
+        let ready = |url: &str| InboundMessage {
+            kind: "ready".into(),
+            id: None,
+            ok: None,
+            error: None,
+            payload: None,
+            method: None,
+            protocol_version: Some(PROTOCOL_VERSION),
+            url: Some(url.into()),
+        };
+        assert_eq!(
+            parse_ready_url(&ready("http://127.0.0.1:5173")).unwrap(),
+            "http://127.0.0.1:5173"
+        );
+        assert_eq!(
+            parse_ready_url(&ready("http://localhost:5173")).unwrap(),
+            "http://localhost:5173"
+        );
+        for bad in [
+            "http://127.0.0.1",           // no explicit port
+            "https://127.0.0.1:5173",     // not http
+            "http://192.168.1.10:5173",   // not loopback
+            "http://127.0.0.1:5173/path", // not the origin root
+            "http://127.0.0.1:5173?x=1",  // query
+        ] {
+            assert!(parse_ready_url(&ready(bad)).is_err(), "must reject {bad}");
+        }
+    }
+
+    #[test]
+    fn navigation_uses_the_current_sidecar_origin() {
+        let old = Url::parse("http://127.0.0.1:5173/path").unwrap();
+        let current = Url::parse("http://127.0.0.1:6291/path").unwrap();
+
+        assert!(is_current_sidecar_origin(
+            Some("http://127.0.0.1:5173"),
+            &old
+        ));
+        assert!(!is_current_sidecar_origin(
+            Some("http://127.0.0.1:5173"),
+            &current
+        ));
+        assert!(is_current_sidecar_origin(
+            Some("http://127.0.0.1:6291"),
+            &current
+        ));
+    }
+
+    #[test]
+    fn export_request_must_target_the_current_sidecar_endpoint() {
+        let request = |method: &str, url: &str| DesktopHttpRequest {
+            method: method.into(),
+            url: url.into(),
+            headers: HashMap::new(),
+        };
+
+        assert!(validate_export_request(
+            &request(
+                "GET",
+                "http://127.0.0.1:6291/api/session.export?sessionId=test"
+            ),
+            "http://127.0.0.1:6291",
+        )
+        .is_ok());
+        for invalid in [
+            request(
+                "GET",
+                "http://127.0.0.1:5173/api/session.export?sessionId=test",
+            ),
+            request("GET", "http://127.0.0.1:6291/api/settings"),
+            request(
+                "POST",
+                "http://127.0.0.1:6291/api/session.export?sessionId=test",
+            ),
+        ] {
+            assert!(validate_export_request(&invalid, "http://127.0.0.1:6291").is_err());
+        }
     }
 }

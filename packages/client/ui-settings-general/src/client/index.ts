@@ -143,6 +143,7 @@ export function apply(ctx: ClientContext): void {
     name: 'sidebar.settings',
     children: {
       'settings.trigger': { kind: 'single', scope: 'root' },
+      'settings.update': { kind: 'single', scope: 'root' },
       'settings.header': { kind: 'single', scope: 'root' },
       'settings.action': { kind: 'list', scope: 'root' },
       'settings.close': { kind: 'single', scope: 'root' },

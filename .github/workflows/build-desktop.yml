@@ -20,14 +20,6 @@ jobs:
       version: ${{ steps.release.outputs.version }}
 
     steps:
-      - name: Require master
-        shell: bash
-        run: |
-          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
-            echo "::error::Desktop releases must be dispatched from master."
-            exit 1
-          fi
-
       - name: Checkout release source
         uses: actions/checkout@v6
         with:
@@ -42,14 +34,16 @@ jobs:
           tag="v$version"
           source_sha="$(git rev-parse HEAD)"
 
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            echo "::error::Release tag $tag already exists. Bump the Desktop version before rebuilding."
-            exit 1
-          else
-            status=$?
-            if [[ "$status" -ne 2 ]]; then
-              echo "::error::Unable to check whether release tag $tag exists."
-              exit "$status"
+          if [[ "$GITHUB_REF" == "refs/heads/master" ]]; then
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "::error::Release tag $tag already exists. Bump the Desktop version before rebuilding."
+              exit 1
+            else
+              status=$?
+              if [[ "$status" -ne 2 ]]; then
+                echo "::error::Unable to check whether release tag $tag exists."
+                exit "$status"
+              fi
             fi
           fi
 
@@ -98,6 +92,18 @@ jobs:
       - name: Check Desktop version mirrors
         run: pnpm desktop:version:check
 
+      - name: Prepare the Harness bundle
+        run: pnpm run bundle:prepare
+        working-directory: desktop
+
+      - name: Run Desktop node tests
+        run: pnpm run test
+        working-directory: desktop
+
+      - name: Run Desktop Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+        working-directory: desktop
+
       - name: Build and upload Desktop package
         uses: tauri-apps/tauri-action@v1
         with:
@@ -107,9 +113,12 @@ jobs:
           releaseAssetNamePattern: deepseek-harness-desktop-${{ matrix.platform }}-[version][ext]
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: deepseek-harness-desktop-${{ matrix.platform }}-[version]
+        env:
+          DESKTOP_SKIP_BUNDLE: '1'
 
   release:
     name: Publish v${{ needs.metadata.outputs.version }}
+    if: github.ref == 'refs/heads/master'
     needs:
       - metadata
       - build

@@ -23,7 +23,7 @@ test('Desktop version and root shortcuts use the Desktop package', () => {
   assert.equal(rootPackage.scripts['desktop:version:set'], 'pnpm --filter @deepseek-ai/dsh-desktop run version:set')
 })
 
-test('Desktop release workflow is manual-only and publishes versioned packages from one master SHA', () => {
+test('Desktop workflow builds any manual ref and releases only one frozen master SHA', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/build-desktop.yml', import.meta.url), 'utf8')
 
   assert.match(workflow, /on:\n  workflow_dispatch:/)
@@ -31,11 +31,12 @@ test('Desktop release workflow is manual-only and publishes versioned packages f
   assert.doesNotMatch(workflow, /inputs:\n\s+ref:/)
   assert.match(workflow, /group: desktop-release/)
   assert.match(workflow, /cancel-in-progress: false/)
-  assert.match(workflow, /Desktop releases must be dispatched from master/)
+  assert.doesNotMatch(workflow, /Desktop releases must be dispatched from master/)
   assert.match(workflow, /source_sha: \$\{\{ steps\.release\.outputs\.source_sha \}\}/)
   assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/)
   assert.match(workflow, /ref: \$\{\{ needs\.metadata\.outputs\.source_sha \}\}/)
   assert.match(workflow, /Release tag \$tag already exists/)
+  assert.match(workflow, /if \[\[ "\$GITHUB_REF" == "refs\/heads\/master" \]\]/)
   assert.match(workflow, /uses: tauri-apps\/tauri-action@v1/)
   assert.match(workflow, /uploadWorkflowArtifacts: true/)
   assert.match(workflow, /releaseAssetNamePattern: deepseek-harness-desktop-\$\{\{ matrix\.platform \}\}-\[version\]\[ext\]/)
@@ -46,6 +47,7 @@ test('Desktop release workflow is manual-only and publishes versioned packages f
   assert.match(workflow, /Expected exactly one DMG and one EXE artifact/)
   assert.match(workflow, /actions: read/)
   assert.match(workflow, /contents: write/)
+  assert.match(workflow, /if: github\.ref == 'refs\/heads\/master'/)
   assert.match(workflow, /gh release create "\$RELEASE_TAG"/)
   assert.match(workflow, /--target "\$SOURCE_SHA"/)
   assert.match(workflow, /--title "\$RELEASE_TAG"/)
@@ -69,16 +71,130 @@ test('Tauri prepares the bundle exactly once', () => {
   assert.equal(tauriConfig.build.beforeBuildCommand, 'pnpm run bundle:prepare')
 })
 
-test('Desktop uses native title bars and suppresses the default WebView context menu', () => {
+test('Desktop uses native title bars and keeps the default WebView context menu', () => {
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
 
   assert.doesNotMatch(rust, /TitleBarStyle::Overlay|hidden_title\(true\)/)
   assert.doesNotMatch(rust, /\.devtools\(false\)/)
-  assert.match(rust, /initialization_script\(DISABLE_CONTEXT_MENU_SCRIPT\)/)
-  assert.match(rust, /window\.location\.protocol === "dsh-app:"/)
-  assert.match(rust, /window\.location\.hostname === "dsh-app\.localhost"/)
-  assert.match(rust, /addEventListener\("contextmenu"/)
-  assert.match(rust, /event\.preventDefault\(\)/)
+  assert.doesNotMatch(rust, /initialization_script\(DISABLE_CONTEXT_MENU_SCRIPT\)/)
+  assert.doesNotMatch(rust, /addEventListener\("contextmenu"/)
+})
+
+test('Desktop loads the loopback web host without custom protocols', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  const tauriConfig = readJson(new URL('../src-tauri/tauri.conf.json', import.meta.url))
+  const capability = readJson(new URL('../src-tauri/capabilities/main.json', import.meta.url))
+  const entitlements = readFileSync(new URL('../src-tauri/node-entitlements.plist', import.meta.url), 'utf8')
+  const runtimePackage = readJson(new URL('../runtime/package.json', import.meta.url))
+  const overlay = readFileSync(new URL('../runtime/overlay.yml', import.meta.url), 'utf8')
+
+  // No custom URI schemes, no boot snapshot, no plugin allowlist.
+  assert.doesNotMatch(rust, /register_uri_scheme_protocol/)
+  assert.doesNotMatch(rust, /plugin\.read/)
+  assert.doesNotMatch(rust, /index_html|indexHtml/)
+  // The window loads the sidecar's loopback HTTP origin and reloads on graph
+  // changes; navigation is pinned to that origin.
+  assert.match(rust, /WebviewUrl::External/)
+  assert.match(rust, /graph-changed/)
+  assert.match(rust, /on_navigation/)
+  // The bundled frontend dist is served by the harness itself.
+  assert.equal(tauriConfig.build.frontendDist, 'resources/shell')
+  assert.deepEqual(tauriConfig.bundle.resources, ['resources/runtime/**/*'])
+  assert.equal(existsSync(new URL('../src-tauri/resources/web', import.meta.url)), false)
+  // Remote IPC is granted only to the loopback web host.
+  assert.deepEqual(capability.remote, { urls: ['http://127.0.0.1:*'] })
+  // macOS hardened runtime needs outbound network access for the WebView.
+  assert.match(entitlements, /<key>com\.apple\.security\.network\.client<\/key>\s*<true\/>/)
+  // The in-process fake HTTP server is gone; the desktop API gateway keeps
+  // the shared apiproxy core and only swaps the open-path defaults.
+  assert.equal(runtimePackage.exports['./webserver'], undefined)
+  assert.equal(runtimePackage.exports['./api-gateway'], './lib/api-gateway.mjs')
+  // The overlay keeps the standard web transport rows enabled.
+  assert.doesNotMatch(overlay, /- id: webserver\n\s+disabled: true/)
+  assert.doesNotMatch(overlay, /- id: web-startup\n\s+disabled: true/)
+  assert.doesNotMatch(overlay, /desktop-webserver/)
+  assert.match(overlay, /desktop-api-gateway/)
+  // One surface prompt: the desktop wording replaces the web one.
+  assert.match(overlay, /surfaceContext: false/)
+})
+
+test('Desktop shell supervises its sidecar and exposes a reload affordance', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+
+  // Native menu with the CmdOrCtrl+R reload item (WKWebView has no built-in
+  // browser accelerator; the default right-click menu remains available).
+  assert.match(rust, /set_menu/)
+  assert.match(rust, /on_menu_event/)
+  assert.match(rust, /CmdOrCtrl\+R/)
+  assert.match(rust, /CmdOrCtrl\+Q/)
+  assert.match(rust, /begin_graceful_exit/)
+  assert.doesNotMatch(rust, /PredefinedMenuItem::quit/)
+  assert.match(rust, /\.reload\(\)/)
+  // Startup failures preserve the exit code instead of masking it as 0.
+  assert.match(rust, /code\.unwrap_or\(0\)/)
+  assert.match(rust, /app\.exit\(exit_code\)/)
+  // Unexpected exits are supervised: bounded respawn + user-visible failure.
+  assert.match(rust, /supervise_sidecar/)
+  assert.match(rust, /RESPAWN_ATTEMPTS/)
+  assert.match(rust, /show_error_and_exit/)
+  assert.match(rust, /blocking_show\(\)/)
+  // The session export streams directly from the loopback host in Rust.
+  assert.match(rust, /ureq::AgentBuilder/)
+  assert.match(rust, /redirects\(0\)/)
+  assert.match(rust, /download_export/)
+  // Normal menu/Cmd+Q exit waits for the current generation to terminate.
+  assert.match(rust, /wait_terminated/)
+  // Dead protocol carriers are gone; the page abort is acknowledged.
+  assert.doesNotMatch(rust, /desktop_stream_close/)
+  assert.doesNotMatch(rust, /INITIAL_STREAM_CREDIT/)
+  assert.match(rust, /"system-cancel"/)
+  // Dead Windows JobObjects dependency removed.
+  const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')
+  assert.doesNotMatch(cargo, /windows-sys/)
+})
+
+test('Desktop overlay rows match the shipped web composition contract', () => {
+  const overlay = readFileSync(new URL('../runtime/overlay.yml', import.meta.url), 'utf8')
+  const webPatch = readFileSync(
+    new URL('../../packages/bundle/web-app/cordis.patch.yml', import.meta.url), 'utf8')
+
+  // Rows the overlay disables must exist by those exact ids in the web layer.
+  for (const id of ['directory-picker', 'api-gateway']) {
+    assert.match(webPatch, new RegExp(`- id: ${id}\\b`), `web patch must define row ${id}`)
+  }
+  // The web surface disables the `hmr` row and keeps `client-hmr` mounted;
+  // the desktop overlay must follow the same contract.
+  assert.match(webPatch, /- id: hmr\n\s+disabled: true/)
+  assert.doesNotMatch(overlay, /- id: client-hmr\n\s+disabled: true/)
+  assert.match(webPatch, /- id: client-hmr\n\s+name: '@deepseek-ai\/dsh-client-hmr'/)
+  // The desktop-only client UI (About section + update badge) is mounted.
+  assert.match(overlay, /desktop-client-ui/)
+})
+
+test('Desktop client UI package ships the dsh.client contract', () => {
+  const clientUi = readJson(new URL('../client-ui/package.json', import.meta.url))
+  const runtime = readJson(new URL('../runtime/package.json', import.meta.url))
+
+  assert.equal(clientUi.dsh.client.platform, 'web')
+  assert.equal(clientUi.exports['./client'].default, './lib/client.js')
+  assert.ok(clientUi.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-settings'))
+  assert.ok(Object.keys(runtime.dependencies ?? {}).includes('@deepseek-ai/dsh-desktop-client-ui'))
+  // Identity facts the About section surfaces.
+  assert.equal(typeof runtime.repository?.url, 'string')
+  assert.match(runtime.repository.url, /github\.com/)
+  assert.equal(typeof runtime.author, 'string')
+})
+
+test('Settings update seat is declared beside the settings trigger', () => {
+  // The one sanctioned upstream surface change: the update badge seat right
+  // of the settings trigger, declared by the settings shell.
+  const contract = readFileSync(
+    new URL('../../packages/client/ui-settings/src/client/contract/slots.ts', import.meta.url), 'utf8')
+  const settingsGeneral = readFileSync(
+    new URL('../../packages/client/ui-settings-general/src/client/index.ts', import.meta.url), 'utf8')
+
+  assert.match(contract, /'settings\.update': \{ kind: 'single'; scope: 'root'/)
+  assert.match(settingsGeneral, /'settings\.update': \{ kind: 'single', scope: 'root' \}/)
 })
 
 test('Windows uses downloadBootstrapper without an offline installer', () => {

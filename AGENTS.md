@@ -1,52 +1,58 @@
 # DeepSeek Harness Desktop Fork
 
-This repository is an independent desktop distribution fork of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It packages the upstream Web client with Tauri; it is not the upstream project, a second Harness implementation, or a place to add Harness features.
+This independent distribution fork packages [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) with Tauri. It is not upstream, a second Harness implementation, or a place for new Harness features.
 
-Tauri directly hosts the built Web assets. A bundled Node.js sidecar runs the upstream Harness backend composition without the Harness WebServer, and the two sides communicate through Desktop IPC. The Desktop application must not start `dsh web`, serve the frontend over localhost, or open a localhost TCP listener for its own transport.
+A bundled Node.js sidecar starts the standard `web` profile on a random loopback port (`--host 127.0.0.1 --port 0`), and the WebView loads it directly. The upstream web host remains the source of the index, boot manifest, plugin bundles, `/api`, and event streams. Desktop adds no custom URI scheme, boot snapshot, or HTTP reimplementation; framed IPC carries only readiness, `graph-changed`, native dialogs/path opening, and shutdown.
 
 ## Fork scope
 
 - Do not add Harness features, change Harness behavior, or refactor unrelated upstream code.
-- Pursue the smallest complete Desktop solution with extremely low intrusion. Every change outside `desktop/` must be backed by a concrete integration blocker that cannot be solved in the packaging or adapter layer; speculative seams, broad transport refactors, and "cleaner for Desktop" rewrites are prohibited.
-- Keep changes isolated to the Desktop packaging layer whenever possible. Modify upstream code only when the Tauri integration cannot work without a minimal, directly justified change.
+- Keep the smallest complete, extremely low-intrusion solution inside `desktop/`. A change elsewhere requires a concrete integration blocker and must be minimal; speculative abstractions, broad transport refactors, and Desktop-motivated cleanup are prohibited.
 - Use official Tauri plugins and APIs for system interaction when an official capability exists. Do not replace an official plugin with an ad hoc native bridge.
-- A released Desktop package must be self-contained. Users must not need to install Node.js, pnpm, or another runtime or package manager.
-- Desktop packaging must support only macOS Apple Silicon and Windows x64 unless this instruction is explicitly changed.
-- The repository's `desktop/` directory contains packaging source and build resources only. It is not a Harness profile, workspace, configuration home, or user-data directory.
+- Releases are self-contained: users install no Node.js, pnpm, runtime, or package manager. Support only macOS Apple Silicon and Windows x64 unless explicitly changed.
+- `desktop/` contains packaging source and resources, never a Harness profile, workspace, configuration home, or user-data directory.
 
 ## Upstream synchronization
 
-Upstream synchronization is entirely manual. Do not add automation that selects, validates, fetches, merges, rebases, or records an upstream revision.
+Synchronization is manual. Do not automate selecting, validating, fetching, merging, rebasing, or recording upstream revisions. The maintainer fetches commits and tags, normally integrates a tagged commit (or latest commit when no tag exists), resolves Desktop conflicts deliberately, and verifies the fork.
 
-The maintainer fetches upstream commits and tags, then normally synchronizes a commit carrying an upstream tag. If upstream has no tag, the maintainer may synchronize its latest commit. Upstream changes must be inspected and integrated manually because this fork carries a Desktop adapter that may conflict with a direct merge or rebase. Preserve the Desktop path and behavior invariants, resolve conflicts deliberately, and verify the resulting fork before updating the synchronization record.
-
-[`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) contains only the full SHA of the latest upstream commit incorporated into this fork. Replace its single value only after synchronization and verification; do not append history, record the fork HEAD, or make build tooling infer or rewrite this file. When the synchronized commit has an upstream tag, mirror that same tag into the fork and keep it pointing to the synchronized upstream commit.
+After verification, replace the sole full SHA in [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT). Never append history, record fork HEAD, or let tooling infer or rewrite it. Mirror an upstream tag into the fork when the synchronized commit has one, preserving its target.
 
 ## Desktop version and releases
 
-- Desktop has an independent SemVer version beginning at `0.1.0`. Upstream tags and commit hashes never determine the Desktop version or artifact names.
-- `desktop/package.json` is the only Desktop version source. When changing it, run `pnpm desktop:version:set -- <version>` to update the Desktop runtime manifest, `Cargo.toml`, and the Desktop package entry in `Cargo.lock` together, or run `pnpm desktop:version:check` to verify that all mirrors are already aligned. Do not change the root package version for a Desktop release; it belongs to the upstream Harness release family.
-- Build locally from the repository root with `pnpm desktop:dev` for development and `pnpm desktop:build` for a platform package. The package filename must derive from `desktop/package.json` and end in the Desktop version.
-- `.github/workflows/build-desktop.yml` may run only from `workflow_dispatch` on `master`. It never fetches or synchronizes upstream commits or changes version files. A metadata job freezes the dispatched `master` revision to one full SHA; both platform builds and the release tag must use that exact SHA.
-- `Build and release Desktop` is the only GitHub Actions workflow that may remain enabled in this fork. Upstream workflow files stay in the repository unchanged to reduce synchronization conflicts, but they must remain disabled in the fork's GitHub Actions settings. After every upstream synchronization, audit the workflow list and immediately disable any newly introduced upstream workflow; do not enable upstream CI, documentation deployment, E2E, issue automation, or other release workflows unless the maintainer explicitly changes this policy.
+- Desktop uses independent SemVer beginning at `0.1.0`; upstream tags and SHAs never determine versions or artifact names. `desktop/package.json` is the sole version source. Run `pnpm desktop:version:set -- <version>` to update its runtime manifest, `Cargo.toml`, and Desktop `Cargo.lock` entry, or `pnpm desktop:version:check` to verify them. Never change the upstream root version for a Desktop release.
+- From the repository root, use `pnpm desktop:dev` or `pnpm desktop:build`. Package names derive from the Desktop version.
+- `.github/workflows/build-desktop.yml` runs only by `workflow_dispatch`. Any fork ref may run the two-platform build for validation; only `master` may publish a Release. It freezes the dispatched commit SHA for both platforms and any release tag, never synchronizes upstream, and never changes versions.
+- Only `Build and release Desktop` may remain enabled in this fork. Keep upstream workflow files unchanged but disabled in GitHub Actions. After synchronization, disable newly introduced upstream workflows; do not enable upstream CI, docs, E2E, issue automation, or releases without explicit maintainer approval.
 - Artifacts are named `deepseek-harness-desktop-macos-arm64-<version>.dmg` and `deepseek-harness-desktop-windows-x64-<version>.exe`.
-- After both platform builds succeed, the workflow publishes `v<version>` from the version in `desktop/package.json`. Release titles are the same simple `v<version>` tag, and release notes come only from GitHub's generated notes between release tags; do not add a hand-written release body. Existing tags or releases are immutable release identities, so bump the Desktop version instead of replacing them.
-- [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) remains the source of truth for the synchronized upstream revision. Release traceability comes from the tagged fork source and this file, not duplicated prose in the generated Release notes.
+- After both builds pass, publish immutable tag/title `v<version>` with GitHub-generated notes only. Bump the version instead of replacing an existing tag or release. Upstream traceability comes from tagged fork source plus `desktop/UPSTREAM_COMMIT`, not duplicated release prose.
 - Windows packaging uses the system Evergreen WebView2 Runtime with Tauri's `downloadBootstrapper` fallback. Do not bundle the offline WebView2 installer.
 
 ## Runtime and path invariants
 
-The Desktop client adds a transport adapter, not a Desktop-specific Harness mode. Native Web startup and Desktop startup use the same Harness configuration files, environment layering, `DSH_HOME` resolution, profiles, sessions, workspaces, caches, and user directories.
+Desktop adds a carrier, not a Harness mode. Native Web and Desktop share configuration, environment layering, `DSH_HOME`, profiles, sessions, workspaces, caches, and user directories. Do not redirect Harness paths to Tauri install/resource/app-data locations, set a Desktop-only `DSH_HOME`, or alter `.env` lookup. With no invoking terminal directory, the sidecar explicitly starts in the OS user home, matching a native launch there. Keep Tauri temporary files separate from Harness data.
 
-Do not redirect existing Harness paths to the Tauri installation directory, bundle resource directory, or Tauri application-data directory. Do not set a Desktop-only `DSH_HOME` or replace the existing `.env` lookup rules. The GUI has no invoking terminal directory, so the sidecar starts with the OS user home as its explicit working directory; relative-path and project `.env` behavior therefore matches a native Harness launch from that directory. Tauri-owned temporary files may use Tauri-owned locations only when they remain separate from Harness data paths.
-
-The packaged runtime may carry Node.js and compiled Harness dependencies inside the application bundle, but those files are implementation resources, not user data and must never become the Harness working directory or configuration home.
+Bundled Node.js, compiled Harness code, and dependencies are application resources, never the Harness working directory, configuration home, or user data.
 
 ## Tauri integration
 
-The Tauri layer owns the window, packaged assets, sidecar process, readiness, IPC, native dialogs and open operations, shutdown, and distribution. It must expose only business-level Desktop commands to the main WebView; do not grant frontend code generic shell or filesystem access.
+Tauri owns the window, assets, sidecar lifecycle, readiness, framed IPC, native dialogs/open operations, and distribution. Expose only business-level Desktop commands; never grant the WebView generic shell or filesystem access.
 
-The sidecar uses the upstream `web` profile plus a highest-priority read-only Desktop overlay that replaces only the Web transport and Web-only surface glue. User profile patches must not be able to re-enable the Harness WebServer inside Desktop. The production package includes the Node runtime, compiled Harness packages, Web assets, client plugin bundles, and production dependency closure; the sidecar must stop with Tauri and leave no unmanaged process tree.
+The sidecar runs upstream `web` plus a read-only overlay that replaces directory picking, applies Desktop open-path defaults through the shared API-proxy trust fence, and adds bridge/index/prompt/info glue and Desktop client UI. Standard Web transport and user patches remain active; `graph-changed` reloads the page. The bundled runtime contains Node.js, compiled packages, and production dependencies. It must stop with Tauri without unmanaged descendants.
+
+Unexpected exits get at most three backoff respawns; update the live origin before navigating the window. Final startup/respawn failure shows a modal error and preserves a nonzero exit code. View > Reload Page uses `CmdOrCtrl+R`, and the default WebView context menu remains available. Rust downloads session exports directly from the current loopback host with a total timeout; framed IPC remains limited to readiness, `graph-changed`, system requests, and shutdown.
+
+### Sanctioned upstream surface change
+
+The only sanctioned non-`desktop/` change is the single root `settings.update` seat beside `settings.trigger`, declared by `packages/client/ui-settings`, rendered by `packages/client/ui-settings-general`/`SettingsRoot`, occupied only by the Desktop update badge, and empty on Web. About Desktop uses the existing `settings.section` list at the last navigation position.
+
+### Development loop
+
+- Cold start: `pnpm desktop:dev` (full Harness/runtime/deploy/Node preparation).
+- Runtime/bridge/client-UI: `pnpm --filter @deepseek-ai/dsh-desktop run build:runtime`, then restart `tauri dev`.
+- Harness package iteration: `pnpm run build:harness`, then the runtime iteration step.
+- Shell-only iteration: `DESKTOP_SKIP_BUNDLE=1 pnpm desktop:dev` (cargo rebuild only).
+- CI prepares once, runs Node and Rust tests, then lets tauri-action reuse the artifacts with `DESKTOP_SKIP_BUNDLE=1`.
 
 ---
 

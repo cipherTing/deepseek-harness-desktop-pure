@@ -31,7 +31,7 @@ const PYTHON_NODE_SUBDIR = 'node'
 /** Legacy deploy may hoist peer-specialized workspace packages back here. */
 const DEPLOY_SOURCE_NODE_MODULES = 'python/sdk-runtime/node_modules'
 /** Documentation excluded from the generated runtime directory. */
-const DEPLOY_ONLY_DOCS = ['README.md', 'README.zh.md', 'README.i18n.yaml']
+const DEPLOY_ONLY_DOCS = ['README.md', 'README.en.md']
 
 /**
  * Whole-tree assets cover Cordis's runtime bare-package imports, which pkg's
