@@ -180,8 +180,7 @@ test('Desktop client UI package ships the dsh.client contract', () => {
   assert.ok(clientUi.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-settings'))
   assert.ok(Object.keys(runtime.dependencies ?? {}).includes('@deepseek-ai/dsh-desktop-client-ui'))
   // Identity facts the About section surfaces.
-  assert.equal(typeof runtime.repository?.url, 'string')
-  assert.match(runtime.repository.url, /github\.com/)
+  assert.equal(runtime.repository?.url, 'https://github.com/cipherTing/deepseek-harness-desktop-pure')
   assert.equal(typeof runtime.author, 'string')
 })
 

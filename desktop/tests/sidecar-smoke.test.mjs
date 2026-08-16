@@ -84,7 +84,7 @@ test('bundled Node sidecar serves the loopback web host', { timeout: 120_000, sk
     assert.equal(desktopInfo.status, 200)
     const info = await desktopInfo.json()
     assert.equal(typeof info.desktopVersion, 'string')
-    assert.equal(typeof info.repository, 'string')
+    assert.equal(info.repository, 'https://github.com/cipherTing/deepseek-harness-desktop-pure')
     assert.equal(typeof info.author, 'string')
 
     // Plugin bundles come from the live module table with the manifest rev.

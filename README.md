@@ -9,16 +9,16 @@
 <p align="center">简体中文 · <a href="README.en.md">English</a></p>
 
 <p align="center">
-  <a href="https://github.com/cipherTing/deepseek-harness/releases/latest"><img src="https://img.shields.io/github/v/release/cipherTing/deepseek-harness?display_name=tag&sort=semver&label=release" alt="Latest release"></a>
-  <a href="https://github.com/cipherTing/deepseek-harness/actions/workflows/build-desktop.yml"><img src="https://github.com/cipherTing/deepseek-harness/actions/workflows/build-desktop.yml/badge.svg" alt="Desktop build"></a>
+  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><img src="https://img.shields.io/github/v/release/cipherTing/deepseek-harness-desktop-pure?display_name=tag&sort=semver&label=release" alt="Latest release"></a>
+  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml"><img src="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml/badge.svg" alt="Desktop build"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/cipherTing/deepseek-harness" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Windows%20x64-2f6feb" alt="Supported platforms">
 </p>
 
 <p align="center">
-  <a href="https://github.com/cipherTing/deepseek-harness/releases/latest"><strong>下载最新版本</strong></a>
+  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><strong>下载最新版本</strong></a>
   · <a href="https://github.com/deepseek-ai/deepseek-harness">上游项目</a>
-  · <a href="https://github.com/cipherTing/deepseek-harness/issues">Desktop 问题反馈</a>
+  · <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/issues">Desktop 问题反馈</a>
 </p>
 
 > **项目边界：本项目只做一件事，将原版 DeepSeek Harness Web 客户端打包成纯净的 Desktop 发行版。** 不新增 Harness 功能，不改变业务逻辑，不维护另一套配置、会话、工作区或用户数据，也不把上游项目改造成所谓的“Desktop 模式”。
@@ -37,7 +37,7 @@
 
 ## 下载与安装
 
-前往 [GitHub Releases](https://github.com/cipherTing/deepseek-harness/releases/latest) 下载对应平台的最新安装包。安装完成后直接启动即可，用户不需要额外配置 Node.js 或包管理器。
+前往 [GitHub Releases](https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest) 下载对应平台的最新安装包。安装完成后直接启动即可，用户不需要额外配置 Node.js 或包管理器。
 
 | 平台 | 安装包 | 支持范围 |
 | --- | --- | --- |
@@ -120,7 +120,7 @@ macOS 安装包只能在 Apple Silicon Mac 上构建，Windows x64 安装包只�
 
 | 问题类型 | 反馈位置 |
 | --- | --- |
-| Desktop 安装、启动、打包、签名、原生对话框、窗口行为、sidecar 生命周期 | [本仓库 Issues](https://github.com/cipherTing/deepseek-harness/issues) |
+| Desktop 安装、启动、打包、签名、原生对话框、窗口行为、sidecar 生命周期 | [本仓库 Issues](https://github.com/cipherTing/deepseek-harness-desktop-pure/issues) |
 | Harness 功能、模型提供方、Agent 行为、插件机制、Web 业务功能 | [上游 DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/issues) |
 
 本仓库不接受与 Desktop 打包无关的新 Harness 功能。一个功能如果应该同时存在于 CLI、原生 Web 或其他 Harness 运行方式中，就应当提交到上游项目，而不是在这里增加 Desktop 私有实现。

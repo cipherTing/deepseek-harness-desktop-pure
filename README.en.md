@@ -9,16 +9,16 @@
 <p align="center"><a href="README.md">简体中文</a> · English</p>
 
 <p align="center">
-  <a href="https://github.com/cipherTing/deepseek-harness/releases/latest"><img src="https://img.shields.io/github/v/release/cipherTing/deepseek-harness?display_name=tag&sort=semver&label=release" alt="Latest release"></a>
-  <a href="https://github.com/cipherTing/deepseek-harness/actions/workflows/build-desktop.yml"><img src="https://github.com/cipherTing/deepseek-harness/actions/workflows/build-desktop.yml/badge.svg" alt="Desktop build"></a>
+  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><img src="https://img.shields.io/github/v/release/cipherTing/deepseek-harness-desktop-pure?display_name=tag&sort=semver&label=release" alt="Latest release"></a>
+  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml"><img src="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml/badge.svg" alt="Desktop build"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/cipherTing/deepseek-harness" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Windows%20x64-2f6feb" alt="Supported platforms">
 </p>
 
 <p align="center">
-  <a href="https://github.com/cipherTing/deepseek-harness/releases/latest"><strong>Download the latest release</strong></a>
+  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><strong>Download the latest release</strong></a>
   · <a href="https://github.com/deepseek-ai/deepseek-harness">Upstream project</a>
-  · <a href="https://github.com/cipherTing/deepseek-harness/issues">Desktop issues</a>
+  · <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/issues">Desktop issues</a>
 </p>
 
 > **Project boundary: this project does exactly one thing, package the original DeepSeek Harness Web client as a clean Desktop distribution.** It does not add Harness features, change business logic, maintain a second configuration or data model, or turn the upstream project into a separate "Desktop mode."
@@ -37,7 +37,7 @@
 
 ## Download and install
 
-Download the latest package for your platform from [GitHub Releases](https://github.com/cipherTing/deepseek-harness/releases/latest). Once installed, launch the application directly; no Node.js or package-manager setup is required.
+Download the latest package for your platform from [GitHub Releases](https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest). Once installed, launch the application directly; no Node.js or package-manager setup is required.
 
 | Platform | Package | Support |
 | --- | --- | --- |
@@ -116,7 +116,7 @@ The macOS package must be built on an Apple Silicon Mac, and the Windows x64 pac
 
 | Issue | Destination |
 | --- | --- |
-| Desktop installation, startup, packaging, signing, native dialogs, window behavior, or sidecar lifecycle | [This repository's Issues](https://github.com/cipherTing/deepseek-harness/issues) |
+| Desktop installation, startup, packaging, signing, native dialogs, window behavior, or sidecar lifecycle | [This repository's Issues](https://github.com/cipherTing/deepseek-harness-desktop-pure/issues) |
 | Harness features, model providers, Agent behavior, plugin mechanics, or Web product functionality | [Upstream DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/issues) |
 
 This repository does not accept new Harness features unrelated to Desktop packaging. If a capability should also exist in the CLI, native Web, or another Harness runtime, it belongs upstream rather than in a Desktop-private implementation here.
