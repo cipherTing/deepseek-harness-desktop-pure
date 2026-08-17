@@ -259,9 +259,18 @@ describe('ToolRow', () => {
   it('file rows expand from the row while the path link opens without toggling', () => {
     const open = vi.fn()
     const view = render(
-      <ToolRow {...rowProps} variant="read" title="Read" summary="src/a.ts" filePath="src/a.ts" onOpenFile={open} />,
+      <ToolRow
+        {...rowProps}
+        variant="read"
+        title="Read"
+        summary="src/a.ts"
+        filePath="src/a.ts"
+        nativeFilePath="/workspace/src/a.ts"
+        onOpenFile={open}
+      />,
     )
     const row = view.getByRole('button', { name: /Read/ })
+    expect(view.getByText('src/a.ts').getAttribute('data-dsh-file-path')).toBe('/workspace/src/a.ts')
     // Path click opens the file and leaves the row collapsed.
     fireEvent.click(view.getByText('src/a.ts'))
     expect(open).toHaveBeenCalledWith('src/a.ts')

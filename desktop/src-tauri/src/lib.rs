@@ -15,6 +15,7 @@ use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder,
 };
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::{
@@ -27,11 +28,15 @@ use tokio::{
 };
 use url::Url;
 
+mod file_handlers;
+
 const PROTOCOL_VERSION: u32 = 1;
 /** Respawn attempts after an unexpected sidecar exit (exponential backoff). */
 const RESPAWN_ATTEMPTS: u32 = 3;
 /** Total cap for one session-export download (10 minutes). */
 const EXPORT_TIMEOUT: Duration = Duration::from_secs(600);
+/** Upper bound for copying one text file into the system clipboard. */
+const CLIPBOARD_FILE_LIMIT: u64 = 8 * 1024 * 1024;
 #[derive(Default)]
 struct DesktopState {
     peer: RwLock<Option<Arc<SidecarPeer>>>,
@@ -52,6 +57,13 @@ struct DesktopHttpRequest {
     url: String,
     #[serde(default)]
     headers: HashMap<String, String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum DesktopSaveResult {
+    FileSaved,
+    Cancelled,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -355,6 +367,174 @@ async fn handle_system_request(
     }
 }
 
+/** Parse a user-triggered external URL without granting arbitrary URI schemes. */
+fn external_browser_url(value: &str) -> Result<Url, String> {
+    let url = Url::parse(value).map_err(|error| error.to_string())?;
+    if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
+        return Err("Desktop can only open absolute HTTP(S) URLs externally".into());
+    }
+    Ok(url)
+}
+
+/** Resolve an absolute filesystem target or a standards-compliant file URL. */
+fn linked_file_path(value: &str) -> Result<PathBuf, String> {
+    if value.is_empty() {
+        return Err("Desktop file link path cannot be empty".into());
+    }
+    if value
+        .get(..5)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("file:"))
+    {
+        let url = Url::parse(value).map_err(|error| error.to_string())?;
+        if url.scheme() != "file"
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            return Err("Desktop file links must be local file URLs".into());
+        }
+        return url
+            .to_file_path()
+            .map_err(|_| "Desktop file URL cannot be converted to a local path".to_string());
+    }
+
+    let path = PathBuf::from(value);
+    if !path.is_absolute() {
+        return Err("Desktop native file actions require an absolute path".into());
+    }
+    Ok(path)
+}
+
+/** Resolve a linked local path and require a regular file for read/copy actions. */
+fn linked_regular_file_path(value: &str) -> Result<PathBuf, String> {
+    let path = linked_file_path(value)?;
+    let metadata = std::fs::metadata(&path).map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("Desktop file actions require a regular file".into());
+    }
+    Ok(path)
+}
+
+/** Extract a displayable filename for the native Save As dialog. */
+fn linked_file_name(path: &Path) -> Result<String, String> {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| "Desktop file action could not determine a filename".to_string())
+}
+
+/** Convert a linked path to the Unicode argument accepted by Tauri Opener. */
+fn linked_file_argument(path: PathBuf) -> Result<String, String> {
+    path.into_os_string()
+        .into_string()
+        .map_err(|_| "Desktop file links must contain valid Unicode paths".to_string())
+}
+
+#[tauri::command]
+fn desktop_open_external_url(app: AppHandle, url: String) -> Result<(), String> {
+    app.opener()
+        .open_url(external_browser_url(&url)?, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn desktop_open_file(app: AppHandle, path: String) -> Result<(), String> {
+    let path = linked_file_argument(linked_file_path(&path)?)?;
+    app.opener()
+        .open_path(path, None::<String>)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn desktop_file_handlers(path: String) -> Result<file_handlers::FileHandlerMenu, String> {
+    Ok(file_handlers::menu_for(&linked_file_path(&path)?))
+}
+
+#[tauri::command]
+fn desktop_open_file_with(app: AppHandle, path: String, handler_id: String) -> Result<(), String> {
+    let path = linked_file_path(&path)?;
+    if !std::fs::metadata(&path)
+        .map_err(|error| error.to_string())?
+        .is_file()
+    {
+        return Err("Desktop Open With actions require a regular file".into());
+    }
+    let handler = file_handlers::find_for(&path, &handler_id)
+        .ok_or_else(|| "Desktop file handler is no longer available".to_string())?;
+    app.opener()
+        .open_path(linked_file_argument(path)?, Some(handler.launcher()))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn desktop_copy_text(app: AppHandle, text: String) -> Result<(), String> {
+    app.clipboard()
+        .write_text(text)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn desktop_reveal_file(app: AppHandle, path: String) -> Result<(), String> {
+    app.opener()
+        .reveal_item_in_dir(linked_file_path(&path)?)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_save_file_as(app: AppHandle, path: String) -> Result<DesktopSaveResult, String> {
+    let source = linked_regular_file_path(&path)?;
+    let file_name = linked_file_name(&source)?;
+    let target = tokio::task::spawn_blocking({
+        let app = app.clone();
+        move || {
+            let window = app
+                .get_webview_window("main")
+                .ok_or_else(|| "Desktop main window is unavailable".to_string())?;
+            Ok::<_, String>(
+                app.dialog()
+                    .file()
+                    .set_parent(&window)
+                    .set_file_name(file_name)
+                    .blocking_save_file(),
+            )
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    let Some(target) = target else {
+        return Ok(DesktopSaveResult::Cancelled);
+    };
+    let target = target.into_path().map_err(|error| error.to_string())?;
+    tokio::task::spawn_blocking(move || {
+        std::fs::copy(source, target).map_err(|error| error.to_string())?;
+        Ok::<_, String>(())
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    Ok(DesktopSaveResult::FileSaved)
+}
+
+#[tauri::command]
+async fn desktop_copy_file_contents(app: AppHandle, path: String) -> Result<(), String> {
+    let source = linked_regular_file_path(&path)?;
+    let contents = tokio::task::spawn_blocking(move || {
+        let metadata = std::fs::metadata(&source).map_err(|error| error.to_string())?;
+        if metadata.len() > CLIPBOARD_FILE_LIMIT {
+            return Err(format!(
+                "Desktop can copy text files up to {CLIPBOARD_FILE_LIMIT} bytes to the clipboard"
+            ));
+        }
+        std::fs::read_to_string(source).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    app.clipboard()
+        .write_text(contents)
+        .map_err(|error| error.to_string())
+}
+
 /** Validate that a save request targets the current sidecar's export endpoint. */
 fn validate_export_request(
     request: &DesktopHttpRequest,
@@ -407,7 +587,7 @@ async fn desktop_save_session(
     state: tauri::State<'_, DesktopState>,
     request: DesktopHttpRequest,
     filename: String,
-) -> Result<(), String> {
+) -> Result<DesktopSaveResult, String> {
     let current_origin = state
         .origin
         .read()
@@ -417,16 +597,24 @@ async fn desktop_save_session(
     let target = tokio::task::spawn_blocking({
         let app = app.clone();
         move || {
-            app.dialog()
-                .file()
-                .set_file_name(filename)
-                .add_filter("ZIP archive", &["zip"])
-                .blocking_save_file()
+            let window = app
+                .get_webview_window("main")
+                .ok_or_else(|| "Desktop main window is unavailable".to_string())?;
+            Ok::<_, String>(
+                app.dialog()
+                    .file()
+                    .set_parent(&window)
+                    .set_file_name(filename)
+                    .add_filter("ZIP archive", &["zip"])
+                    .blocking_save_file(),
+            )
         }
     })
     .await
-    .map_err(|error| error.to_string())?;
-    let Some(target) = target else { return Ok(()) };
+    .map_err(|error| error.to_string())??;
+    let Some(target) = target else {
+        return Ok(DesktopSaveResult::Cancelled);
+    };
     let target = target.into_path().map_err(|error| error.to_string())?;
     let temp = temporary_export_path(&target);
     let cleanup_temp = temp.clone();
@@ -438,7 +626,7 @@ async fn desktop_save_session(
     if result.is_err() {
         let _ = std::fs::remove_file(&cleanup_temp);
     }
-    result
+    result.map(|()| DesktopSaveResult::FileSaved)
 }
 
 fn temporary_export_path(target: &Path) -> PathBuf {
@@ -524,6 +712,18 @@ fn spawn_sidecar_reader(
     exit_rx
 }
 
+/** Build the module-mode Node expression used to bypass Windows main-script lookup. */
+#[cfg(target_os = "windows")]
+fn node_sidecar_import(script: &Path) -> Result<String, String> {
+    let script_url = Url::from_file_path(script)
+        .map_err(|_| "Desktop sidecar path cannot be converted to a file URL".to_string())?;
+    let script_url =
+        serde_json::to_string(script_url.as_str()).map_err(|error| error.to_string())?;
+    Ok(format!(
+        "try {{ await import({script_url}); }} catch (error) {{ console.error(error); process.exitCode = 1; }}"
+    ))
+}
+
 async fn spawn_sidecar(
     app: &AppHandle,
 ) -> Result<(Arc<SidecarPeer>, String, oneshot::Receiver<()>), String> {
@@ -534,11 +734,18 @@ async fn spawn_sidecar(
     let script = resource.join("rt/lib/sidecar.mjs");
     let cwd = app.path().home_dir().map_err(|error| error.to_string())?;
     let (ready_tx, ready_rx) = oneshot::channel();
-    let (events, child) = app
+    let command = app
         .shell()
         .sidecar("node")
-        .map_err(|error| error.to_string())?
-        .arg(script)
+        .map_err(|error| error.to_string())?;
+    #[cfg(target_os = "windows")]
+    let command = command
+        .arg("--input-type=module")
+        .arg("--eval")
+        .arg(node_sidecar_import(&script)?);
+    #[cfg(not(target_os = "windows"))]
+    let command = command.arg(script);
+    let (events, child) = command
         .current_dir(cwd)
         .set_raw_out(true)
         .spawn()
@@ -742,10 +949,21 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(DesktopState::default())
-        .invoke_handler(tauri::generate_handler![desktop_save_session])
+        .invoke_handler(tauri::generate_handler![
+            desktop_open_external_url,
+            desktop_open_file,
+            desktop_file_handlers,
+            desktop_open_file_with,
+            desktop_copy_text,
+            desktop_reveal_file,
+            desktop_save_file_as,
+            desktop_copy_file_contents,
+            desktop_save_session,
+        ])
         .on_menu_event(|app, event| match event.id().0.as_str() {
             "quit" => begin_graceful_exit(app, 0),
             "reload" => {
@@ -813,6 +1031,11 @@ pub fn run() {
                             }
                             false
                         });
+                        #[cfg(target_os = "macos")]
+                        let window = window
+                            .title_bar_style(tauri::TitleBarStyle::Overlay)
+                            .hidden_title(true)
+                            .decorations(true);
                         match window.build() {
                             Ok(_) => monitor_sidecar_exit(peer, exited, handle.clone()),
                             Err(error) => {

@@ -71,10 +71,22 @@ test('Tauri prepares the bundle exactly once', () => {
   assert.equal(tauriConfig.build.beforeBuildCommand, 'pnpm run bundle:prepare')
 })
 
-test('Desktop uses native title bars and keeps the default WebView context menu', () => {
+test('macOS overlays the native title bar with drag and double-click zoom gestures', () => {
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  const bridge = readFileSync(new URL('../bridge/src/index.ts', import.meta.url), 'utf8')
+  const capability = readJson(new URL('../src-tauri/capabilities/main.json', import.meta.url))
 
-  assert.doesNotMatch(rust, /TitleBarStyle::Overlay|hidden_title\(true\)/)
+  assert.match(rust, /#\[cfg\(target_os = "macos"\)\]/)
+  assert.match(rust, /TitleBarStyle::Overlay/)
+  assert.match(rust, /hidden_title\(true\)/)
+  assert.match(rust, /decorations\(true\)/)
+  assert.doesNotMatch(rust, /decorations\(false\)/)
+  assert.match(bridge, /getCurrentWindow/)
+  assert.match(bridge, /MACOS_TITLE_BAR_HEIGHT/)
+  assert.match(bridge, /startDragging\(\)/)
+  assert.match(bridge, /toggleMaximize\(\)/)
+  assert.ok(capability.permissions.includes('core:window:allow-start-dragging'))
+  assert.ok(capability.permissions.includes('core:window:allow-toggle-maximize'))
   assert.doesNotMatch(rust, /\.devtools\(false\)/)
   assert.doesNotMatch(rust, /initialization_script\(DISABLE_CONTEXT_MENU_SCRIPT\)/)
   assert.doesNotMatch(rust, /addEventListener\("contextmenu"/)
@@ -82,6 +94,7 @@ test('Desktop uses native title bars and keeps the default WebView context menu'
 
 test('Desktop loads the loopback web host without custom protocols', () => {
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  const buildScript = readFileSync(new URL('../src-tauri/build.rs', import.meta.url), 'utf8')
   const tauriConfig = readJson(new URL('../src-tauri/tauri.conf.json', import.meta.url))
   const capability = readJson(new URL('../src-tauri/capabilities/main.json', import.meta.url))
   const entitlements = readFileSync(new URL('../src-tauri/node-entitlements.plist', import.meta.url), 'utf8')
@@ -103,6 +116,38 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   assert.equal(existsSync(new URL('../src-tauri/resources/web', import.meta.url)), false)
   // Remote IPC is granted only to the loopback web host.
   assert.deepEqual(capability.remote, { urls: ['http://127.0.0.1:*'] })
+  // Tauri blocks undeclared application commands from remote origins. The
+  // loopback page receives only these business-level Desktop operations.
+  for (const command of [
+    'allow-desktop-open-external-url',
+    'allow-desktop-open-file',
+    'allow-desktop-file-handlers',
+    'allow-desktop-open-file-with',
+    'allow-desktop-copy-text',
+    'allow-desktop-reveal-file',
+    'allow-desktop-save-file-as',
+    'allow-desktop-copy-file-contents',
+    'allow-desktop-save-session',
+  ]) {
+    assert.ok(capability.permissions.includes(command))
+  }
+  // Custom commands are rejected from a remote origin unless Tauri generates
+  // matching application-manifest permissions in build.rs.
+  assert.match(buildScript, /tauri_build::try_build/)
+  assert.match(buildScript, /AppManifest::new\(\)\.commands/)
+  for (const command of [
+    'desktop_open_external_url',
+    'desktop_open_file',
+    'desktop_file_handlers',
+    'desktop_open_file_with',
+    'desktop_copy_text',
+    'desktop_reveal_file',
+    'desktop_save_file_as',
+    'desktop_copy_file_contents',
+    'desktop_save_session',
+  ]) {
+    assert.match(buildScript, new RegExp(`"${command}"`))
+  }
   // macOS hardened runtime needs outbound network access for the WebView.
   assert.match(entitlements, /<key>com\.apple\.security\.network\.client<\/key>\s*<true\/>/)
   // The in-process fake HTTP server is gone; the desktop API gateway keeps
@@ -116,6 +161,55 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   assert.match(overlay, /desktop-api-gateway/)
   // One surface prompt: the desktop wording replaces the web one.
   assert.match(overlay, /surfaceContext: false/)
+})
+
+test('Desktop resolves native file handlers without giving the WebView executable access', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  const handlers = readFileSync(new URL('../src-tauri/src/file_handlers.rs', import.meta.url), 'utf8')
+  const bridge = readFileSync(new URL('../bridge/src/index.ts', import.meta.url), 'utf8')
+
+  assert.match(rust, /fn desktop_file_handlers/)
+  assert.match(rust, /fn desktop_open_file_with/)
+  assert.match(rust, /file_handlers::find_for/)
+  assert.match(handlers, /URLsForApplicationsToOpenURL/)
+  assert.match(handlers, /URLForApplicationToOpenURL/)
+  assert.match(handlers, /URLForApplicationWithBundleIdentifier/)
+  assert.match(handlers, /RegGetValueW/)
+  assert.match(handlers, /App Paths/)
+  assert.match(handlers, /WINDOWS_DEVELOPER_APPLICATIONS/)
+  assert.match(bridge, /desktop_file_handlers/)
+  assert.match(bridge, /desktop_open_file_with/)
+  assert.match(bridge, /desktop_copy_text/)
+  assert.doesNotMatch(bridge, /document\.execCommand/)
+  assert.match(bridge, /openWith/)
+  assert.match(bridge, /defaultApplication/)
+  assert.match(bridge, /max-height:min\(440px,calc\(100vh - 16px\)\)/)
+  assert.match(bridge, /overflow-y:auto/)
+  assert.match(bridge, /submenu\.style\.top/)
+  assert.match(bridge, /width:calc\(100% \+ 8px\)/)
+  assert.match(bridge, /width:calc\(100% - 8px\)/)
+  assert.match(bridge, /dsh-desktop-link-submenu-panel/)
+})
+
+test('Windows release packaging avoids a console and Node main-script resolution', () => {
+  const main = readFileSync(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8')
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+
+  assert.match(main, /target_os = "windows"/)
+  assert.match(main, /not\(debug_assertions\)/)
+  assert.match(main, /windows_subsystem = "windows"/)
+  assert.match(rust, /node_sidecar_import/)
+  assert.match(rust, /--input-type=module/)
+  assert.match(rust, /--eval/)
+  assert.match(rust, /Url::from_file_path/)
+})
+
+test('Desktop uses the generic async save carrier instead of patching anchor clicks', () => {
+  const bridge = readFileSync(new URL('../bridge/src/index.ts', import.meta.url), 'utf8')
+
+  assert.match(bridge, /__DSH_DOWNLOAD_CARRIER__/)
+  assert.match(bridge, /desktop_save_session/)
+  assert.doesNotMatch(bridge, /HTMLAnchorElement\.prototype\.click/)
 })
 
 test('Desktop shell supervises its sidecar and exposes a reload affordance', () => {

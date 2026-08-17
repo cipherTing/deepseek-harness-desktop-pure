@@ -40,11 +40,11 @@ Tauri owns the window, assets, sidecar lifecycle, readiness, framed IPC, native 
 
 The sidecar runs upstream `web` plus a read-only overlay that replaces directory picking, applies Desktop open-path defaults through the shared API-proxy trust fence, and adds bridge/index/prompt/info glue and Desktop client UI. Standard Web transport and user patches remain active; `graph-changed` reloads the page. The bundled runtime contains Node.js, compiled packages, and production dependencies. It must stop with Tauri without unmanaged descendants.
 
-Unexpected exits get at most three backoff respawns; update the live origin before navigating the window. Final startup/respawn failure shows a modal error and preserves a nonzero exit code. View > Reload Page uses `CmdOrCtrl+R`, and the default WebView context menu remains available. Rust downloads session exports directly from the current loopback host with a total timeout; framed IPC remains limited to readiness, `graph-changed`, system requests, and shutdown.
+Unexpected exits get at most three backoff respawns; update the live origin before navigating the window. Final startup/respawn failure shows a modal error and preserves a nonzero exit code. View > Reload Page uses `CmdOrCtrl+R`, and the default WebView context menu remains available. macOS uses Tauri's overlay title bar with native traffic lights; the top strip preserves native-style drag and double-click zoom through Tauri window APIs, while Windows keeps its native title bar. Rust downloads session exports directly from the current loopback host with a total timeout; framed IPC remains limited to readiness, `graph-changed`, system requests, and shutdown.
 
 ### Sanctioned upstream surface change
 
-The only sanctioned non-`desktop/` change is the single root `settings.update` seat beside `settings.trigger`, declared by `packages/client/ui-settings`, rendered by `packages/client/ui-settings-general`/`SettingsRoot`, occupied only by the Desktop update badge, and empty on Web. About Desktop uses the existing `settings.section` list at the last navigation position.
+The sanctioned non-`desktop/` changes are the single root `settings.update` seat beside `settings.trigger`, declared by `packages/client/ui-settings`, rendered by `packages/client/ui-settings-general`/`SettingsRoot`, occupied only by the Desktop update badge, and empty on Web; and the generic asynchronous save carrier in `packages/session-query/session-log-export`, whose default browser carrier remains unchanged and which Desktop may install for native Session ZIP saving. About Desktop uses the existing `settings.section` list at the last navigation position.
 
 ### Development loop
 

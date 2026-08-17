@@ -1,15 +1,19 @@
+/** Session export save result returned by the active surface carrier. */
+export type SessionLogDownloadSaveResult = 'download-started' | 'file-saved' | 'cancelled'
+
 /** Browser download state shared by the Session Header button and `/export`. */
 
 import { createSnapshotStore, type SessionId, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 
 /** Download phases presented by the shared modal. */
-export type SessionLogDownloadStatus = 'downloading' | 'success' | 'error'
+export type SessionLogDownloadStatus = 'downloading' | 'success' | 'cancelled' | 'error'
 
 /** One Session's current download-dialog state. */
 export interface SessionLogDownloadEntry {
   readonly open: boolean
   readonly status: SessionLogDownloadStatus
   readonly error: string | null
+  readonly successMode?: Exclude<SessionLogDownloadSaveResult, 'cancelled'>
 }
 
 /** Download states keyed by the Session whose Header owns the dialog. */
@@ -18,7 +22,11 @@ export interface SessionLogDownloadState {
 }
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
-type Save = (url: string, filename: string) => void
+type Save = (url: string, filename: string) => SessionLogDownloadSaveResult | Promise<SessionLogDownloadSaveResult>
+
+interface DownloadCarrier {
+  save(url: string, filename: string): Promise<Extract<SessionLogDownloadSaveResult, 'file-saved' | 'cancelled'>>
+}
 
 const INITIAL: SessionLogDownloadState = { bySession: {} }
 
@@ -35,12 +43,20 @@ export function sessionLogZipFilename(sessionId: SessionId): string {
  * Hand a Host download URL to the browser download manager.
  * @param url - same-origin Host download URL.
  * @param filename - browser download filename.
+ * @returns `download-started` after the browser receives the download action.
  */
-export function downloadUrl(url: string, filename: string): void {
+export function downloadUrl(url: string, filename: string): SessionLogDownloadSaveResult {
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = filename
   anchor.click()
+  return 'download-started'
+}
+
+/** Resolve the optional native save carrier installed before the client boots. */
+function defaultSave(url: string, filename: string): SessionLogDownloadSaveResult | Promise<SessionLogDownloadSaveResult> {
+  const carrier = (globalThis as { __DSH_DOWNLOAD_CARRIER__?: DownloadCarrier }).__DSH_DOWNLOAD_CARRIER__
+  return carrier?.save(url, filename) ?? downloadUrl(url, filename)
 }
 
 /** Resolve the browser's Host base with the connection carrier's null-origin fallback. */
@@ -63,17 +79,17 @@ export class SessionLogDownloadController {
 
   /**
    * @param fetcher - HTTP carrier used to read the host-streamed ZIP.
-   * @param save - browser save operation.
+   * @param save - surface save operation; the default uses the optional native carrier or browser download.
    */
   constructor(
     private readonly fetcher: Fetch = (input, init) => fetch(input, init),
-    private readonly save: Save = downloadUrl,
+    private readonly save: Save = defaultSave,
   ) {}
 
   /**
    * Download one Session tree; concurrent gestures for the same Session share one operation.
    * @param sessionId - root Session whose ZIP includes descendants and attachments.
-   * @returns after the browser save starts, an error state is published, or a late post-disposal request is ignored.
+   * @returns after the surface save settles, an error state is published, or a late post-disposal request is ignored.
    */
   download(sessionId: SessionId): Promise<void> {
     const existing = this.active.get(sessionId)
@@ -119,9 +135,13 @@ export class SessionLogDownloadController {
         const detail = await response.text().catch(() => '')
         throw new Error(`Export failed: HTTP ${response.status}${detail === '' ? '' : ` ${detail}`}`)
       }
-      this.save(url.toString(), sessionLogZipFilename(sessionId))
+      const result = await this.save(url.toString(), sessionLogZipFilename(sessionId))
+      if (result === 'cancelled') {
+        this.publish(sessionId, { open: false, status: 'cancelled', error: null })
+        return
+      }
       const open = this.store.getSnapshot().bySession[String(sessionId)]?.open ?? true
-      this.publish(sessionId, { open, status: 'success', error: null })
+      this.publish(sessionId, { open, status: 'success', error: null, successMode: result })
     } catch (error: unknown) {
       if (signal.aborted) return
       const open = this.store.getSnapshot().bySession[String(sessionId)]?.open ?? true

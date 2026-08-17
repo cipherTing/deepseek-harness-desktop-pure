@@ -77,7 +77,7 @@ test('bundled Node sidecar serves the loopback web host', { timeout: 120_000, sk
     const bridge = await fetch(`${origin}/desktop-bridge.js`)
     assert.equal(bridge.status, 200)
     assert.match(bridge.headers.get('content-type') ?? '', /text\/javascript/)
-    assert.match(await bridge.text(), /desktop_save_session/)
+    assert.match(await bridge.text(), /__DSH_DOWNLOAD_CARRIER__|desktop_save_session/)
 
     // Desktop facts for the About section and the update badge.
     const desktopInfo = await fetch(`${origin}/desktop-info.json`)

@@ -5,7 +5,18 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:allow-open-url"
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
+    "opener:allow-open-url",
+    "allow-desktop-open-external-url",
+    "allow-desktop-open-file",
+    "allow-desktop-file-handlers",
+    "allow-desktop-open-file-with",
+    "allow-desktop-copy-text",
+    "allow-desktop-reveal-file",
+    "allow-desktop-save-file-as",
+    "allow-desktop-copy-file-contents",
+    "allow-desktop-save-session"
   ],
   "remote": {
     "urls": ["http://127.0.0.1:*"]

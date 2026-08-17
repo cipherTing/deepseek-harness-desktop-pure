@@ -4,7 +4,7 @@
 
 <h1 align="center">DeepSeek Harness Desktop</h1>
 
-<p align="center"><strong>A clean, ready-to-use desktop distribution of the upstream DeepSeek Harness Web client.</strong></p>
+<p align="center"><strong>A clean, ready-to-use desktop distribution of the DeepSeek Harness Web client.</strong></p>
 
 <p align="center"><a href="README.md">简体中文</a> · English</p>
 
@@ -17,11 +17,11 @@
 
 <p align="center">
   <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><strong>Download the latest release</strong></a>
-  · <a href="https://github.com/deepseek-ai/deepseek-harness">Upstream project</a>
+  · <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness project</a>
   · <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/issues">Desktop issues</a>
 </p>
 
-> **Project boundary: this project does exactly one thing, package the original DeepSeek Harness Web client as a clean Desktop distribution.** It does not add Harness features, change business logic, maintain a second configuration or data model, or turn the upstream project into a separate "Desktop mode."
+> **Project boundary: this project does exactly one thing, package the DeepSeek Harness Web client as a clean Desktop distribution.** It does not add Harness features, change business logic, maintain a second configuration or data model, or introduce a separate "Desktop mode" into DeepSeek Harness.
 
 ## Project scope
 
@@ -29,11 +29,11 @@
 
 | Principle | Meaning |
 | --- | --- |
-| **Clean packaging** | Preserve the upstream Web UI, APIs, event streams, dynamic plugins, and Harness runtime semantics instead of copying or rewriting Web functionality. |
+| **Clean packaging** | Preserve the DeepSeek Harness Web UI, APIs, event streams, dynamic plugins, and Harness runtime semantics instead of copying or rewriting Web functionality. |
 | **No runtime setup** | Release packages include Node.js and the Harness production dependency closure; users do not install Node.js, pnpm, Rust, or another development environment. |
 | **One data model** | Desktop and native Web use the same `DSH_HOME`, `~/.dsh`, `.env` loading rules, settings, credentials, sessions, workspaces, and caches. |
-| **Extremely low intrusion** | Desktop integration stays under `desktop/` whenever possible; upstream code changes are allowed only for a concrete Tauri blocker and must remain minimal. |
-| **Independent distribution** | Desktop has its own SemVer releases, while the synchronized upstream revision is recorded separately. |
+| **Extremely low intrusion** | Desktop integration stays under `desktop/` whenever possible; original-project code changes are allowed only for a concrete Tauri blocker and must remain minimal. |
+| **Independent distribution** | Desktop has its own SemVer releases, while the synchronized original-project revision is recorded separately. |
 
 ## Download and install
 
@@ -56,11 +56,11 @@ flowchart LR
   T["Tauri native shell"] -->|"start, supervise, stop"| S["Bundled Node.js sidecar"]
   W -->|"loopback HTTP / WebSocket"| S
   T <-->|"native directory and path operations"| S
-  S --> H["Upstream Harness web profile"]
+  S --> H["DeepSeek Harness web profile"]
   H --> D["DSH_HOME / ~/.dsh"]
 ```
 
-The upstream Web Host remains responsible for the index document, client-plugin bundles, `/api`, event streams, and dynamic-plugin updates. Desktop owns only the native window, process lifecycle, distribution, and required operating-system interactions.
+The DeepSeek Harness Web Host remains responsible for the index document, client-plugin bundles, `/api`, event streams, and dynamic-plugin updates. Desktop owns only the native window, process lifecycle, distribution, and required operating-system interactions.
 
 ## Configuration and data compatibility
 
@@ -70,19 +70,19 @@ The upstream Web Host remains responsible for the index document, client-plugin 
 - Desktop and native Web can read the same settings, credentials, profiles, sessions, workspaces, and caches.
 - Bundled Node.js, JavaScript dependencies, and Tauri resources are runtime files only and are never mixed with Harness user data.
 
-## Native Web and upstream source
+## Native Web and DeepSeek Harness source
 
 ### Run
 
-To start the native Web client directly, follow the [upstream run instructions](https://github.com/deepseek-ai/deepseek-harness#run). Desktop neither replaces nor changes that path.
+To start the native Web client directly, follow the [DeepSeek Harness project run instructions](https://github.com/deepseek-ai/deepseek-harness#run). Desktop neither replaces nor changes that path.
 
 ### Run from source
 
-To develop Harness itself or launch from upstream source, follow the [upstream source instructions](https://github.com/deepseek-ai/deepseek-harness#run-from-source). This repository adds only the Desktop packaging layer on top.
+To develop Harness itself or launch from the DeepSeek Harness source, follow the [DeepSeek Harness project source instructions](https://github.com/deepseek-ai/deepseek-harness#run-from-source). This repository adds only the Desktop packaging layer on top.
 
 ## Local development
 
-The repository keeps the upstream development workflow and adds two root-level Desktop commands. Desktop CI and release packaging pin Node.js `22.23.2`, pnpm `11.7.0`, Rust `1.96.0`, and Tauri 2.
+The repository keeps the DeepSeek Harness project development workflow and adds two root-level Desktop commands. Desktop CI and release packaging pin Node.js `22.23.2`, pnpm `11.7.0`, Rust `1.96.0`, and Tauri 2.
 
 Install dependencies:
 
@@ -108,18 +108,18 @@ The macOS package must be built on an Apple Silicon Mac, and the Windows x64 pac
 
 - [`desktop/package.json`](desktop/package.json) is the only Desktop version source.
 - Change the version with `pnpm desktop:version:set -- <version>`, then verify all mirrors with `pnpm desktop:version:check`.
-- [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) records only the latest upstream commit incorporated into this fork, never the fork HEAD.
+- [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) records only the latest original-project commit incorporated into this fork, never the fork HEAD.
 - GitHub Actions is maintainer-triggered only; a `v<version>` Release is published after both macOS and Windows builds succeed.
-- CI never fetches, merges, or rebases upstream automatically. Upstream synchronization is reviewed and performed manually.
+- CI never fetches, merges, or rebases the original project automatically. Original-project synchronization is reviewed and performed manually.
 
 ## Where to report an issue
 
 | Issue | Destination |
 | --- | --- |
 | Desktop installation, startup, packaging, signing, native dialogs, window behavior, or sidecar lifecycle | [This repository's Issues](https://github.com/cipherTing/deepseek-harness-desktop-pure/issues) |
-| Harness features, model providers, Agent behavior, plugin mechanics, or Web product functionality | [Upstream DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/issues) |
+| Harness features, model providers, Agent behavior, plugin mechanics, or Web product functionality | [DeepSeek Harness project](https://github.com/deepseek-ai/deepseek-harness/issues) |
 
-This repository does not accept new Harness features unrelated to Desktop packaging. If a capability should also exist in the CLI, native Web, or another Harness runtime, it belongs upstream rather than in a Desktop-private implementation here.
+This repository does not accept new Harness features unrelated to Desktop packaging. If a capability should also exist in the CLI, native Web, or another Harness runtime, it belongs in DeepSeek Harness rather than in a Desktop-private implementation here.
 
 ## Contributing
 
@@ -129,4 +129,4 @@ Maintainer: [cipherTing](https://github.com/cipherTing)
 
 ## License and attribution
 
-This fork retains the upstream [MIT License](LICENSE). Third-party dependencies and licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). DeepSeek names and marks remain the property of their respective owners and are used only to identify the upstream project packaged here; see [desktop/assets/README.md](desktop/assets/README.md) for the icon source and license.
+This fork retains the original project's [MIT License](LICENSE). Third-party dependencies and licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). DeepSeek names and marks remain the property of their respective owners and are used only to identify the DeepSeek Harness Web client packaged here; see [desktop/assets/README.md](desktop/assets/README.md) for the icon source and license.

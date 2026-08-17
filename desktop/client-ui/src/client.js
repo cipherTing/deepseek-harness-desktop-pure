@@ -242,6 +242,18 @@ window.__ModuleLoader__.load({
       const slots = ctx.get("slots");
       if (locale === undefined || slots === undefined) return;
       ctx.effect(() => locale.register(NS, { zh, en }), "desktop-client-ui: dictionaries");
+      ctx.effect(() => {
+        const root = document.documentElement;
+        const previous = root.dataset.dshDesktopLocale;
+        const sync = () => { root.dataset.dshDesktopLocale = locale.getSnapshot().active; };
+        sync();
+        const unsubscribe = locale.subscribe(sync);
+        return () => {
+          unsubscribe();
+          if (previous === undefined) delete root.dataset.dshDesktopLocale;
+          else root.dataset.dshDesktopLocale = previous;
+        };
+      }, "desktop-client-ui: bridge locale");
       slots.inject("settings.section", () => slots.register({
         name: "settings.section",
         id: "desktop-about",

@@ -9,6 +9,7 @@
 // section, its first line in the collapsed summary.
 
 import type { Context } from '@deepseek-ai/cordis'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
 import { IconEditOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -32,6 +33,7 @@ type FileMutationRowProps = ToolCallViewProps & PropsLocale<'conversation'>
 export function FileMutationRow({ toolName, block, cwd, openFile, inspect, t }: FileMutationRowProps) {
   const model = toolRowModel(toolName, block, cwd)
   const diff = diffCardModel(block)
+  const nativeFilePath = model.filePath === undefined ? undefined : resolveWorkspacePath(cwd, model.filePath)
   return (
     <ToolRow
       t={t}
@@ -47,6 +49,7 @@ export function FileMutationRow({ toolName, block, cwd, openFile, inspect, t }: 
       state={model.state}
       filePath={model.filePath}
       onOpenFile={openFile}
+      nativeFilePath={nativeFilePath}
       inspect={inspect}
     />
   )

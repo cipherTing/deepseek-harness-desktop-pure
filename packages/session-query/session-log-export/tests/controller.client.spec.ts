@@ -15,7 +15,7 @@ afterEach(() => {
 describe('SessionLogDownloadController', () => {
   it('downloads the host ZIP and publishes one shared success state', async () => {
     const fetcher = vi.fn(async () => new Response('zip', { status: 200 }))
-    const save = vi.fn()
+    const save = vi.fn(() => 'download-started' as const)
     const controller = new SessionLogDownloadController(fetcher, save)
 
     await controller.download(SID)
@@ -32,7 +32,46 @@ describe('SessionLogDownloadController', () => {
       'dsh-session-session-export-controller.zip',
     )
     expect(controller.store.getSnapshot().bySession[SID]).toEqual({
-      open: true, status: 'success', error: null,
+      open: true, status: 'success', error: null, successMode: 'download-started',
+    })
+  })
+
+  it('keeps the dialog in progress until native saving settles', async () => {
+    const saved = Promise.withResolvers<'file-saved'>()
+    const save = vi.fn(() => saved.promise)
+    const controller = new SessionLogDownloadController(
+      async () => new Response('zip', { status: 200 }),
+      save,
+    )
+
+    const download = controller.download(SID)
+    await vi.waitFor(() => { expect(save).toHaveBeenCalledOnce() })
+    expect(controller.store.getSnapshot().bySession[SID]).toEqual({
+      open: true, status: 'downloading', error: null,
+    })
+
+    saved.resolve('file-saved')
+    await download
+    expect(controller.store.getSnapshot().bySession[SID]?.status).toBe('success')
+  })
+
+  it('waits for a native save carrier and closes without success when cancelled', async () => {
+    const save = vi.fn<(url: string, filename: string) => Promise<'file-saved' | 'cancelled'>>()
+    const controller = new SessionLogDownloadController(
+      async () => new Response('zip', { status: 200 }),
+      save,
+    )
+
+    save.mockResolvedValueOnce('file-saved')
+    await controller.download(SID)
+    expect(controller.store.getSnapshot().bySession[SID]).toEqual({
+      open: true, status: 'success', error: null, successMode: 'file-saved',
+    })
+
+    save.mockResolvedValueOnce('cancelled')
+    await controller.download(SID)
+    expect(controller.store.getSnapshot().bySession[SID]).toEqual({
+      open: false, status: 'cancelled', error: null,
     })
   })
 
@@ -78,6 +117,17 @@ describe('SessionLogDownloadController', () => {
     )
     await emptyDetail.download(SID)
     expect(emptyDetail.store.getSnapshot().bySession[SID]?.error).toBe('Export failed: HTTP 503')
+
+    const native = new SessionLogDownloadController(
+      async () => new Response('zip', { status: 200 }),
+      async () => { throw new Error('native save failed') },
+    )
+    await native.download(SID)
+    expect(native.store.getSnapshot().bySession[SID]).toEqual({
+      open: true,
+      status: 'error',
+      error: 'native save failed',
+    })
   })
 
   it('aborts active fetches on disposal and rejects later requests', async () => {

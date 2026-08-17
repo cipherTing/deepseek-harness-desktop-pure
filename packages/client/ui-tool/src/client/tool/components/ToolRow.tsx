@@ -94,6 +94,8 @@ export interface ToolRowProps {
   filePath?: string | undefined
   /** Open the path with the host OS default application (already cwd-resolved). */
   onOpenFile?: ((path: string) => void) | undefined
+  /** Absolute path carried only for native file actions in a desktop carrier. */
+  nativeFilePath?: string | undefined
   /**
    * Jump to this call in the trajectory view: a hover-revealed Inspect pill
    * over the expanded body. Absent = no affordance.
@@ -144,6 +146,7 @@ export function ToolRow({
   state,
   filePath,
   onOpenFile,
+  nativeFilePath,
   inspect,
 }: ToolRowProps) {
   const [expanded, setExpanded] = useState(false)
@@ -215,6 +218,7 @@ export function ToolRow({
               <button
                 type="button"
                 className={css.fileLink}
+                data-dsh-file-path={nativeFilePath}
                 onClick={openFile}
                 onKeyDown={fileLinkKeyDown}
               >
