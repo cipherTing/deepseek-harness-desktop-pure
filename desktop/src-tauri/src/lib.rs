@@ -11,8 +11,10 @@ use std::{
 
 use rmpv::Value;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+#[cfg(target_os = "macos")]
+use tauri::menu::PredefinedMenuItem;
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{Menu, MenuItem, Submenu},
     AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_clipboard_manager::ClipboardExt;

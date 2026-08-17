@@ -5,6 +5,9 @@ use std::{collections::HashSet, path::Path};
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::OsStringExt;
+
 use serde::Serialize;
 
 /** A native application selected from a freshly resolved system list. */
