@@ -14,10 +14,16 @@
     "native/landlock-run",
     "native/landlock-run/packages/*",
     "apps/*",
+    "desktop",
+    "desktop/runtime",
     "website"
   ],
   "scripts": {
     "build": "npm run build:lib && npm run build:web",
+    "desktop:dev": "pnpm --filter @deepseek-ai/dsh-desktop run dev",
+    "desktop:build": "pnpm --filter @deepseek-ai/dsh-desktop run build",
+    "desktop:version:check": "pnpm --filter @deepseek-ai/dsh-desktop run version:check",
+    "desktop:version:set": "pnpm --filter @deepseek-ai/dsh-desktop run version:set",
     "build:lib": "npm run build:lib:host && npm run build:lib:client",
     "build:lib:host": "tsc -b tsconfig.host.json && tsdown --env.DSH_BUILD_FACE host",
     "build:lib:client": "tsc -b tsconfig.client.json && tsdown --env.DSH_BUILD_FACE client",

@@ -15,7 +15,7 @@ The command is mounted only by the Web bundle. The local `command/executed` ackn
 
 The Host download endpoint flushes a live root Session before `readRaw`, so a slash-triggered ZIP includes the `command/run` and `command/done` pair whose acknowledgment started the download. Cold persisted Sessions require no flush.
 
-The modal reports preparation, download start, or failure. Closing it does not cancel an in-flight download and does not reopen it when that operation later settles. One Session admits one active download at a time; repeated gestures share that operation.
+The modal reports preparation, browser download start, native file save completion, or failure. Closing it does not cancel an in-flight download and does not reopen it when that operation later settles. One Session admits one active download at a time; repeated gestures share that operation. A surface may install an asynchronous save carrier before the client tree boots; the default browser carrier remains unchanged.
 
 ## Composition
 
@@ -45,5 +45,5 @@ None. The log-only command lifecycle and browser download do not change the deri
 ## Known Limitations and Deferred Work
 
 - The download endpoint requires a persistence backend with a per-Session raw artifact. The shipped JSONL backend supports plaintext and zstd artifacts; SQLite export is not included in this change.
-- This is a browser download, not a Host-path writer. The browser chooses the local destination; no Host path or native folder action is returned.
+- The default is a browser download, not a Host-path writer. Desktop may install a native save carrier that asks for a file destination and reports cancellation or completion without exposing a general filesystem API.
 - The preflight reports failures found before ZIP streaming starts. A descendant or attachment failure after the browser accepts the GET is reported by the browser download manager, not by the modal.

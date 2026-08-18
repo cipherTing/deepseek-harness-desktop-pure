@@ -8,6 +8,7 @@
 // result-side only, so there is no running-state read card to draw.
 
 import type { Context } from '@deepseek-ai/cordis'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
 import { IconBrowseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -27,6 +28,9 @@ type ReadRowProps = ToolCallViewProps & PropsLocale<'conversation'>
 export function ReadRow({ toolName, block, cwd, openFile, inspect, t }: ReadRowProps) {
   const model = toolRowModel(toolName, block, cwd)
   const read = readCardModel(block, cwd)
+  const nativeFilePath = document.documentElement.dataset.dshDesktop === 'true' && model.filePath !== undefined
+    ? resolveWorkspacePath(cwd, model.filePath)
+    : undefined
   return (
     <ToolRow
       t={t}
@@ -42,6 +46,7 @@ export function ReadRow({ toolName, block, cwd, openFile, inspect, t }: ReadRowP
       state={model.state}
       filePath={model.filePath}
       onOpenFile={openFile}
+      nativeFilePath={nativeFilePath}
       inspect={inspect}
     />
   )

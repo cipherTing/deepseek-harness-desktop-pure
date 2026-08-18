@@ -1,3 +1,63 @@
+# DeepSeek Harness Desktop Fork
+
+This independent distribution fork packages [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) with Tauri. It is not upstream, a second Harness implementation, or a place for new Harness features.
+
+A bundled Node.js sidecar starts the standard `web` profile on a random loopback port (`--host 127.0.0.1 --port 0`), and the WebView loads it directly. The upstream web host remains the source of the index, boot manifest, plugin bundles, `/api`, and event streams. Desktop adds no custom URI scheme, boot snapshot, or HTTP reimplementation; framed IPC carries only readiness, `graph-changed`, native dialogs/path opening, and shutdown.
+
+## Fork scope
+
+- Do not add Harness features, change Harness behavior, or refactor unrelated upstream code.
+- Keep the smallest complete, extremely low-intrusion solution inside `desktop/`. A change elsewhere requires a concrete integration blocker and must be minimal; speculative abstractions, broad transport refactors, and Desktop-motivated cleanup are prohibited.
+- Use official Tauri plugins and APIs for system interaction when an official capability exists. Do not replace an official plugin with an ad hoc native bridge.
+- Releases are self-contained: users install no Node.js, pnpm, runtime, or package manager. Support only macOS Apple Silicon and Windows x64 unless explicitly changed.
+- `desktop/` contains packaging source and resources, never a Harness profile, workspace, configuration home, or user-data directory.
+
+## Upstream synchronization
+
+Synchronization is manual. Do not automate selecting, validating, fetching, merging, rebasing, or recording upstream revisions. The maintainer fetches commits and tags, normally integrates a tagged commit (or latest commit when no tag exists), resolves Desktop conflicts deliberately, and verifies the fork.
+
+After verification, replace the sole value in [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT). When synchronization targets an original-project tag, record that exact tag name; when it targets an untagged commit, record its full SHA. Never append history, record fork HEAD, or let tooling infer or rewrite it. Mirror a synchronized original-project tag into the fork, preserving its target.
+
+## Desktop version and releases
+
+- Desktop uses independent SemVer beginning at `0.1.0`; upstream tags and SHAs never determine versions or artifact names. `desktop/package.json` is the sole version source. Run `pnpm desktop:version:set -- <version>` to update its runtime manifest, `Cargo.toml`, and Desktop `Cargo.lock` entry, or `pnpm desktop:version:check` to verify them. Never change the upstream root version for a Desktop release.
+- From the repository root, use `pnpm desktop:dev` or `pnpm desktop:build`. Package names derive from the Desktop version.
+- `.github/workflows/build-desktop.yml` runs only by `workflow_dispatch`. Any fork ref may run the two-platform build for validation; only `master` may publish a Release. It freezes the dispatched commit SHA for both platforms and any release tag, never synchronizes upstream, and never changes versions.
+- Only `Build and release Desktop` may remain enabled in this fork. Keep upstream workflow files unchanged but disabled in GitHub Actions. After synchronization, disable newly introduced upstream workflows; do not enable upstream CI, docs, E2E, issue automation, or releases without explicit maintainer approval.
+- Artifacts are named `deepseek-harness-desktop-macos-arm64-<version>.dmg` and `deepseek-harness-desktop-windows-x64-<version>.exe`.
+- After both builds pass, publish immutable tag/title `v<version>` with GitHub-generated notes only. Bump the version instead of replacing an existing tag or release. Upstream traceability comes from tagged fork source plus `desktop/UPSTREAM_COMMIT`, not duplicated release prose.
+- Windows packaging uses the system Evergreen WebView2 Runtime with Tauri's `downloadBootstrapper` fallback. Do not bundle the offline WebView2 installer.
+
+## Runtime and path invariants
+
+Desktop adds a carrier, not a Harness mode. Native Web and Desktop share configuration, environment layering, `DSH_HOME`, profiles, sessions, workspaces, caches, and user directories. Do not redirect Harness paths to Tauri install/resource/app-data locations, set a Desktop-only `DSH_HOME`, or alter `.env` lookup. With no invoking terminal directory, the sidecar explicitly starts in the OS user home, matching a native launch there. Keep Tauri temporary files separate from Harness data.
+
+Bundled Node.js, compiled Harness code, and dependencies are application resources, never the Harness working directory, configuration home, or user data.
+
+## Tauri integration
+
+Tauri owns the window, assets, sidecar lifecycle, readiness, framed IPC, native dialogs/open operations, and distribution. Expose only business-level Desktop commands; never grant the WebView generic shell or filesystem access.
+
+The sidecar runs upstream `web` plus a read-only overlay that replaces directory picking, applies Desktop open-path defaults through the shared API-proxy trust fence, and adds bridge/index/prompt/info glue and Desktop client UI. Standard Web transport and user patches remain active; `graph-changed` reloads the page. The bundled runtime contains Node.js, compiled packages, and production dependencies. Its process scope is owned with the maintained `process-wrap` library: macOS uses a dedicated process group, and Windows uses a Job Object with `CREATE_NO_WINDOW` and kill-on-close semantics. Do not replace this with direct Tauri Shell `child.kill()`, `taskkill`, `pkill`, or process-tree scans. The macOS Node watchdog also terminates its group when Tauri disappears abruptly. It must stop with Tauri without unmanaged descendants.
+
+Unexpected exits get at most three backoff respawns; update the live origin before navigating the window. Final startup/respawn failure shows a modal error and preserves a nonzero exit code. View > Reload Page uses `CmdOrCtrl+R`, and the default WebView context menu remains available. macOS uses Tauri's overlay title bar with native traffic lights; the top strip preserves native-style drag and double-click zoom through Tauri window APIs, while Windows keeps its native title bar. Rust downloads session exports directly from the current loopback host with a total timeout; framed IPC remains limited to readiness, `graph-changed`, system requests, and shutdown.
+
+### Sanctioned upstream surface change
+
+The sanctioned non-`desktop/` changes are the single root `settings.update` seat beside `settings.trigger`, declared by `packages/client/ui-settings`, rendered by `packages/client/ui-settings-general`/`SettingsRoot`, occupied only by the Desktop update badge, and empty on Web; and the generic asynchronous save carrier in `packages/session-query/session-log-export`, whose default browser carrier remains unchanged and which Desktop may install for native Session ZIP saving. About Desktop uses the existing `settings.section` list at the last navigation position.
+
+### Development loop
+
+- Cold start: `pnpm desktop:dev` (full Harness/runtime/deploy/Node preparation).
+- Runtime/bridge/client-UI: `pnpm --filter @deepseek-ai/dsh-desktop run build:runtime`, then restart `tauri dev`.
+- Harness package iteration: `pnpm run build:harness`, then the runtime iteration step.
+- Shell-only iteration: `DESKTOP_SKIP_BUNDLE=1 pnpm desktop:dev` (cargo rebuild only).
+- CI prepares once, runs Node and Rust tests, then lets tauri-action reuse the artifacts with `DESKTOP_SKIP_BUNDLE=1`.
+
+---
+
+# Original AGENTS.md
+
 # AGENTS.md
 
 DeepSeek Harness is a plugin-based agent harness on vendored Cordis: **everything is a plugin**. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.

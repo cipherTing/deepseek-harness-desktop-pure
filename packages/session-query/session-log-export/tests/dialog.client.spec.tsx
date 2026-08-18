@@ -3,7 +3,10 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { SessionLogDownloadController } from '../src/client/controller.ts'
+import {
+  SessionLogDownloadController,
+  type SessionLogDownloadSaveResult,
+} from '../src/client/controller.ts'
 import { SessionLogDownloadDialog } from '../src/client/Dialog.tsx'
 import type { SessionLogDownloadDialogProps } from '../src/client/Dialog.tsx'
 import { en } from '../src/client/locales.ts'
@@ -57,6 +60,18 @@ describe('SessionLogDownloadDialog', () => {
     release(new Response('zip', { status: 200 }))
     await download
     expect(await b.view.findByRole('dialog', { name: 'Session download started' })).toBeTruthy()
+  })
+
+  it('renders the native saved state separately from browser download state', async () => {
+    const controller = new SessionLogDownloadController(
+      async () => new Response('zip', { status: 200 }),
+      async (): Promise<SessionLogDownloadSaveResult> => 'file-saved',
+    )
+    const b = bench(controller)
+
+    await controller.download(SID)
+
+    expect(await b.view.findByRole('dialog', { name: 'Session export complete' })).toBeTruthy()
   })
 
   it('uses fallback copy when a failure has no detail', async () => {

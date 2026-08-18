@@ -20,7 +20,7 @@
 
 流水线使用**整篇文档**的中英对照作为 few-shot，不是模板内嵌的句子级正误例。以下 5 组配对文档均经过人工评审，以仓库当前版本为准、随仓库更新：
 
-- `README.md` ↔ `README.zh.md`
+- `README.en.md` ↔ `README.md`
 - `docs/development.md` ↔ `docs/development.zh.md`
 - `docs/i18n/README.md` ↔ `docs/i18n/README.zh.md`
 - `docs/i18n/translation-rules.md` ↔ `docs/i18n/translation-rules.zh.md`
@@ -253,9 +253,9 @@ Below are representative examples of common problems and their corrections. Foll
 - Good: `# full-screen TUI coding agent (needs DEEPSEEK_API_KEY)` (keep exactly as-is, byte-for-byte)
 
 ### Language switcher — flip direction
-- Source file (English) has: `English | [中文](README.zh.md)`
-- Bad (copying source unchanged): `English | [中文](README.zh.md)`
-- Good (flipped for Chinese file): `[English](README.md) | 中文`
+- Source file (English) has: `[中文](README.md) | English`
+- Bad (copying source unchanged): `[中文](README.md) | English`
+- Good (flipped for Chinese file): `中文 | [English](README.en.md)`
 
 ---
 

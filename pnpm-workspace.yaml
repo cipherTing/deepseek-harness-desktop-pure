@@ -7,6 +7,10 @@ packages:
   - native/landlock-run/packages/*
   # Product assemblies over the package tier; apps/cli owns the `dsh` bin.
   - apps/*
+  # Independent Tauri packaging workspace and its deployable Node sidecar closure.
+  - desktop
+  - desktop/runtime
+  - desktop/client-ui
   - website
   # The runnable demo leaves join as ONE workspace member: examples/package.json
   # declares the union of every leaf's cordis.yml plugins as workspace:*, so a

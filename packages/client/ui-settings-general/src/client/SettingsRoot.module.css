@@ -5,6 +5,9 @@
    54px header and the 24px-padded options area. */
 
 /* Trigger row: the 42px foot-row box shared with the Cordis footer action. */
+.triggerRow {
+  position: relative;
+}
 .trigger {
   flex: none;
   display: flex;

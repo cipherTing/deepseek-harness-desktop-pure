@@ -28,7 +28,10 @@ import { DetailsPanel } from '@deepseek-ai/dsh-client-ui-conversation/src/client
 import { ReadRow, readToolview } from '../src/client/tool/toolviews/read-row.tsx'
 import { renderToolDetails, SessionProviderStub, toolChatSnapshot } from './tool-details-render.client.tsx'
 
-afterEach(cleanup)
+afterEach(() => {
+  delete document.documentElement.dataset.dshDesktop
+  cleanup()
+})
 
 const SID = 's1' as SessionId
 
@@ -178,7 +181,7 @@ describe('ReadRow keyed toolview', () => {
   })
 
   const rowProps = (block: RunningToolCall | ToolResultNode): Parameters<typeof ReadRow>[0] => ({
-    callId: 'c1', toolName: 'read', block, openFile: vi.fn(),
+    callId: 'c1', toolName: 'read', block, cwd: '/w/app', openFile: vi.fn(),
     sessionId: SID, useSessions: bindSnapshotSelector(list()),
     t,
   } as unknown as Parameters<typeof ReadRow>[0])
@@ -210,10 +213,17 @@ describe('ReadRow keyed toolview', () => {
   it('the path summary opens the file through the host', () => {
     const openFile = vi.fn()
     const view = render(<ReadRow {...{ ...rowProps(settled()), openFile }} />)
+    expect(view.getByRole('button', { name: 'src/a.ts' }).getAttribute('data-dsh-file-path')).toBeNull()
     fireEvent.click(view.getByRole('button', { name: 'src/a.ts' }))
     // The row derives the file path from args; the chat view resolves it against
     // the cwd before this callback opens it, so the arg path is what arrives.
     expect(openFile).toHaveBeenCalledWith('src/a.ts')
+  })
+
+  it('adds the resolved native file path only on desktop', () => {
+    document.documentElement.dataset.dshDesktop = 'true'
+    const view = render(<ReadRow {...rowProps(settled())} />)
+    expect(view.getByRole('button', { name: 'src/a.ts' }).getAttribute('data-dsh-file-path')).toBe('/w/app/src/a.ts')
   })
 
   it('a running read renders the summary row alone, and its state', () => {

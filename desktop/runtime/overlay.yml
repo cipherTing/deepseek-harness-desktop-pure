@@ -1,0 +1,41 @@
+# Desktop overlay: the standard web transport stays intact — the sidecar boots
+# the upstream `web` profile with `--host 127.0.0.1 --port 0` and the WebView
+# loads the resulting loopback HTTP URL, exactly like the browser surface.
+# This layer only replaces the directory-picker capability with the native
+# dialog, swaps the API gateway for the desktop defaults (native open-path via
+# the system bridge; same shared apiproxy core and trust fence), and adds the
+# desktop surface glue (bridge script route + index taps + prompt section +
+# desktop-info route) plus the desktop-only client UI (About section + update
+# badge). client-hmr stays mounted exactly like the web surface keeps it; the
+# web surface disables the `hmr` row instead (see web-app's cordis.patch.yml).
+
+- id: directory-picker
+  disabled: true
+
+- id: api-gateway
+  disabled: true
+
+# One surface prompt is enough: the desktop wording supersedes the web
+# wording (a config patch replaces the whole config, so all fields restated).
+- id: web-runtime
+  config:
+    printUrl: true
+    surfaceContext: false
+    trustedHosts: !!js ctx.webStartup.trustedHosts
+
+- insert:
+    - id: desktop-surface
+      name: '@deepseek-ai/dsh-desktop-runtime/surface'
+      inject: [webServer]
+
+    - id: desktop-directory-picker
+      name: '@deepseek-ai/dsh-desktop-runtime/directory-picker'
+
+    - id: desktop-directory-picker-ui
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-native'
+
+    - id: desktop-api-gateway
+      name: '@deepseek-ai/dsh-desktop-runtime/api-gateway'
+
+    - id: desktop-client-ui
+      name: '@deepseek-ai/dsh-desktop-client-ui'
