@@ -290,7 +290,8 @@ mod tests {
     fn bundled_node_path_is_beside_the_desktop_executable() {
         let path =
             bundled_binary_path(Path::new("/bundle/DeepSeek Harness Desktop"), "node").unwrap();
-        assert_eq!(path, Path::new("/bundle/node"));
+        let expected = Path::new("/bundle").join(if cfg!(windows) { "node.exe" } else { "node" });
+        assert_eq!(path, expected);
     }
 
     #[cfg(target_os = "macos")]
