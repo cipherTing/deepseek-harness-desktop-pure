@@ -2,7 +2,7 @@
   "name": "@deepseek-ai/dsh-desktop-client-ui",
   "version": "0.1.4",
   "private": true,
-  "description": "Desktop-only client UI: the About settings section (versions, repository, author, update check) and the update badge beside the settings trigger.",
+  "description": "Desktop-only client UI: the About settings section (versions, repository, author, update check) and the update badge below the settings trigger.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

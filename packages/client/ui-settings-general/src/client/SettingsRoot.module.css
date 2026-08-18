@@ -4,8 +4,11 @@
    panel is a two-column layout — 188px nav rail + content column with a
    54px header and the 24px-padded options area. */
 
-/* Trigger row: the 42px foot-row box shared with the Cordis footer action. */
+/* Trigger stack: the settings control followed by an optional update control. */
 .triggerRow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   position: relative;
 }
 .trigger {

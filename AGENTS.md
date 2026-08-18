@@ -44,7 +44,7 @@ Unexpected exits get at most three backoff respawns; update the live origin befo
 
 ### Sanctioned upstream surface change
 
-The sanctioned non-`desktop/` changes are the single root `settings.update` seat beside `settings.trigger`, declared by `packages/client/ui-settings`, rendered by `packages/client/ui-settings-general`/`SettingsRoot`, occupied only by the Desktop update badge, and empty on Web; and the generic asynchronous save carrier in `packages/session-query/session-log-export`, whose default browser carrier remains unchanged and which Desktop may install for native Session ZIP saving. About Desktop uses the existing `settings.section` list at the last navigation position.
+The sanctioned non-`desktop/` changes are the single root `settings.update` seat below `settings.trigger`, declared by `packages/client/ui-settings`, rendered by `packages/client/ui-settings-general`/`SettingsRoot`, occupied only by the Desktop update badge, and empty on Web; and the generic asynchronous save carrier in `packages/session-query/session-log-export`, whose default browser carrier remains unchanged and which Desktop may install for native Session ZIP saving. About Desktop uses the existing `settings.section` list at the last navigation position.
 
 ### Development loop
 

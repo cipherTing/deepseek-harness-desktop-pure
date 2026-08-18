@@ -288,9 +288,9 @@ test('Desktop client UI package ships the dsh.client contract', () => {
   assert.equal(typeof runtime.author, 'string')
 })
 
-test('Settings update seat is declared beside the settings trigger', () => {
-  // The one sanctioned upstream surface change: the update badge seat right
-  // of the settings trigger, declared by the settings shell.
+test('Settings update seat is declared below the settings trigger', () => {
+  // The one sanctioned upstream surface change: the update badge seat below
+  // the settings trigger, declared by the settings shell.
   const contract = readFileSync(
     new URL('../../packages/client/ui-settings/src/client/contract/slots.ts', import.meta.url), 'utf8')
   const settingsGeneral = readFileSync(
@@ -298,6 +298,15 @@ test('Settings update seat is declared beside the settings trigger', () => {
 
   assert.match(contract, /'settings\.update': \{ kind: 'single'; scope: 'root'/)
   assert.match(settingsGeneral, /'settings\.update': \{ kind: 'single', scope: 'root' \}/)
+})
+
+test('Desktop update affordance stacks below settings and follows theme contrast', () => {
+  const settingsCss = readFileSync(
+    new URL('../../packages/client/ui-settings-general/src/client/SettingsRoot.module.css', import.meta.url), 'utf8')
+  const clientUi = readFileSync(new URL('../client-ui/src/client.js', import.meta.url), 'utf8')
+  assert.match(settingsCss, /\.triggerRow\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/s)
+  assert.match(clientUi, /\.dab-badge\{position:static/)
+  assert.match(clientUi, /\.dab-buttonPrimary\{background:var\(--dsw-alias-button-primary-fill\);[^}]*color:var\(--dsw-alias-label-primary-foreground\)/)
 })
 
 test('Windows uses downloadBootstrapper without an offline installer', () => {
