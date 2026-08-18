@@ -28,7 +28,9 @@ type ReadRowProps = ToolCallViewProps & PropsLocale<'conversation'>
 export function ReadRow({ toolName, block, cwd, openFile, inspect, t }: ReadRowProps) {
   const model = toolRowModel(toolName, block, cwd)
   const read = readCardModel(block, cwd)
-  const nativeFilePath = model.filePath === undefined ? undefined : resolveWorkspacePath(cwd, model.filePath)
+  const nativeFilePath = document.documentElement.dataset.dshDesktop === 'true' && model.filePath !== undefined
+    ? resolveWorkspacePath(cwd, model.filePath)
+    : undefined
   return (
     <ToolRow
       t={t}

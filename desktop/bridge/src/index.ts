@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
+document.documentElement.dataset.dshDesktop = 'true'
+
 /**
  * Desktop bridge (page side): the ONLY frontend coupling the desktop shell
  * needs. The page is served by the real Harness web host over loopback HTTP,

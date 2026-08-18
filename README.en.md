@@ -108,7 +108,7 @@ The macOS package must be built on an Apple Silicon Mac, and the Windows x64 pac
 
 - [`desktop/package.json`](desktop/package.json) is the only Desktop version source.
 - Change the version with `pnpm desktop:version:set -- <version>`, then verify all mirrors with `pnpm desktop:version:check`.
-- [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) records only the latest original-project commit incorporated into this fork, never the fork HEAD.
+- [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) records only the latest original-project revision incorporated into this fork: the exact tag name when synchronization targets a tag, or the full SHA for an untagged commit; it never records the fork HEAD.
 - GitHub Actions is maintainer-triggered only; a `v<version>` Release is published after both macOS and Windows builds succeed.
 - CI never fetches, merges, or rebases the original project automatically. Original-project synchronization is reviewed and performed manually.
 

@@ -1,3 +1,5 @@
+#[cfg(target_os = "windows")]
+use std::ffi::OsString;
 use std::{
     collections::HashMap,
     io::copy,
@@ -20,17 +22,16 @@ use tauri::{
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
-use tauri_plugin_shell::{
-    process::{CommandChild, CommandEvent},
-    ShellExt,
-};
 use tokio::{
-    sync::{oneshot, Notify},
+    sync::{mpsc, oneshot, Notify},
     time::timeout,
 };
 use url::Url;
 
 mod file_handlers;
+mod sidecar_process;
+
+use sidecar_process::{SidecarEvent, SidecarProcess};
 
 const PROTOCOL_VERSION: u32 = 1;
 /** Respawn attempts after an unexpected sidecar exit (exponential backoff). */
@@ -133,7 +134,7 @@ impl FrameDecoder {
 }
 
 struct SidecarPeer {
-    child: Mutex<Option<CommandChild>>,
+    process: SidecarProcess,
     next_id: AtomicU64,
     pending: Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>,
     ready: Mutex<Option<oneshot::Sender<Result<InboundMessage, String>>>>,
@@ -147,12 +148,7 @@ impl SidecarPeer {
         let mut frame = Vec::with_capacity(payload.len() + 4);
         frame.extend_from_slice(&(payload.len() as u32).to_be_bytes());
         frame.extend_from_slice(&payload);
-        let mut child = self.child.lock().unwrap();
-        child
-            .as_mut()
-            .ok_or_else(|| "Desktop sidecar is not running".to_string())?
-            .write(&frame)
-            .map_err(|error| error.to_string())
+        self.process.write(frame)
     }
 
     async fn request<P: Serialize, R: DeserializeOwned>(
@@ -266,16 +262,12 @@ impl SidecarPeer {
         }
     }
 
-    fn kill(&self) {
-        if let Some(child) = self.child.lock().unwrap().take() {
-            let _ = child.kill();
-        }
+    fn terminate(&self) {
+        self.process.terminate();
     }
 
     fn fail(&self, error: String) {
-        if let Some(child) = self.child.lock().unwrap().take() {
-            let _ = child.kill();
-        }
+        self.terminate();
         if let Some(waiter) = self.ready.lock().unwrap().take() {
             let _ = waiter.send(Err(error.clone()));
         }
@@ -674,7 +666,7 @@ fn parse_ready_url(message: &InboundMessage) -> Result<String, String> {
 /** Own one sidecar generation's event channel and report when it ends. */
 fn spawn_sidecar_reader(
     peer: Arc<SidecarPeer>,
-    mut events: tauri::async_runtime::Receiver<CommandEvent>,
+    mut events: mpsc::UnboundedReceiver<SidecarEvent>,
     app: AppHandle,
 ) -> oneshot::Receiver<()> {
     let (exit_tx, exit_rx) = oneshot::channel();
@@ -682,7 +674,7 @@ fn spawn_sidecar_reader(
         let mut decoder = FrameDecoder::new();
         while let Some(event) = events.recv().await {
             match event {
-                CommandEvent::Stdout(bytes) => match decoder.push(&bytes) {
+                SidecarEvent::Stdout(bytes) => match decoder.push(&bytes) {
                     Ok(messages) => {
                         for message in messages {
                             peer.dispatch(message, &app);
@@ -694,17 +686,16 @@ fn spawn_sidecar_reader(
                         break;
                     }
                 },
-                CommandEvent::Stderr(bytes) => eprint!("{}", String::from_utf8_lossy(&bytes)),
-                CommandEvent::Error(error) => {
+                SidecarEvent::Stderr(bytes) => eprint!("{}", String::from_utf8_lossy(&bytes)),
+                SidecarEvent::Error(error) => {
                     eprintln!("Desktop sidecar error: {error}");
                     peer.fail(format!("Desktop sidecar error: {error}"));
                     break;
                 }
-                CommandEvent::Terminated(status) => {
-                    peer.fail(format!("Desktop sidecar exited: {:?}", status.code));
+                SidecarEvent::Terminated(code) => {
+                    peer.fail(format!("Desktop sidecar exited: {code:?}"));
                     break;
                 }
-                _ => {}
             }
         }
         peer.fail("Desktop sidecar event channel closed".into());
@@ -736,24 +727,23 @@ async fn spawn_sidecar(
     let script = resource.join("rt/lib/sidecar.mjs");
     let cwd = app.path().home_dir().map_err(|error| error.to_string())?;
     let (ready_tx, ready_rx) = oneshot::channel();
-    let command = app
-        .shell()
-        .sidecar("node")
-        .map_err(|error| error.to_string())?;
     #[cfg(target_os = "windows")]
-    let command = command
-        .arg("--input-type=module")
-        .arg("--eval")
-        .arg(node_sidecar_import(&script)?);
+    let arguments = vec![
+        OsString::from("--input-type=module"),
+        OsString::from("--eval"),
+        OsString::from(node_sidecar_import(&script)?),
+    ];
     #[cfg(not(target_os = "windows"))]
-    let command = command.arg(script);
-    let (events, child) = command
-        .current_dir(cwd)
-        .set_raw_out(true)
-        .spawn()
-        .map_err(|error| error.to_string())?;
+    let arguments = vec![script.into_os_string()];
+    let (events_tx, events) = mpsc::unbounded_channel();
+    let process = SidecarProcess::spawn(
+        &SidecarProcess::bundled_node_path()?,
+        arguments,
+        cwd,
+        events_tx,
+    )?;
     let peer = Arc::new(SidecarPeer {
-        child: Mutex::new(Some(child)),
+        process,
         next_id: AtomicU64::new(1),
         pending: Mutex::new(HashMap::new()),
         ready: Mutex::new(Some(ready_tx)),
@@ -771,6 +761,7 @@ async fn spawn_sidecar(
         Ok(message) => message,
         Err(error) => {
             peer.fail(error.clone());
+            let _ = timeout(Duration::from_secs(3), peer.wait_terminated()).await;
             clear_peer_if_current(&app.state::<DesktopState>(), &peer);
             return Err(error);
         }
@@ -779,6 +770,7 @@ async fn spawn_sidecar(
         Ok(url) => url,
         Err(error) => {
             peer.fail(error.clone());
+            let _ = timeout(Duration::from_secs(3), peer.wait_terminated()).await;
             clear_peer_if_current(&app.state::<DesktopState>(), &peer);
             return Err(error);
         }
@@ -816,7 +808,7 @@ async fn supervise_sidecar(app: &AppHandle) {
         match spawn_sidecar(app).await {
             Ok((peer, url, exited)) => {
                 if state.exiting.load(Ordering::SeqCst) {
-                    peer.kill();
+                    peer.terminate();
                     clear_peer_if_current(&state, &peer);
                     return;
                 }
@@ -829,7 +821,7 @@ async fn supervise_sidecar(app: &AppHandle) {
                     .ok_or_else(|| "Desktop main window is unavailable".to_string())
                     .and_then(|window| window.navigate(parsed).map_err(|error| error.to_string()));
                 if let Err(error) = navigation {
-                    peer.kill();
+                    peer.terminate();
                     clear_peer_if_current(&state, &peer);
                     show_error_and_exit(
                         app,
@@ -918,13 +910,21 @@ async fn stop_sidecar(app: &AppHandle) {
     let state = app.state::<DesktopState>();
     let peer = state.peer.read().unwrap().clone();
     if let Some(peer) = peer {
-        let _: Result<Value, String> = timeout(
+        let graceful = timeout(
             Duration::from_secs(8),
             peer.request("shutdown", &Value::Nil),
         )
         .await
-        .unwrap_or_else(|_| Err("Desktop sidecar shutdown timed out".into()));
-        peer.kill();
+        .is_ok_and(|result: Result<Value, String>| result.is_ok());
+        if graceful
+            && timeout(Duration::from_secs(3), peer.wait_terminated())
+                .await
+                .is_ok()
+        {
+            *state.peer.write().unwrap() = None;
+            return;
+        }
+        peer.terminate();
         let _ = timeout(Duration::from_secs(3), peer.wait_terminated()).await;
     }
     *state.peer.write().unwrap() = None;
@@ -950,7 +950,6 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -985,12 +984,12 @@ pub fn run() {
                     Ok((peer, url, exited)) => {
                         let state = handle.state::<DesktopState>();
                         if state.exiting.load(Ordering::SeqCst) {
-                            peer.kill();
+                            peer.terminate();
                             clear_peer_if_current(&state, &peer);
                             return;
                         }
                         let Ok(parsed) = Url::parse(&url) else {
-                            peer.kill();
+                            peer.terminate();
                             clear_peer_if_current(&state, &peer);
                             show_error_and_exit(
                                 &handle,
@@ -1041,7 +1040,7 @@ pub fn run() {
                         match window.build() {
                             Ok(_) => monitor_sidecar_exit(peer, exited, handle.clone()),
                             Err(error) => {
-                                peer.kill();
+                                peer.terminate();
                                 clear_peer_if_current(&state, &peer);
                                 show_error_and_exit(
                                     &handle,
@@ -1086,7 +1085,7 @@ mod tests {
         let (pending_tx, mut pending_rx) = oneshot::channel::<Result<Value, String>>();
         let (ready_tx, mut ready_rx) = oneshot::channel::<Result<InboundMessage, String>>();
         let peer = SidecarPeer {
-            child: Mutex::new(None),
+            process: SidecarProcess::test_handle(),
             next_id: AtomicU64::new(2),
             pending: Mutex::new(HashMap::from([(1, pending_tx)])),
             ready: Mutex::new(Some(ready_tx)),

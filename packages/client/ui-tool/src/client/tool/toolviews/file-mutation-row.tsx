@@ -33,7 +33,9 @@ type FileMutationRowProps = ToolCallViewProps & PropsLocale<'conversation'>
 export function FileMutationRow({ toolName, block, cwd, openFile, inspect, t }: FileMutationRowProps) {
   const model = toolRowModel(toolName, block, cwd)
   const diff = diffCardModel(block)
-  const nativeFilePath = model.filePath === undefined ? undefined : resolveWorkspacePath(cwd, model.filePath)
+  const nativeFilePath = document.documentElement.dataset.dshDesktop === 'true' && model.filePath !== undefined
+    ? resolveWorkspacePath(cwd, model.filePath)
+    : undefined
   return (
     <ToolRow
       t={t}

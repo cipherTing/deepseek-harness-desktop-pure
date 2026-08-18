@@ -22,7 +22,8 @@ window.__ModuleLoader__.load({
       ".dab-buttonPrimary{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:#fff}",
       ".dab-status{font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}",
       ".dab-statusWarn{color:var(--dsw-alias-state-warn-label)}",
-      ".dab-badge{flex:none;height:24px;padding:0 8px;border-radius:999px;border:none;background:var(--dsw-alias-brand-primary);color:#fff;font-size:12px;font-weight:600;line-height:16px;cursor:pointer}",
+      ".dab-badge{position:absolute;inset-inline-end:8px;top:50%;z-index:1;flex:none;height:24px;padding:0 8px;transform:translateY(-50%);border-radius:999px;border:none;background:var(--dsw-alias-brand-primary);color:#fff;font-size:12px;font-weight:600;line-height:16px;cursor:pointer}",
+      ".dab-badgeRail{inset-inline-end:0;width:10px;height:10px;padding:0;border:2px solid var(--dsw-alias-bg-layer-1);border-radius:50%;font-size:0;line-height:0}",
       ".dab-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center}",
       ".dab-dialog{width:min(400px,calc(100vw - 48px));border:1px solid var(--dsw-alias-border-inverted);border-radius:14px;background:var(--dsw-specific-menu,var(--dsw-alias-bg-overlay));box-shadow:var(--dsw-shadow-lv3);padding:20px;display:flex;flex-direction:column;gap:10px;color:var(--dsw-alias-label-primary)}",
       ".dab-dialogTitle{font-size:16px;font-weight:600;line-height:24px}",
@@ -223,7 +224,7 @@ window.__ModuleLoader__.load({
       return React.createElement(React.Fragment, null,
         React.createElement("button", {
           type: "button",
-          className: "dab-badge",
+          className: wide ? "dab-badge" : "dab-badge dab-badgeRail",
           title: t("about.updateFound", { version: latest.version }),
           "aria-label": t("badge.update"),
           onClick: () => { setOpen(true); },

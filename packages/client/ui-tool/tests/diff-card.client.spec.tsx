@@ -25,7 +25,10 @@ import { FileMutationRow, fileMutationToolview } from '../src/client/tool/toolvi
 import { renderToolDetails, SessionProviderStub, toolChatSnapshot } from './tool-details-render.client.tsx'
 import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  delete document.documentElement.dataset.dshDesktop
+  cleanup()
+})
 
 /** FileMutationRow's full prop shape (ToolRow runtime share + conversation locale seat). */
 type FileMutationRowProps = Parameters<typeof FileMutationRow>[0]
@@ -188,11 +191,18 @@ describe('FileMutationRow diff card', () => {
   it('the summary is a path link that opens the tool path through the host', () => {
     const openFile = vi.fn()
     const view = render(<FileMutationRow {...{ ...rowProps(settled()), openFile }} />)
+    expect(view.getByRole('button', { name: 'notes/demo.txt' }).getAttribute('data-dsh-file-path')).toBeNull()
     // The path link rides the collapsed summary, so it opens without expanding.
     fireEvent.click(view.getByRole('button', { name: 'notes/demo.txt' }))
     // The row passes the tool's own path; the injected openFile resolves it
     // against the session cwd (apply.ts), so the row must not resolve twice.
     expect(openFile).toHaveBeenCalledWith('notes/demo.txt')
+  })
+
+  it('adds the resolved native file path only on desktop', () => {
+    document.documentElement.dataset.dshDesktop = 'true'
+    const view = render(<FileMutationRow {...rowProps(settled())} />)
+    expect(view.getByRole('button', { name: 'notes/demo.txt' }).getAttribute('data-dsh-file-path')).toBe('/w/app/notes/demo.txt')
   })
 
   it('registers under write too, rendering a create as an added-only diff', () => {

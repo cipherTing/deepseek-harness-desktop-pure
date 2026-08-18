@@ -214,6 +214,7 @@ test('Desktop uses the generic async save carrier instead of patching anchor cli
 
 test('Desktop shell supervises its sidecar and exposes a reload affordance', () => {
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  const process = readFileSync(new URL('../src-tauri/src/sidecar_process.rs', import.meta.url), 'utf8')
 
   // Native menu with the CmdOrCtrl+R reload item (WKWebView has no built-in
   // browser accelerator; the default right-click menu remains available).
@@ -242,8 +243,17 @@ test('Desktop shell supervises its sidecar and exposes a reload affordance', () 
   assert.doesNotMatch(rust, /desktop_stream_close/)
   assert.doesNotMatch(rust, /INITIAL_STREAM_CREDIT/)
   assert.match(rust, /"system-cancel"/)
-  // Dead Windows JobObjects dependency removed.
+  // The sidecar owns its full process scope through the Tauri-maintainer
+  // recommended process-wrap crate, rather than a direct-child shell kill.
   const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')
+  assert.match(cargo, /process-wrap = \{ version = "=9\.1\.0"/)
+  assert.doesNotMatch(cargo, /tauri-plugin-shell/)
+  assert.match(process, /ProcessGroup::leader\(\)/)
+  assert.match(process, /JobObject/)
+  assert.match(process, /CreationFlags\(CREATE_NO_WINDOW\)/)
+  assert.match(process, /KillOnDrop/)
+  assert.match(process, /child\.kill\(\)/)
+  assert.match(process, /bundled_binary_path/)
   assert.doesNotMatch(cargo, /windows-sys/)
 })
 

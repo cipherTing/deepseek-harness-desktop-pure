@@ -160,13 +160,25 @@ async function serve(): Promise<void> {
   })
 }
 
+/** Kill the macOS process group if the Tauri owner disappears abruptly. */
+function terminateOrphanedProcessGroup(): never {
+  if (process.platform === 'darwin') {
+    try {
+      process.kill(-process.pid, 'SIGKILL')
+    } catch {
+      // The group may already have been terminated by the owner.
+    }
+  }
+  process.exit(1)
+}
+
 const parentPid = process.ppid
 setInterval(() => {
-  if (process.ppid !== parentPid || process.ppid === 1) process.exit(1)
+  if (process.ppid !== parentPid || process.ppid === 1) terminateOrphanedProcessGroup()
   try {
     process.kill(parentPid, 0)
   } catch {
-    process.exit(1)
+    terminateOrphanedProcessGroup()
   }
 }, 2000).unref()
 
