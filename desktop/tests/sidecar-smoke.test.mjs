@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import test from 'node:test'
+import { pathToFileURL } from 'node:url'
 import { decode, encode } from '@msgpack/msgpack'
 
 const desktop = resolve(import.meta.dirname, '..')
@@ -14,14 +15,31 @@ const triple = process.platform === 'darwin' && process.arch === 'arm64'
     ? 'x86_64-pc-windows-msvc'
     : undefined
 
-test('bundled Node sidecar serves the loopback web host', { timeout: 120_000, skip: triple === undefined }, async () => {
+const launchModes = [
+  { name: 'native main script', arguments: sidecar => [sidecar] },
+  {
+    name: 'Windows eval entrypoint',
+    arguments: (sidecar) => {
+      const scriptUrl = JSON.stringify(pathToFileURL(sidecar).href)
+      return [
+        '--input-type=module',
+        '--eval',
+        `try { await import(${scriptUrl}); } catch (error) { console.error(error); process.exitCode = 1; }`,
+        '--',
+        sidecar,
+      ]
+    },
+  },
+]
+
+async function runSidecarSmoke(launchMode) {
   const dshHome = await mkdtemp(resolve(tmpdir(), 'dsh-desktop-smoke-'))
   const executable = resolve(desktop, `src-tauri/binaries/node-${triple}${process.platform === 'win32' ? '.exe' : ''}`)
   const sidecar = resolve(desktop, 'src-tauri/rt/lib/sidecar.mjs')
   const clientUi = resolve(desktop, 'src-tauri/rt/node_modules/@deepseek-ai/dsh-desktop-client-ui/lib')
   assert.equal(existsSync(join(clientUi, 'index.js')), true, 'deployed client-ui Host entry is missing')
   assert.equal(existsSync(join(clientUi, 'client.js')), true, 'deployed client-ui Web entry is missing')
-  const child = spawn(executable, [sidecar], {
+  const child = spawn(executable, launchMode.arguments(sidecar), {
     cwd: homedir(),
     env: { ...process.env, DSH_HOME: dshHome, DSH_TELEMETRY_DISABLED: '1' },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -173,7 +191,14 @@ test('bundled Node sidecar serves the loopback web host', { timeout: 120_000, sk
     if (child.exitCode === null) child.kill()
     await rm(dshHome, { recursive: true, force: true })
   }
-})
+}
+
+for (const launchMode of launchModes) {
+  test(`bundled Node sidecar serves the loopback web host via ${launchMode.name}`, {
+    timeout: 120_000,
+    skip: triple === undefined,
+  }, () => runSidecarSmoke(launchMode))
+}
 
 async function waitFor(read, timeoutMs = 110_000) {
   const deadline = Date.now() + timeoutMs

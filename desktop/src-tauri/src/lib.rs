@@ -1,4 +1,4 @@
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 use std::ffi::OsString;
 use std::{
     collections::HashMap,
@@ -706,7 +706,7 @@ fn spawn_sidecar_reader(
 }
 
 /** Build the module-mode Node expression used to bypass Windows main-script lookup. */
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 fn node_sidecar_import(script: &Path) -> Result<String, String> {
     let script_url = Url::from_file_path(script)
         .map_err(|_| "Desktop sidecar path cannot be converted to a file URL".to_string())?;
@@ -715,6 +715,18 @@ fn node_sidecar_import(script: &Path) -> Result<String, String> {
     Ok(format!(
         "try {{ await import({script_url}); }} catch (error) {{ console.error(error); process.exitCode = 1; }}"
     ))
+}
+
+/** Build Windows Node arguments while preserving the sidecar main-module identity. */
+#[cfg(any(target_os = "windows", test))]
+fn node_sidecar_arguments(script: &Path) -> Result<Vec<OsString>, String> {
+    Ok(vec![
+        OsString::from("--input-type=module"),
+        OsString::from("--eval"),
+        OsString::from(node_sidecar_import(script)?),
+        OsString::from("--"),
+        script.as_os_str().to_owned(),
+    ])
 }
 
 async fn spawn_sidecar(
@@ -728,11 +740,7 @@ async fn spawn_sidecar(
     let cwd = app.path().home_dir().map_err(|error| error.to_string())?;
     let (ready_tx, ready_rx) = oneshot::channel();
     #[cfg(target_os = "windows")]
-    let arguments = vec![
-        OsString::from("--input-type=module"),
-        OsString::from("--eval"),
-        OsString::from(node_sidecar_import(&script)?),
-    ];
+    let arguments = node_sidecar_arguments(&script)?;
     #[cfg(not(target_os = "windows"))]
     let arguments = vec![script.into_os_string()];
     let (events_tx, events) = mpsc::unbounded_channel();
@@ -1079,6 +1087,22 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_sidecar_arguments_preserve_main_module_argv() {
+        let script = if cfg!(target_os = "windows") {
+            Path::new(r"C:\Program Files\DeepSeek Harness\rt\lib\sidecar.mjs")
+        } else {
+            Path::new("/Applications/DeepSeek Harness/rt/lib/sidecar.mjs")
+        };
+        let arguments = node_sidecar_arguments(script).unwrap();
+
+        assert_eq!(arguments[0], OsString::from("--input-type=module"));
+        assert_eq!(arguments[1], OsString::from("--eval"));
+        assert!(arguments[2].to_string_lossy().contains("%20"));
+        assert_eq!(arguments[3], OsString::from("--"));
+        assert_eq!(arguments[4], script.as_os_str());
+    }
 
     #[test]
     fn sidecar_failure_settles_pending_requests() {
