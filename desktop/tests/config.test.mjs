@@ -45,9 +45,7 @@ test('Desktop workflow builds any manual ref and releases only one frozen master
   assert.match(workflow, /RELEASE_NOTES_EN\/\/\[\[:space:\]\]\//)
   assert.match(workflow, /RELEASE_NOTES_ZH: \$\{\{ inputs\.release_notes_zh \}\}/)
   assert.match(workflow, /RELEASE_NOTES_EN: \$\{\{ inputs\.release_notes_en \}\}/)
-  assert.match(workflow, /name: Prepare the Harness bundle\n\s+shell: bash/)
-  assert.match(workflow, /npm-cli\.js/)
-  assert.match(workflow, /npm_execpath="\$npm_cli" pnpm run bundle:prepare/)
+  assert.match(workflow, /name: Prepare the Harness bundle\n\s+run: pnpm run bundle:prepare/)
   assert.match(workflow, /uses: tauri-apps\/tauri-action@v1/)
   assert.match(workflow, /uploadWorkflowArtifacts: true/)
   assert.match(workflow, /releaseAssetNamePattern: deepdive-\$\{\{ matrix\.platform \}\}-\[version\]\[ext\]/)
@@ -78,6 +76,7 @@ test('Tauri prepares the bundle exactly once', () => {
 
   assert.equal(desktopPackage.scripts.dev, 'tauri dev')
   assert.equal(desktopPackage.scripts.build, 'tauri build')
+  assert.equal(desktopPackage.scripts['build:harness'], 'pnpm dlx npm@11.18.0 --prefix .. run build')
   assert.equal(existsSync(new URL('../scripts/build-desktop.mjs', import.meta.url)), false)
   assert.match(desktopPackage.scripts['build:runtime'], /pnpm run deploy:runtime/)
   assert.deepEqual(tauriConfig.build.beforeDevCommand, {

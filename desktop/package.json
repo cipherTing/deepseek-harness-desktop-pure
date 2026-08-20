@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:harness": "pnpm -w run build",
+    "build:harness": "pnpm dlx npm@11.18.0 --prefix .. run build",
     "build:runtime": "node ./scripts/build-runtime.mjs && pnpm run deploy:runtime && node ./scripts/finalize-runtime.mjs",
     "deploy:runtime": "pnpm -C .. --config.inject-workspace-packages=true --config.node-linker=hoisted --config.strict-dep-builds=false --filter @deepseek-ai/dsh-desktop-runtime deploy --prod desktop/src-tauri/rt",
     "prepare:node": "node ./scripts/prepare-node.mjs",

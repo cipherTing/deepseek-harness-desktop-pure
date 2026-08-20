@@ -109,10 +109,7 @@ jobs:
         run: pnpm desktop:version:check
 
       - name: Prepare the Harness bundle
-        shell: bash
-        run: |
-          npm_cli="$(node -e 'const { existsSync } = require("node:fs"); const { dirname, join } = require("node:path"); const bin = dirname(process.execPath); const candidates = [join(bin, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"), join(bin, "node_modules", "npm", "bin", "npm-cli.js")]; const value = candidates.find(existsSync); if (value === undefined) throw new Error("npm-cli.js is unavailable beside Node"); process.stdout.write(value)')"
-          npm_execpath="$npm_cli" pnpm run bundle:prepare
+        run: pnpm run bundle:prepare
         working-directory: desktop
 
       - name: Run Desktop node tests
