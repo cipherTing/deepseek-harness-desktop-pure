@@ -16,6 +16,7 @@ test('Desktop version and root shortcuts use the Desktop package', () => {
   assert.equal(runtimePackage.version, desktopPackage.version)
   assert.equal(cargo.match(/^version = "([^"]+)"$/m)?.[1], desktopPackage.version)
   assert.equal(cargoLock.match(/\[\[package\]\]\nname = "deepseek-harness-desktop"\nversion = "([^"]+)"/m)?.[1], desktopPackage.version)
+  assert.equal(tauriConfig.productName, 'DeepDive')
   assert.equal(tauriConfig.version, '../package.json')
   assert.equal(rootPackage.scripts['desktop:dev'], 'pnpm --filter @deepseek-ai/dsh-desktop run dev')
   assert.equal(rootPackage.scripts['desktop:build'], 'pnpm --filter @deepseek-ai/dsh-desktop run build')
@@ -46,12 +47,15 @@ test('Desktop workflow builds any manual ref and releases only one frozen master
   assert.match(workflow, /RELEASE_NOTES_EN: \$\{\{ inputs\.release_notes_en \}\}/)
   assert.match(workflow, /uses: tauri-apps\/tauri-action@v1/)
   assert.match(workflow, /uploadWorkflowArtifacts: true/)
-  assert.match(workflow, /releaseAssetNamePattern: deepseek-harness-desktop-\$\{\{ matrix\.platform \}\}-\[version\]\[ext\]/)
+  assert.match(workflow, /releaseAssetNamePattern: deepdive-\$\{\{ matrix\.platform \}\}-\[version\]\[ext\]/)
+  assert.match(workflow, /pattern: deepdive-\*-\$\{\{ needs\.metadata\.outputs\.version \}\}/)
   assert.match(workflow, /platform: macos-arm64/)
   assert.match(workflow, /platform: windows-x64/)
   assert.match(workflow, /uses: actions\/download-artifact@[0-9a-f]{40} # v8/)
   assert.match(workflow, /merge-multiple: true/)
   assert.match(workflow, /Expected exactly one DMG and one EXE artifact/)
+  assert.match(workflow, /release-assets\/deepdive-macos-arm64-\$VERSION\.dmg/)
+  assert.match(workflow, /release-assets\/deepdive-windows-x64-\$VERSION\.exe/)
   assert.match(workflow, /actions: read/)
   assert.match(workflow, /contents: write/)
   assert.match(workflow, /if: github\.ref == 'refs\/heads\/master'/)
@@ -87,6 +91,7 @@ test('macOS overlays the native title bar with drag and double-click zoom gestur
 
   assert.match(rust, /#\[cfg\(target_os = "macos"\)\]/)
   assert.match(rust, /TitleBarStyle::Overlay/)
+  assert.match(rust, /\.title\("DeepDive"\)/)
   assert.match(rust, /hidden_title\(true\)/)
   assert.match(rust, /decorations\(true\)/)
   assert.doesNotMatch(rust, /decorations\(false\)/)
@@ -109,6 +114,7 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   const entitlements = readFileSync(new URL('../src-tauri/node-entitlements.plist', import.meta.url), 'utf8')
   const runtimePackage = readJson(new URL('../runtime/package.json', import.meta.url))
   const overlay = readFileSync(new URL('../runtime/overlay.yml', import.meta.url), 'utf8')
+  const sidecar = readFileSync(new URL('../runtime/src/sidecar.ts', import.meta.url), 'utf8')
 
   // No custom URI schemes, no boot snapshot, no plugin allowlist.
   assert.doesNotMatch(rust, /register_uri_scheme_protocol/)
@@ -169,7 +175,9 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   assert.doesNotMatch(overlay, /desktop-webserver/)
   assert.match(overlay, /desktop-api-gateway/)
   // One surface prompt: the desktop wording replaces the web one.
+  assert.match(overlay, /openBrowser: !!js ctx\.webStartup\.openBrowser/)
   assert.match(overlay, /surfaceContext: false/)
+  assert.match(sidecar, /args: \['--host', '127\.0\.0\.1', '--port', '0', '--no-open'\]/)
 })
 
 test('Desktop resolves native file handlers without giving the WebView executable access', () => {
@@ -200,7 +208,7 @@ test('Desktop resolves native file handlers without giving the WebView executabl
   assert.match(bridge, /dsh-desktop-link-submenu-panel/)
 })
 
-test('Windows release packaging avoids a console and Node main-script resolution', () => {
+test('Windows release packaging uses the GUI subsystem and Node eval launch', () => {
   const main = readFileSync(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8')
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
 
@@ -231,9 +239,10 @@ test('Desktop uses the generic async save carrier instead of patching anchor cli
   assert.doesNotMatch(bridge, /HTMLAnchorElement\.prototype\.click/)
 })
 
-test('Desktop shell supervises its sidecar without a native application menu', () => {
+test('Desktop shell supervises the official Tauri Node sidecar without a native application menu', () => {
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
   const process = readFileSync(new URL('../src-tauri/src/sidecar_process.rs', import.meta.url), 'utf8')
+  const capability = readJson(new URL('../src-tauri/capabilities/main.json', import.meta.url))
 
   assert.match(rust, /begin_graceful_exit/)
   assert.doesNotMatch(rust, /on_menu_event/)
@@ -256,18 +265,19 @@ test('Desktop shell supervises its sidecar without a native application menu', (
   assert.doesNotMatch(rust, /desktop_stream_close/)
   assert.doesNotMatch(rust, /INITIAL_STREAM_CREDIT/)
   assert.match(rust, /"system-cancel"/)
-  // The sidecar owns its full process scope through the Tauri-maintainer
-  // recommended process-wrap crate, rather than a direct-child shell kill.
+  // The Tauri Shell plugin resolves the configured external Node sidecar,
+  // keeps its protocol streams raw, and remains Rust-only.
   const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')
-  assert.match(cargo, /process-wrap = \{ version = "=9\.1\.0"/)
-  assert.doesNotMatch(cargo, /tauri-plugin-shell/)
-  assert.match(process, /ProcessGroup::leader\(\)/)
-  assert.match(process, /JobObject/)
-  assert.match(process, /CreationFlags\(CREATE_NO_WINDOW\)/)
-  assert.match(process, /KillOnDrop/)
+  assert.match(cargo, /tauri-plugin-shell = "=2\.3\.5"/)
+  assert.doesNotMatch(cargo, /process-wrap/)
+  assert.match(rust, /\.plugin\(tauri_plugin_shell::init\(\)\)/)
+  assert.match(process, /app\s*\.shell\(\)\s*\.sidecar\("node"\)/)
+  assert.match(process, /\.set_raw_out\(true\)/)
+  assert.match(process, /CommandEvent::Stdout/)
+  assert.match(process, /CommandChild/)
   assert.match(process, /child\.kill\(\)/)
-  assert.match(process, /bundled_binary_path/)
-  assert.doesNotMatch(cargo, /windows-sys/)
+  assert.doesNotMatch(process, /ProcessGroup|JobObject|CreationFlags|KillOnDrop|CREATE_NO_WINDOW|bundled_binary_path/)
+  assert.doesNotMatch(JSON.stringify(capability), /shell:/)
 })
 
 test('Desktop overlay rows match the shipped web composition contract', () => {
@@ -291,6 +301,7 @@ test('Desktop overlay rows match the shipped web composition contract', () => {
 test('Desktop client UI package ships the dsh.client contract', () => {
   const clientUi = readJson(new URL('../client-ui/package.json', import.meta.url))
   const runtime = readJson(new URL('../runtime/package.json', import.meta.url))
+  const client = readFileSync(new URL('../client-ui/src/client.js', import.meta.url), 'utf8')
 
   assert.equal(clientUi.dsh.client.platform, 'web')
   assert.equal(clientUi.exports['./client'].default, './lib/client.js')
@@ -299,6 +310,11 @@ test('Desktop client UI package ships the dsh.client contract', () => {
   // Identity facts the About section surfaces.
   assert.equal(runtime.repository?.url, 'https://github.com/cipherTing/deepseek-harness-desktop-pure')
   assert.equal(typeof runtime.author, 'string')
+  assert.match(client, /"about\.title": "DeepDive"/)
+  assert.match(client, /function DesktopBrandName\(\)/)
+  assert.match(client, /"DeepDive"/)
+  assert.match(client, /info\?\.desktopVersion/)
+  assert.match(client, /"sidebar\.brand\.name"/)
 })
 
 test('Settings update seat is declared below the settings trigger', () => {

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DeepSeek Harness Desktop",
+  "productName": "DeepDive",
   "version": "../package.json",
   "identifier": "ai.deepseek.harness.desktop",
   "build": {

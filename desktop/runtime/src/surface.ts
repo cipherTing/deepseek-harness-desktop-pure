@@ -77,7 +77,7 @@ export function apply(ctx: Context): void {
     promptCtx.systemPrompt.section({
       name: 'app:desktop-surface',
       order: -98,
-      text: () => 'You are interacting with the user through the DeepSeek Harness Desktop GUI. The Desktop application is only a native carrier for the same Harness profile, configuration, sessions, workspaces, and user data used by the Web surface. The WebView provides no implicit DOM, route, or screenshot context.',
+      text: () => 'You are interacting with the user through the DeepDive GUI. The Desktop application is only a native carrier for the same Harness profile, configuration, sessions, workspaces, and user data used by the Web surface. The WebView provides no implicit DOM, route, or screenshot context.',
     })
   })
   ctx.effect(() => ctx.webServer.register({

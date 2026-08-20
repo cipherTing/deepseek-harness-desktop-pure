@@ -24,4 +24,4 @@ The sidecar smoke executes both the native main-script launch and the Windows ev
 
 ## Consequences
 
-Windows sidecar startup preserves the main-module path without returning to direct main-script lookup. The full smoke runs one additional sidecar generation and therefore costs a few seconds on supported hosts. It still does not validate NSIS installation, WebView startup, Windows Job Object teardown, or installed resource paths; those require Windows product-level acceptance rather than more source assertions.
+Windows sidecar startup preserves the main-module path without returning to direct main-script lookup. The full smoke runs one additional sidecar generation and therefore costs a few seconds on supported hosts. It still does not validate NSIS installation, WebView startup, Windows process teardown, or installed resource paths; those require Windows product-level acceptance rather than more source assertions.

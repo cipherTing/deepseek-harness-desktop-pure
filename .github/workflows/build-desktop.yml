@@ -126,9 +126,9 @@ jobs:
           projectPath: desktop
           tauriScript: pnpm tauri
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
-          releaseAssetNamePattern: deepseek-harness-desktop-${{ matrix.platform }}-[version][ext]
+          releaseAssetNamePattern: deepdive-${{ matrix.platform }}-[version][ext]
           uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: deepseek-harness-desktop-${{ matrix.platform }}-[version]
+          workflowArtifactNamePattern: deepdive-${{ matrix.platform }}-[version]
         env:
           DESKTOP_SKIP_BUNDLE: '1'
 
@@ -147,7 +147,7 @@ jobs:
       - name: Download Desktop packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: deepseek-harness-desktop-*-${{ needs.metadata.outputs.version }}
+          pattern: deepdive-*-${{ needs.metadata.outputs.version }}
           path: release-input
           merge-multiple: true
 
@@ -167,8 +167,8 @@ jobs:
           fi
 
           mkdir -p release-assets
-          cp "${dmg[0]}" "release-assets/deepseek-harness-desktop-macos-arm64-$VERSION.dmg"
-          cp "${exe[0]}" "release-assets/deepseek-harness-desktop-windows-x64-$VERSION.exe"
+          cp "${dmg[0]}" "release-assets/deepdive-macos-arm64-$VERSION.dmg"
+          cp "${exe[0]}" "release-assets/deepdive-windows-x64-$VERSION.exe"
 
       - name: Prepare bilingual release notes
         shell: bash

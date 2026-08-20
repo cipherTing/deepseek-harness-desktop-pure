@@ -1,22 +1,11 @@
-use std::{
-    ffi::OsString,
-    path::{Path, PathBuf},
-    process::Stdio,
-};
+use std::{ffi::OsString, path::PathBuf};
 
-#[cfg(unix)]
-use process_wrap::tokio::ProcessGroup;
-use process_wrap::tokio::{ChildWrapper, CommandWrap};
-#[cfg(windows)]
-use process_wrap::tokio::{CreationFlags, JobObject, KillOnDrop};
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
-    process::ChildStdin,
-    sync::mpsc,
-    time::{Duration, MissedTickBehavior},
+use tauri::{async_runtime::Receiver, AppHandle, Runtime};
+use tauri_plugin_shell::{
+    process::{CommandChild, CommandEvent},
+    ShellExt,
 };
-#[cfg(windows)]
-use windows::Win32::System::Threading::CREATE_NO_WINDOW;
+use tokio::sync::mpsc;
 
 /// Events emitted by one owned Node sidecar generation.
 #[derive(Debug)]
@@ -30,73 +19,35 @@ pub(crate) enum SidecarEvent {
 enum SidecarCommand {
     Write(Vec<u8>),
     Terminate,
+    Exited,
 }
 
-/// Handle for the sidecar actor that owns the complete process scope.
+/// Handle for the actor that owns the bundled Node sidecar.
 pub(crate) struct SidecarProcess {
     commands: mpsc::UnboundedSender<SidecarCommand>,
 }
 
 impl SidecarProcess {
-    /// Resolve the Tauri `externalBin` location for the bundled Node executable.
-    pub(crate) fn bundled_node_path() -> Result<PathBuf, String> {
-        let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-        bundled_binary_path(&executable, "node")
-    }
-
-    /// Spawn a sidecar with platform-native ownership of its entire process scope.
-    pub(crate) fn spawn(
-        program: &Path,
+    /// Spawn the configured Tauri Node sidecar with raw protocol output.
+    pub(crate) fn spawn<R: Runtime>(
+        app: &AppHandle<R>,
         arguments: Vec<OsString>,
         cwd: PathBuf,
         events: mpsc::UnboundedSender<SidecarEvent>,
     ) -> Result<Self, String> {
-        let mut command = CommandWrap::with_new(program, |command| {
-            command
-                .args(&arguments)
-                .current_dir(cwd)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-        });
-        #[cfg(unix)]
-        command.wrap(ProcessGroup::leader());
-        #[cfg(windows)]
-        {
-            command.wrap(CreationFlags(CREATE_NO_WINDOW));
-            command.wrap(JobObject);
-            command.wrap(KillOnDrop);
-        }
-
-        let mut child = command
+        let command = app
+            .shell()
+            .sidecar("node")
+            .map_err(|error| format!("Desktop Node sidecar could not be resolved: {error}"))?
+            .args(&arguments)
+            .current_dir(cwd)
+            .set_raw_out(true);
+        let (output, child) = command
             .spawn()
             .map_err(|error| format!("Desktop sidecar failed to spawn: {error}"))?;
-        let stdin = match require_pipe(child.stdin().take(), "stdin") {
-            Ok(pipe) => pipe,
-            Err(error) => {
-                let _ = child.start_kill();
-                return Err(error);
-            }
-        };
-        let stdout = match require_pipe(child.stdout().take(), "stdout") {
-            Ok(pipe) => pipe,
-            Err(error) => {
-                let _ = child.start_kill();
-                return Err(error);
-            }
-        };
-        let stderr = match require_pipe(child.stderr().take(), "stderr") {
-            Ok(pipe) => pipe,
-            Err(error) => {
-                let _ = child.start_kill();
-                return Err(error);
-            }
-        };
-
-        spawn_output_reader(stdout, OutputStream::Stdout, events.clone());
-        spawn_output_reader(stderr, OutputStream::Stderr, events.clone());
         let (commands, receiver) = mpsc::unbounded_channel();
-        tauri::async_runtime::spawn(run_sidecar(child, stdin, receiver, events));
+        spawn_output_reader(output, commands.clone(), events.clone());
+        tauri::async_runtime::spawn_blocking(move || run_sidecar(child, receiver, events));
 
         Ok(Self { commands })
     }
@@ -108,7 +59,7 @@ impl SidecarProcess {
             .map_err(|_| "Desktop sidecar is not running".to_string())
     }
 
-    /// Stop the entire process scope, not just the Node parent process.
+    /// Stop the owned Node sidecar.
     pub(crate) fn terminate(&self) {
         let _ = self.commands.send(SidecarCommand::Terminate);
     }
@@ -120,285 +71,160 @@ impl SidecarProcess {
     }
 }
 
-fn bundled_binary_path(executable: &Path, program: &str) -> Result<PathBuf, String> {
-    let executable_dir = executable
-        .parent()
-        .ok_or_else(|| "Desktop executable has no parent directory".to_string())?;
-    // Match Tauri Shell's documented sidecar layout in development and bundles.
-    let base_dir = if executable_dir.ends_with("deps") {
-        executable_dir.parent().unwrap_or(executable_dir)
-    } else {
-        executable_dir
-    };
-    let path = base_dir.join(program);
-    #[cfg(windows)]
-    {
-        let mut path = path;
-        if path.extension().is_none() {
-            path.as_mut_os_string().push(".exe");
-        }
-        return Ok(path);
+impl Drop for SidecarProcess {
+    fn drop(&mut self) {
+        self.terminate();
     }
-    #[cfg(not(windows))]
-    Ok(path)
 }
 
-fn require_pipe<T>(pipe: Option<T>, name: &str) -> Result<T, String> {
-    pipe.ok_or_else(|| format!("Desktop sidecar {name} pipe was not created"))
-}
-
-#[derive(Clone, Copy)]
-enum OutputStream {
-    Stdout,
-    Stderr,
-}
-
-fn spawn_output_reader<R>(
-    output: R,
-    stream: OutputStream,
+fn spawn_output_reader(
+    mut output: Receiver<CommandEvent>,
+    commands: mpsc::UnboundedSender<SidecarCommand>,
     events: mpsc::UnboundedSender<SidecarEvent>,
-) where
-    R: AsyncRead + Send + Unpin + 'static,
-{
+) {
     tauri::async_runtime::spawn(async move {
-        let mut output = output;
-        let mut buffer = [0; 16 * 1024];
-        loop {
-            match output.read(&mut buffer).await {
-                Ok(0) => return,
-                Ok(length) => {
-                    let event = match stream {
-                        OutputStream::Stdout => SidecarEvent::Stdout(buffer[..length].to_vec()),
-                        OutputStream::Stderr => SidecarEvent::Stderr(buffer[..length].to_vec()),
-                    };
-                    if events.send(event).is_err() {
-                        return;
-                    }
+        let mut terminated = false;
+        while let Some(event) = output.recv().await {
+            let event = match event {
+                CommandEvent::Stdout(bytes) => SidecarEvent::Stdout(bytes),
+                CommandEvent::Stderr(bytes) => SidecarEvent::Stderr(bytes),
+                CommandEvent::Error(error) => {
+                    SidecarEvent::Error(format!("Desktop sidecar output read failed: {error}"))
                 }
-                Err(error) => {
-                    let name = match stream {
-                        OutputStream::Stdout => "stdout",
-                        OutputStream::Stderr => "stderr",
-                    };
-                    let _ = events.send(SidecarEvent::Error(format!(
-                        "Desktop sidecar {name} read failed: {error}"
-                    )));
-                    return;
+                CommandEvent::Terminated(status) => {
+                    terminated = true;
+                    let _ = commands.send(SidecarCommand::Exited);
+                    SidecarEvent::Terminated(status.code)
                 }
+                // Future Shell events cannot be interpreted as protocol bytes.
+                other => SidecarEvent::Error(format!(
+                    "Desktop sidecar emitted an unsupported output event: {other:?}"
+                )),
+            };
+            if events.send(event).is_err() {
+                let _ = commands.send(SidecarCommand::Terminate);
+                return;
             }
+        }
+        if !terminated {
+            let _ = events.send(SidecarEvent::Error(
+                "Desktop sidecar event stream closed before termination".into(),
+            ));
+            let _ = commands.send(SidecarCommand::Terminate);
         }
     });
 }
 
-async fn run_sidecar(
-    mut child: Box<dyn ChildWrapper>,
-    mut stdin: ChildStdin,
+fn run_sidecar(
+    mut child: CommandChild,
     mut commands: mpsc::UnboundedReceiver<SidecarCommand>,
     events: mpsc::UnboundedSender<SidecarEvent>,
 ) {
-    let mut liveness = tokio::time::interval(Duration::from_millis(100));
-    liveness.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    loop {
-        tokio::select! {
-            _ = liveness.tick() => {
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        // The root process has exited. A process group or Job Object
-                        // can still contain descendants, so terminate the scope before
-                        // publishing the generation as stopped.
-                        let _ = child.start_kill();
-                        report_termination(Ok(status.code()), &events);
-                        return;
-                    }
-                    Ok(None) => {}
-                    Err(error) => {
-                        let _ = events.send(SidecarEvent::Error(format!(
-                            "Desktop sidecar liveness check failed: {error}"
-                        )));
-                        terminate_child(&mut child, &events).await;
-                        return;
-                    }
-                }
-            }
-            command = commands.recv() => match command {
-                Some(SidecarCommand::Write(frame)) => {
-                    if let Err(error) = stdin.write_all(&frame).await {
-                        let _ = events.send(SidecarEvent::Error(format!(
-                            "Desktop sidecar stdin write failed: {error}"
-                        )));
-                        terminate_child(&mut child, &events).await;
-                        return;
-                    }
-                }
-                Some(SidecarCommand::Terminate) | None => {
-                    terminate_child(&mut child, &events).await;
+    while let Some(command) = commands.blocking_recv() {
+        match command {
+            SidecarCommand::Write(frame) => {
+                if let Err(error) = child.write(&frame) {
+                    let _ = events.send(SidecarEvent::Error(format!(
+                        "Desktop sidecar stdin write failed: {error}"
+                    )));
+                    terminate_child(child, &events);
                     return;
                 }
             }
+            SidecarCommand::Terminate => {
+                terminate_child(child, &events);
+                return;
+            }
+            SidecarCommand::Exited => return,
         }
     }
+    let _ = child.kill();
 }
 
-async fn terminate_child(
-    child: &mut Box<dyn ChildWrapper>,
-    events: &mpsc::UnboundedSender<SidecarEvent>,
-) {
-    match Box::into_pin(child.kill()).await {
-        Ok(()) => {
-            let status = child
-                .try_wait()
-                .ok()
-                .flatten()
-                .and_then(|status| status.code());
-            report_termination(Ok(status), events);
-        }
-        Err(error) => {
-            let _ = events.send(SidecarEvent::Error(format!(
-                "Desktop sidecar termination failed: {error}"
-            )));
-            report_termination(Ok(None), events);
-        }
-    }
-}
-
-fn report_termination(
-    status: Result<Option<i32>, std::io::Error>,
-    events: &mpsc::UnboundedSender<SidecarEvent>,
-) {
-    match status {
-        Ok(code) => {
-            let _ = events.send(SidecarEvent::Terminated(code));
-        }
-        Err(error) => {
-            let _ = events.send(SidecarEvent::Error(format!(
-                "Desktop sidecar wait failed: {error}"
-            )));
-            let _ = events.send(SidecarEvent::Terminated(None));
-        }
+fn terminate_child(child: CommandChild, events: &mpsc::UnboundedSender<SidecarEvent>) {
+    if let Err(error) = child.kill() {
+        let _ = events.send(SidecarEvent::Error(format!(
+            "Desktop sidecar termination failed: {error}"
+        )));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(target_os = "macos")]
-    use std::time::Duration;
-    #[cfg(target_os = "macos")]
-    use tokio::time::{sleep, timeout};
+    use std::{sync::Mutex, time::Duration};
+    use tokio::time::timeout;
 
-    #[test]
-    fn bundled_node_path_is_beside_the_desktop_executable() {
-        let path =
-            bundled_binary_path(Path::new("/bundle/DeepSeek Harness Desktop"), "node").unwrap();
-        let expected = Path::new("/bundle").join(if cfg!(windows) { "node.exe" } else { "node" });
-        assert_eq!(path, expected);
+    static SIDECAR_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn test_app() -> tauri::App<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .plugin(tauri_plugin_shell::init())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap()
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
-    fn terminating_the_scope_kills_a_descendant() {
+    fn official_shell_sidecar_preserves_raw_protocol_bytes() {
+        let _guard = SIDECAR_TEST_LOCK.lock().unwrap();
         tauri::async_runtime::block_on(async {
+            let app = test_app();
             let (events_tx, mut events) = mpsc::unbounded_channel();
             let process = SidecarProcess::spawn(
-                Path::new("/bin/sh"),
+                app.handle(),
                 vec![
-                    OsString::from("-c"),
-                    OsString::from("sleep 30 & printf '%s\\n' \"$!\"; wait"),
+                    OsString::from("--input-type=module"),
+                    OsString::from("--eval"),
+                    OsString::from(
+                        "process.stdout.write(Buffer.from([0, 255])); process.stdin.once('data', (chunk) => process.stdout.write(chunk, () => process.exit(0)));",
+                    ),
                 ],
                 std::env::temp_dir(),
                 events_tx,
             )
             .unwrap();
-
-            let child_pid = receive_descendant_pid(&mut events).await;
-
-            process.terminate();
-            wait_for_termination(&mut events).await;
-
-            wait_for_process_exit(child_pid).await;
+            let input = vec![1, 0, 2, 255];
+            process.write(input.clone()).unwrap();
+            let stdout = wait_for_termination(&mut events).await;
+            assert_eq!(stdout, [vec![0, 255], input].concat());
         });
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
-    fn root_exit_cleans_its_remaining_process_scope() {
+    fn terminating_the_owned_sidecar_reports_termination() {
+        let _guard = SIDECAR_TEST_LOCK.lock().unwrap();
         tauri::async_runtime::block_on(async {
+            let app = test_app();
             let (events_tx, mut events) = mpsc::unbounded_channel();
-            let _process = SidecarProcess::spawn(
-                Path::new("/bin/sh"),
+            let process = SidecarProcess::spawn(
+                app.handle(),
                 vec![
-                    OsString::from("-c"),
-                    OsString::from("sleep 30 & printf '%s\\n' \"$!\""),
+                    OsString::from("--input-type=module"),
+                    OsString::from("--eval"),
+                    OsString::from("setInterval(() => {}, 1000);"),
                 ],
                 std::env::temp_dir(),
                 events_tx,
             )
             .unwrap();
-
-            let child_pid = receive_descendant_pid(&mut events).await;
-            wait_for_termination(&mut events).await;
-
-            wait_for_process_exit(child_pid).await;
+            process.terminate();
+            let _ = wait_for_termination(&mut events).await;
         });
     }
 
-    #[cfg(target_os = "macos")]
-    async fn receive_descendant_pid(events: &mut mpsc::UnboundedReceiver<SidecarEvent>) -> u32 {
+    async fn wait_for_termination(events: &mut mpsc::UnboundedReceiver<SidecarEvent>) -> Vec<u8> {
         timeout(Duration::from_secs(5), async {
-            let mut output = String::new();
+            let mut stdout = Vec::new();
             loop {
                 match events.recv().await.unwrap() {
-                    SidecarEvent::Stdout(bytes) => {
-                        output.push_str(&String::from_utf8_lossy(&bytes));
-                        if let Some(pid) = output.lines().find_map(|line| line.parse().ok()) {
-                            return pid;
-                        }
-                    }
+                    SidecarEvent::Stdout(bytes) => stdout.extend(bytes),
                     SidecarEvent::Error(error) => panic!("sidecar failed: {error}"),
-                    SidecarEvent::Terminated(_) => {
-                        panic!("sidecar ended before reporting its child")
-                    }
+                    SidecarEvent::Terminated(_) => return stdout,
                     SidecarEvent::Stderr(_) => {}
                 }
             }
         })
         .await
-        .expect("sidecar did not report its descendant pid")
-    }
-
-    #[cfg(target_os = "macos")]
-    async fn wait_for_termination(events: &mut mpsc::UnboundedReceiver<SidecarEvent>) {
-        timeout(Duration::from_secs(5), async {
-            loop {
-                match events.recv().await {
-                    Some(SidecarEvent::Terminated(_)) => return,
-                    Some(SidecarEvent::Error(error)) => panic!("sidecar failed: {error}"),
-                    Some(SidecarEvent::Stdout(_) | SidecarEvent::Stderr(_)) => {}
-                    None => panic!("sidecar event stream closed before termination"),
-                }
-            }
-        })
-        .await
-        .expect("sidecar scope did not terminate");
-    }
-
-    #[cfg(target_os = "macos")]
-    async fn wait_for_process_exit(pid: u32) {
-        timeout(Duration::from_secs(2), async {
-            while process_is_running(pid) {
-                sleep(Duration::from_millis(20)).await;
-            }
-        })
-        .await
-        .expect("sidecar descendant survived termination");
-    }
-
-    #[cfg(target_os = "macos")]
-    fn process_is_running(pid: u32) -> bool {
-        std::process::Command::new("/bin/kill")
-            .args(["-0", &pid.to_string()])
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
+        .expect("sidecar did not terminate")
     }
 }

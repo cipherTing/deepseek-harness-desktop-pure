@@ -24,6 +24,8 @@ window.__ModuleLoader__.load({
       ".dab-statusWarn{color:var(--dsw-alias-state-warn-label)}",
       ".dab-badge{position:static;align-self:stretch;z-index:1;flex:none;height:30px;margin:0 0 4px;padding:0 10px;border-radius:10px;border:none;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font-size:12px;font-weight:600;line-height:16px;cursor:pointer}",
       ".dab-badgeRail{align-self:center;width:10px;height:10px;margin:0 0 4px;padding:0;border:2px solid var(--dsw-alias-bg-layer-1);border-radius:50%;font-size:0;line-height:0}",
+      ".dab-brandLabel{font-size:17px;font-weight:600;letter-spacing:0;white-space:nowrap}",
+      ".dab-brandVersion{display:inline-flex;align-items:center;height:16px;padding:0 4px;border-radius:3px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-label-primary);font-family:var(--ds-font-family-code);font-size:8px;font-weight:500;line-height:16px}",
       ".dab-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center}",
       ".dab-dialog{width:min(400px,calc(100vw - 48px));border:1px solid var(--dsw-alias-border-inverted);border-radius:14px;background:var(--dsw-specific-menu,var(--dsw-alias-bg-overlay));box-shadow:var(--dsw-shadow-lv3);padding:20px;display:flex;flex-direction:column;gap:10px;color:var(--dsw-alias-label-primary)}",
       ".dab-dialogTitle{font-size:16px;font-weight:600;line-height:24px}",
@@ -44,7 +46,7 @@ window.__ModuleLoader__.load({
     const NS = "desktopClientUi";
     const zh = {
       "about.nav": "关于桌面版",
-      "about.title": "DeepSeek Harness Desktop",
+      "about.title": "DeepDive",
       "about.desktopVersion": "桌面版版本",
       "about.kernelVersion": "Harness 内核版本",
       "about.repository": "项目地址",
@@ -62,7 +64,7 @@ window.__ModuleLoader__.load({
     };
     const en = {
       "about.nav": "About Desktop",
-      "about.title": "DeepSeek Harness Desktop",
+      "about.title": "DeepDive",
       "about.desktopVersion": "Desktop version",
       "about.kernelVersion": "Harness kernel version",
       "about.repository": "Repository",
@@ -235,6 +237,15 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function DesktopBrandName() {
+      const info = useDesktopInfo();
+      return React.createElement(React.Fragment, null,
+        React.createElement("span", { className: "dab-brandLabel" }, "DeepDive"),
+        info?.desktopVersion !== undefined && React.createElement(
+          "span", { className: "dab-brandVersion" }, info.desktopVersion),
+      );
+    }
+
     // ── plugin body ────────────────────────────────────────────────────────
     const inject = [];
 
@@ -266,6 +277,9 @@ window.__ModuleLoader__.load({
         name: "settings.update",
         locale: NS,
       }, UpdateBadge));
+      slots.inject("sidebar.brand.name", () => slots.register({
+        name: "sidebar.brand.name",
+      }, DesktopBrandName));
     }
 
     exports.apply = apply;

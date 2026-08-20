@@ -108,7 +108,7 @@ async function serve(): Promise<void> {
     environment: appBoot.loadLayeredEnv('dsh'),
     profile: 'web',
     patchFiles: [overlayPath],
-    args: ['--host', '127.0.0.1', '--port', '0'],
+    args: ['--host', '127.0.0.1', '--port', '0', '--no-open'],
   })
   const ctx = running.ctx as DesktopRuntimeContext
   // Bounded boot with a diagnostic audit: a composition whose rows never
@@ -160,25 +160,18 @@ async function serve(): Promise<void> {
   })
 }
 
-/** Kill the macOS process group if the Tauri owner disappears abruptly. */
-function terminateOrphanedProcessGroup(): never {
-  if (process.platform === 'darwin') {
-    try {
-      process.kill(-process.pid, 'SIGKILL')
-    } catch {
-      // The group may already have been terminated by the owner.
-    }
-  }
+/** Exit the Node sidecar if its Tauri owner disappears abruptly. */
+function exitOrphanedSidecar(): never {
   process.exit(1)
 }
 
 const parentPid = process.ppid
 setInterval(() => {
-  if (process.ppid !== parentPid || process.ppid === 1) terminateOrphanedProcessGroup()
+  if (process.ppid !== parentPid || process.ppid === 1) exitOrphanedSidecar()
   try {
     process.kill(parentPid, 0)
   } catch {
-    terminateOrphanedProcessGroup()
+    exitOrphanedSidecar()
   }
 }, 2000).unref()
 

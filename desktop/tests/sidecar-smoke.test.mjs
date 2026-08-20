@@ -80,6 +80,7 @@ async function runSidecarSmoke(launchMode) {
     assert.equal(ready.kind, 'ready', stderr || ready.error)
     assert.equal(ready.protocolVersion, 1)
     assert.match(ready.url, /^http:\/\/127\.0\.0\.1:\d+$/)
+    assert.doesNotMatch(stderr, /opening the default browser/)
     const origin = ready.url
 
     // The index document is the REAL web host's per-request output: it carries
@@ -118,7 +119,10 @@ async function runSidecarSmoke(launchMode) {
     assert.match(bundle.headers.get('content-type') ?? '', /text\/javascript/)
     const clientUiBundle = await fetch(`${origin}${clientUi.url}`)
     assert.equal(clientUiBundle.status, 200)
-    assert.match(await clientUiBundle.text(), /desktop_save_session|settings\.section/)
+    const clientUiSource = await clientUiBundle.text()
+    assert.match(clientUiSource, /desktop_save_session|settings\.section/)
+    assert.match(clientUiSource, /DeepDive/)
+    assert.match(clientUiSource, /sidebar\.brand\.name/)
 
     // The /api transport and the system bridge roundtrip over real HTTP.
     const pickBody = Buffer.from(JSON.stringify({

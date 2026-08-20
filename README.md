@@ -1,25 +1,25 @@
 <p align="center">
-  <img src="desktop/assets/deepseek.png" width="112" height="112" alt="DeepSeek Harness Desktop">
+  <img src=".github/assets/deepdive-banner.png" width="100%" alt="DeepDive · 探索未知之境">
 </p>
 
-<h1 align="center">DeepSeek Harness Desktop</h1>
+<p align="center"><strong>将 DeepSeek Harness 带到桌面：直接安装、沿用同一份配置与数据、无需 Node.js。</strong></p>
 
-<p align="center"><strong>将 DeepSeek Harness Web 客户端纯净封装为开箱即用的桌面应用。</strong></p>
-
-<p align="center">简体中文 · <a href="README.en.md">English</a></p>
+<p align="center">
+  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><strong>下载最新版本</strong></a>
+  · <a href="https://github.com/deepseek-ai/deepseek-harness">查看上游项目</a>
+  · <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/issues">提交问题</a>
+</p>
 
 <p align="center">
   <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><img src="https://img.shields.io/github/v/release/cipherTing/deepseek-harness-desktop-pure?display_name=tag&sort=semver&label=release" alt="Latest release"></a>
   <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml"><img src="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml/badge.svg" alt="Desktop build"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/cipherTing/deepseek-harness" alt="MIT License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/cipherTing/deepseek-harness-desktop-pure" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Windows%20x64-2f6feb" alt="Supported platforms">
 </p>
 
-<p align="center">
-  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><strong>下载最新版本</strong></a>
-  · <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness 原项目</a>
-  · <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/issues">Desktop 问题反馈</a>
-</p>
+<p align="center">简体中文 · <a href="README.en.md">English</a></p>
+
+<p align="center"><sub>DeepDive 原名 DeepSeek Harness Desktop；出于品牌与商标边界考虑，为避免与 DeepSeek Harness 的名称和品牌产生混淆而更名。DeepDive 是独立发行版，不隶属于也未获 DeepSeek 背书。</sub></p>
 
 > **项目边界：本项目只做一件事，将 DeepSeek Harness Web 客户端打包成纯净的 Desktop 发行版。** 不新增 Harness 功能，不改变业务逻辑，不维护另一套配置、会话、工作区或用户数据，也不把原项目改造成所谓的“Desktop 模式”。
 
@@ -41,8 +41,8 @@
 
 | 平台 | 安装包 | 支持范围 |
 | --- | --- | --- |
-| macOS | `deepseek-harness-desktop-macos-arm64-<version>.dmg` | macOS 11 或更高版本，仅支持 Apple Silicon。 |
-| Windows | `deepseek-harness-desktop-windows-x64-<version>.exe` | Windows x64，使用系统 Evergreen WebView2 Runtime；缺失时由安装程序联网补齐。 |
+| macOS | `deepdive-macos-arm64-<version>.dmg` | macOS 11 或更高版本，仅支持 Apple Silicon。 |
+| Windows | `deepdive-windows-x64-<version>.exe` | Windows x64，使用系统 Evergreen WebView2 Runtime；缺失时由安装程序联网补齐。 |
 
 > **安装提醒：** 当前 macOS 包采用 ad-hoc 签名且未进行 Apple notarization，Windows 包也未购买商业代码签名。首次安装时系统可能显示开发者或 SmartScreen 提醒；请确认下载来源确实是本仓库的 GitHub Release。
 

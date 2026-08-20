@@ -24,4 +24,4 @@ Sidecar smoke 在每个受支持的 smoke 主机上同时执行原生主脚本�
 
 ## Consequences
 
-Windows sidecar 启动会保留主模块路径，同时无需退回直接主脚本查找。完整 smoke 会多启动一代 sidecar，因此在受支持主机上增加数秒耗时。它仍不验证 NSIS 安装、WebView 启动、Windows Job Object 清理或安装后的资源路径；这些需要 Windows 产品级验收，不能继续用源码断言代替。
+Windows sidecar 启动会保留主模块路径，同时无需退回直接主脚本查找。完整 smoke 会多启动一代 sidecar，因此在受支持主机上增加数秒耗时。它仍不验证 NSIS 安装、WebView 启动、Windows 进程清理或安装后的资源路径；这些需要 Windows 产品级验收，不能继续用源码断言代替。

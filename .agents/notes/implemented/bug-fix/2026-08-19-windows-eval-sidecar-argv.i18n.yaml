@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-19-windows-eval-sidecar-argv.md
-2026-08-19-windows-eval-sidecar-argv.md: 883b62ac57c1cd8cfe8844c02ce9b0ee7c9d3f4b
-2026-08-19-windows-eval-sidecar-argv.zh.md: ead2202a6335ddd7c58dca8f0e365bcddce67fe3
+2026-08-19-windows-eval-sidecar-argv.md: 2bd3a478b08bbca5b7a2cd91ddf037c05bd5bde8
+2026-08-19-windows-eval-sidecar-argv.zh.md: 33a70640c1fba8367ab56970038d9cdb932e58f4

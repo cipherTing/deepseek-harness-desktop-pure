@@ -1,25 +1,25 @@
 <p align="center">
-  <img src="desktop/assets/deepseek.png" width="112" height="112" alt="DeepSeek Harness Desktop">
+  <img src=".github/assets/deepdive-banner.png" width="100%" alt="DeepDive · Explore the unknown">
 </p>
 
-<h1 align="center">DeepSeek Harness Desktop</h1>
+<p align="center"><strong>Bring DeepSeek Harness to the desktop: install directly, keep one configuration and data model, and skip Node.js setup.</strong></p>
 
-<p align="center"><strong>A clean, ready-to-use desktop distribution of the DeepSeek Harness Web client.</strong></p>
-
-<p align="center"><a href="README.md">简体中文</a> · English</p>
+<p align="center">
+  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><strong>Download latest</strong></a>
+  · <a href="https://github.com/deepseek-ai/deepseek-harness">View upstream</a>
+  · <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/issues">Report an issue</a>
+</p>
 
 <p align="center">
   <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><img src="https://img.shields.io/github/v/release/cipherTing/deepseek-harness-desktop-pure?display_name=tag&sort=semver&label=release" alt="Latest release"></a>
   <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml"><img src="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml/badge.svg" alt="Desktop build"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/cipherTing/deepseek-harness" alt="MIT License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/cipherTing/deepseek-harness-desktop-pure" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Windows%20x64-2f6feb" alt="Supported platforms">
 </p>
 
-<p align="center">
-  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><strong>Download the latest release</strong></a>
-  · <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness project</a>
-  · <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/issues">Desktop issues</a>
-</p>
+<p align="center"><a href="README.md">简体中文</a> · English</p>
+
+<p align="center"><sub>DeepDive was formerly DeepSeek Harness Desktop. It was renamed for brand and trademark clarity to avoid confusion with the DeepSeek Harness name and brand. DeepDive is an independent distribution and is not affiliated with or endorsed by DeepSeek.</sub></p>
 
 > **Project boundary: this project does exactly one thing, package the DeepSeek Harness Web client as a clean Desktop distribution.** It does not add Harness features, change business logic, maintain a second configuration or data model, or introduce a separate "Desktop mode" into DeepSeek Harness.
 
@@ -41,8 +41,8 @@ Download the latest package for your platform from [GitHub Releases](https://git
 
 | Platform | Package | Support |
 | --- | --- | --- |
-| macOS | `deepseek-harness-desktop-macos-arm64-<version>.dmg` | macOS 11 or newer, Apple Silicon only. |
-| Windows | `deepseek-harness-desktop-windows-x64-<version>.exe` | Windows x64 using the system Evergreen WebView2 Runtime; the installer downloads it only when missing. |
+| macOS | `deepdive-macos-arm64-<version>.dmg` | macOS 11 or newer, Apple Silicon only. |
+| Windows | `deepdive-windows-x64-<version>.exe` | Windows x64 using the system Evergreen WebView2 Runtime; the installer downloads it only when missing. |
 
 > **Installation note:** Current macOS packages use ad-hoc signing and are not Apple-notarized. Windows packages do not use a purchased commercial code-signing certificate. The operating system may therefore show a developer or SmartScreen warning on first install; confirm that the package came from this repository's GitHub Release.
 

@@ -739,12 +739,7 @@ async fn spawn_sidecar(
     #[cfg(not(target_os = "windows"))]
     let arguments = vec![script.into_os_string()];
     let (events_tx, events) = mpsc::unbounded_channel();
-    let process = SidecarProcess::spawn(
-        &SidecarProcess::bundled_node_path()?,
-        arguments,
-        cwd,
-        events_tx,
-    )?;
+    let process = SidecarProcess::spawn(app, arguments, cwd, events_tx)?;
     let peer = Arc::new(SidecarPeer {
         process,
         next_id: AtomicU64::new(1),
@@ -828,7 +823,7 @@ async fn supervise_sidecar(app: &AppHandle) {
                     clear_peer_if_current(&state, &peer);
                     show_error_and_exit(
                         app,
-                        format!("DeepSeek Harness Desktop failed to reconnect:\n{error}"),
+                        format!("DeepDive failed to reconnect:\n{error}"),
                         1,
                     );
                     return;
@@ -847,7 +842,7 @@ async fn supervise_sidecar(app: &AppHandle) {
     }
     show_error_and_exit(
         app,
-        "DeepSeek Harness Desktop 宿主进程多次重启失败，应用即将退出。",
+        "DeepDive 宿主进程多次重启失败，应用即将退出。",
         1,
     );
 }
@@ -909,6 +904,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(DesktopState::default())
         .invoke_handler(tauri::generate_handler![
             desktop_open_external_url,
@@ -951,7 +947,7 @@ pub fn run() {
                             "main",
                             WebviewUrl::External(parsed),
                         )
-                        .title("DeepSeek Harness Desktop")
+                        .title("DeepDive")
                         .inner_size(1280.0, 820.0)
                         .min_inner_size(900.0, 640.0)
                         .on_navigation(move |target| {
@@ -997,7 +993,7 @@ pub fn run() {
                     Err(error) => {
                         show_error_and_exit(
                             &handle,
-                            format!("DeepSeek Harness Desktop failed to start:\n{error}"),
+                            format!("DeepDive failed to start:\n{error}"),
                             1,
                         );
                     }
@@ -1008,7 +1004,7 @@ pub fn run() {
 
     let app = builder
         .build(tauri::generate_context!())
-        .expect("failed to build DeepSeek Harness Desktop");
+        .expect("failed to build DeepDive");
     app.run(|app, event| {
         if let RunEvent::ExitRequested { code, api, .. } = event {
             let state = app.state::<DesktopState>();

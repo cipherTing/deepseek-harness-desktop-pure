@@ -1,5 +1,5 @@
 # Desktop overlay: the standard web transport stays intact — the sidecar boots
-# the upstream `web` profile with `--host 127.0.0.1 --port 0` and the WebView
+# the upstream `web` profile with `--host 127.0.0.1 --port 0 --no-open` and the WebView
 # loads the resulting loopback HTTP URL, exactly like the browser surface.
 # This layer only replaces the directory-picker capability with the native
 # dialog, swaps the API gateway for the desktop defaults (native open-path via
@@ -19,6 +19,7 @@
 # wording (a config patch replaces the whole config, so all fields restated).
 - id: web-runtime
   config:
+    openBrowser: !!js ctx.webStartup.openBrowser
     printUrl: true
     surfaceContext: false
     trustedHosts: !!js ctx.webStartup.trustedHosts
