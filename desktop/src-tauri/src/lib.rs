@@ -13,12 +13,7 @@ use std::{
 
 use rmpv::Value;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-#[cfg(target_os = "macos")]
-use tauri::menu::PredefinedMenuItem;
-use tauri::{
-    menu::{Menu, MenuItem, Submenu},
-    AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder,
-};
+use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
@@ -867,53 +862,6 @@ fn show_error_and_exit(app: &AppHandle, message: impl Into<String>, code: i32) {
     app.exit(code);
 }
 
-/** The native menu: app/quit, edit, view (CmdOrCtrl+R reload), window. */
-fn build_desktop_menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    let quit = MenuItem::with_id(
-        app,
-        "quit",
-        "Quit DeepSeek Harness Desktop",
-        true,
-        Some("CmdOrCtrl+Q"),
-    )?;
-    let reload = MenuItem::with_id(app, "reload", "Reload Page", true, Some("CmdOrCtrl+R"))?;
-    let view = Submenu::with_items(app, "View", true, &[&reload])?;
-    #[cfg(target_os = "macos")]
-    let menu = {
-        let app_menu = Submenu::with_items(app, "DeepSeek Harness Desktop", true, &[&quit])?;
-        let edit = Submenu::with_items(
-            app,
-            "Edit",
-            true,
-            &[
-                &PredefinedMenuItem::undo(app, None)?,
-                &PredefinedMenuItem::redo(app, None)?,
-                &PredefinedMenuItem::separator(app)?,
-                &PredefinedMenuItem::cut(app, None)?,
-                &PredefinedMenuItem::copy(app, None)?,
-                &PredefinedMenuItem::paste(app, None)?,
-                &PredefinedMenuItem::select_all(app, None)?,
-            ],
-        )?;
-        let window = Submenu::with_items(
-            app,
-            "Window",
-            true,
-            &[
-                &PredefinedMenuItem::minimize(app, None)?,
-                &PredefinedMenuItem::fullscreen(app, None)?,
-            ],
-        )?;
-        Menu::with_items(app, &[&app_menu, &edit, &view, &window])?
-    };
-    #[cfg(not(target_os = "macos"))]
-    let menu = {
-        let file = Submenu::with_items(app, "File", true, &[&quit])?;
-        Menu::with_items(app, &[&file, &view])?
-    };
-    Ok(menu)
-}
-
 async fn stop_sidecar(app: &AppHandle) {
     let state = app.state::<DesktopState>();
     let peer = state.peer.read().unwrap().clone();
@@ -973,19 +921,7 @@ pub fn run() {
             desktop_copy_file_contents,
             desktop_save_session,
         ])
-        .on_menu_event(|app, event| match event.id().0.as_str() {
-            "quit" => begin_graceful_exit(app, 0),
-            "reload" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.reload();
-                }
-            }
-            _ => {}
-        })
         .setup(|app| {
-            if let Err(error) = app.handle().set_menu(build_desktop_menu(app.handle())?) {
-                eprintln!("Desktop menu setup failed: {error}");
-            }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 match spawn_sidecar(&handle).await {

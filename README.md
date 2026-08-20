@@ -113,7 +113,7 @@ macOS 安装包只能在 Apple Silicon Mac 上构建，Windows x64 安装包只�
 - [`desktop/package.json`](desktop/package.json) 是 Desktop 版本的唯一来源。
 - 修改版本时运行 `pnpm desktop:version:set -- <version>`，并用 `pnpm desktop:version:check` 检查所有版本镜像。
 - [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) 只记录本 fork 最新同步完成的原项目版本：同步到原项目 tag 时记录该 tag 名称；同步到没有 tag 的 commit 时记录完整 SHA；不记录本仓库 HEAD。
-- GitHub Actions 仅支持维护者手动触发；macOS 与 Windows 均构建成功后发布 `v<version>` Release。
+- GitHub Actions 仅支持维护者手动触发；从 `master` 发布时需要填写中文和英文的高层 Markdown 列表更新日志，macOS 与 Windows 均构建成功后会将其作为 `v<version>` Release 正文发布。
 - 原项目同步不会由 CI 自动 fetch、merge 或 rebase，必须由维护者检查并手动完成。
 
 ## 问题归属

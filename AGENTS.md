@@ -25,7 +25,7 @@ After verification, replace the sole value in [`desktop/UPSTREAM_COMMIT`](deskto
 - `.github/workflows/build-desktop.yml` runs only by `workflow_dispatch`. Any fork ref may run the two-platform build for validation; only `master` may publish a Release. It freezes the dispatched commit SHA for both platforms and any release tag, never synchronizes upstream, and never changes versions.
 - Only `Build and release Desktop` may remain enabled in this fork. Keep upstream workflow files unchanged but disabled in GitHub Actions. After synchronization, disable newly introduced upstream workflows; do not enable upstream CI, docs, E2E, issue automation, or releases without explicit maintainer approval.
 - Artifacts are named `deepseek-harness-desktop-macos-arm64-<version>.dmg` and `deepseek-harness-desktop-windows-x64-<version>.exe`.
-- After both builds pass, publish immutable tag/title `v<version>` with GitHub-generated notes only. Bump the version instead of replacing an existing tag or release. Upstream traceability comes from tagged fork source plus `desktop/UPSTREAM_COMMIT`, not duplicated release prose.
+- After both builds pass, publish immutable tag/title `v<version>` with the bilingual Markdown notes supplied at `workflow_dispatch`: Chinese and English notes are both required only for a `master` publication and receive fixed section headings. Each language is a concise Markdown bullet list covering only high-level, user-facing changes; do not include implementation details, investigation history, internal terminology, or exhaustive change inventories. Bump the version instead of replacing an existing tag or release. Upstream traceability comes from tagged fork source plus `desktop/UPSTREAM_COMMIT`, not duplicated release prose.
 - Windows packaging uses the system Evergreen WebView2 Runtime with Tauri's `downloadBootstrapper` fallback. Do not bundle the offline WebView2 installer.
 
 ## Runtime and path invariants
@@ -40,7 +40,7 @@ Tauri owns the window, assets, sidecar lifecycle, readiness, framed IPC, native 
 
 The sidecar runs upstream `web` plus a read-only overlay that replaces directory picking, applies Desktop open-path defaults through the shared API-proxy trust fence, and adds bridge/index/prompt/info glue and Desktop client UI. Standard Web transport and user patches remain active; `graph-changed` reloads the page. The bundled runtime contains Node.js, compiled packages, and production dependencies. Its process scope is owned with the maintained `process-wrap` library: macOS uses a dedicated process group, and Windows uses a Job Object with `CREATE_NO_WINDOW` and kill-on-close semantics. Do not replace this with direct Tauri Shell `child.kill()`, `taskkill`, `pkill`, or process-tree scans. The macOS Node watchdog also terminates its group when Tauri disappears abruptly. It must stop with Tauri without unmanaged descendants.
 
-Unexpected exits get at most three backoff respawns; update the live origin before navigating the window. Final startup/respawn failure shows a modal error and preserves a nonzero exit code. View > Reload Page uses `CmdOrCtrl+R`, and the default WebView context menu remains available. macOS uses Tauri's overlay title bar with native traffic lights; the top strip preserves native-style drag and double-click zoom through Tauri window APIs, while Windows keeps its native title bar. Rust downloads session exports directly from the current loopback host with a total timeout; framed IPC remains limited to readiness, `graph-changed`, system requests, and shutdown.
+Unexpected exits get at most three backoff respawns; update the live origin before navigating the window. Final startup/respawn failure shows a modal error and preserves a nonzero exit code. Desktop installs no native application menu; the default WebView context menu remains available. macOS uses Tauri's overlay title bar with native traffic lights; the top strip preserves native-style drag and double-click zoom through Tauri window APIs, while Windows keeps its native title bar. Rust downloads session exports directly from the current loopback host with a total timeout; framed IPC remains limited to readiness, `graph-changed`, system requests, and shutdown.
 
 ### Sanctioned upstream surface change
 
@@ -103,6 +103,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   boot/        shared app-bin glue
   sdk/         JSON-RPC protocol, server, and TypeScript client
   examples/    demo bundles (agent-spine + CLI/ACP/JSON-RPC bins)
+  experimental/ private prototypes excluded from official releases
   support/     dev/test infrastructure
   util/        zero-dependency utilities
 python/      Python SDK and bundled runtime (see python/README.md)

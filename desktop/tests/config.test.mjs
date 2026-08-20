@@ -26,7 +26,9 @@ test('Desktop version and root shortcuts use the Desktop package', () => {
 test('Desktop workflow builds any manual ref and releases only one frozen master SHA', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/build-desktop.yml', import.meta.url), 'utf8')
 
-  assert.match(workflow, /on:\n  workflow_dispatch:/)
+  assert.match(workflow, /on:\n  workflow_dispatch:\n    inputs:\n      release_notes_zh:/)
+  assert.match(workflow, /release_notes_zh:\n\s+description: Concise Chinese Markdown bullet list of high-level user-facing changes\. Required when publishing from master\.\n\s+required: false\n\s+type: string/)
+  assert.match(workflow, /release_notes_en:\n\s+description: Concise English Markdown bullet list of high-level user-facing changes\. Required when publishing from master\.\n\s+required: false\n\s+type: string/)
   assert.doesNotMatch(workflow, /^\s*(push|pull_request):/m)
   assert.doesNotMatch(workflow, /inputs:\n\s+ref:/)
   assert.match(workflow, /group: desktop-release/)
@@ -37,6 +39,11 @@ test('Desktop workflow builds any manual ref and releases only one frozen master
   assert.match(workflow, /ref: \$\{\{ needs\.metadata\.outputs\.source_sha \}\}/)
   assert.match(workflow, /Release tag \$tag already exists/)
   assert.match(workflow, /if \[\[ "\$GITHUB_REF" == "refs\/heads\/master" \]\]/)
+  assert.match(workflow, /Master releases require both Chinese and English release notes\./)
+  assert.match(workflow, /RELEASE_NOTES_ZH\/\/\[\[:space:\]\]\//)
+  assert.match(workflow, /RELEASE_NOTES_EN\/\/\[\[:space:\]\]\//)
+  assert.match(workflow, /RELEASE_NOTES_ZH: \$\{\{ inputs\.release_notes_zh \}\}/)
+  assert.match(workflow, /RELEASE_NOTES_EN: \$\{\{ inputs\.release_notes_en \}\}/)
   assert.match(workflow, /uses: tauri-apps\/tauri-action@v1/)
   assert.match(workflow, /uploadWorkflowArtifacts: true/)
   assert.match(workflow, /releaseAssetNamePattern: deepseek-harness-desktop-\$\{\{ matrix\.platform \}\}-\[version\]\[ext\]/)
@@ -51,9 +58,11 @@ test('Desktop workflow builds any manual ref and releases only one frozen master
   assert.match(workflow, /gh release create "\$RELEASE_TAG"/)
   assert.match(workflow, /--target "\$SOURCE_SHA"/)
   assert.match(workflow, /--title "\$RELEASE_TAG"/)
-  assert.match(workflow, /--generate-notes/)
+  assert.match(workflow, /printf '%s\\n\\n' '## 更新日志'/)
+  assert.match(workflow, /printf '%s\\n\\n' '## Release Notes'/)
+  assert.match(workflow, /--notes-file release-notes\.md/)
+  assert.doesNotMatch(workflow, /--generate-notes/)
   assert.match(workflow, /--fail-on-no-commits/)
-  assert.doesNotMatch(workflow, /(?:^|\s)--notes(?:\s|=)/m)
 })
 
 test('Tauri prepares the bundle exactly once', () => {
@@ -204,6 +213,16 @@ test('Windows release packaging avoids a console and Node main-script resolution
   assert.match(rust, /Url::from_file_path/)
 })
 
+test('Desktop omits the native application menu', () => {
+  const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(rust, /tauri::menu/)
+  assert.doesNotMatch(rust, /build_desktop_menu/)
+  assert.doesNotMatch(rust, /\.set_menu\(/)
+  assert.doesNotMatch(rust, /\.on_menu_event\(/)
+  assert.doesNotMatch(rust, /CmdOrCtrl\+[RQ]/)
+})
+
 test('Desktop uses the generic async save carrier instead of patching anchor clicks', () => {
   const bridge = readFileSync(new URL('../bridge/src/index.ts', import.meta.url), 'utf8')
 
@@ -212,19 +231,13 @@ test('Desktop uses the generic async save carrier instead of patching anchor cli
   assert.doesNotMatch(bridge, /HTMLAnchorElement\.prototype\.click/)
 })
 
-test('Desktop shell supervises its sidecar and exposes a reload affordance', () => {
+test('Desktop shell supervises its sidecar without a native application menu', () => {
   const rust = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
   const process = readFileSync(new URL('../src-tauri/src/sidecar_process.rs', import.meta.url), 'utf8')
 
-  // Native menu with the CmdOrCtrl+R reload item (WKWebView has no built-in
-  // browser accelerator; the default right-click menu remains available).
-  assert.match(rust, /set_menu/)
-  assert.match(rust, /on_menu_event/)
-  assert.match(rust, /CmdOrCtrl\+R/)
-  assert.match(rust, /CmdOrCtrl\+Q/)
   assert.match(rust, /begin_graceful_exit/)
-  assert.doesNotMatch(rust, /PredefinedMenuItem::quit/)
-  assert.match(rust, /\.reload\(\)/)
+  assert.doesNotMatch(rust, /on_menu_event/)
+  assert.doesNotMatch(rust, /CmdOrCtrl\+[RQ]/)
   // Startup failures preserve the exit code instead of masking it as 0.
   assert.match(rust, /code\.unwrap_or\(0\)/)
   assert.match(rust, /app\.exit\(exit_code\)/)
@@ -237,7 +250,7 @@ test('Desktop shell supervises its sidecar and exposes a reload affordance', () 
   assert.match(rust, /ureq::AgentBuilder/)
   assert.match(rust, /redirects\(0\)/)
   assert.match(rust, /download_export/)
-  // Normal menu/Cmd+Q exit waits for the current generation to terminate.
+  // Normal title-bar exit waits for the current generation to terminate.
   assert.match(rust, /wait_terminated/)
   // Dead protocol carriers are gone; the page abort is acknowledged.
   assert.doesNotMatch(rust, /desktop_stream_close/)

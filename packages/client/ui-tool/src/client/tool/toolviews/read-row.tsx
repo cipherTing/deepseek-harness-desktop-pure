@@ -25,9 +25,9 @@ type ReadRowProps = ToolCallViewProps & PropsLocale<'conversation'>
  * read card as the row's collapsed-by-default card body. The summary path is an
  * openable host link when the row names a single file.
  */
-export function ReadRow({ toolName, block, cwd, openFile, inspect, t }: ReadRowProps) {
-  const model = toolRowModel(toolName, block, cwd)
-  const read = readCardModel(block, cwd)
+export function ReadRow({ toolName, block, cwd, home, openFile, inspect, t }: ReadRowProps) {
+  const model = toolRowModel(toolName, block, cwd, home)
+  const read = readCardModel(block, cwd, home)
   const nativeFilePath = document.documentElement.dataset.dshDesktop === 'true' && model.filePath !== undefined
     ? resolveWorkspacePath(cwd, model.filePath)
     : undefined

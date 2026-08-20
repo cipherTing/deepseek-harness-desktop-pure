@@ -2,6 +2,15 @@ name: Build and release Desktop
 
 on:
   workflow_dispatch:
+    inputs:
+      release_notes_zh:
+        description: Concise Chinese Markdown bullet list of high-level user-facing changes. Required when publishing from master.
+        required: false
+        type: string
+      release_notes_en:
+        description: Concise English Markdown bullet list of high-level user-facing changes. Required when publishing from master.
+        required: false
+        type: string
 
 concurrency:
   group: desktop-release
@@ -29,12 +38,19 @@ jobs:
       - id: release
         name: Resolve Desktop version and source
         shell: bash
+        env:
+          RELEASE_NOTES_ZH: ${{ inputs.release_notes_zh }}
+          RELEASE_NOTES_EN: ${{ inputs.release_notes_en }}
         run: |
           version="$(node -p "require('./desktop/package.json').version")"
           tag="v$version"
           source_sha="$(git rev-parse HEAD)"
 
           if [[ "$GITHUB_REF" == "refs/heads/master" ]]; then
+            if [[ -z "${RELEASE_NOTES_ZH//[[:space:]]/}" || -z "${RELEASE_NOTES_EN//[[:space:]]/}" ]]; then
+              echo "::error::Master releases require both Chinese and English release notes."
+              exit 1
+            fi
             if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
               echo "::error::Release tag $tag already exists. Bump the Desktop version before rebuilding."
               exit 1
@@ -154,6 +170,19 @@ jobs:
           cp "${dmg[0]}" "release-assets/deepseek-harness-desktop-macos-arm64-$VERSION.dmg"
           cp "${exe[0]}" "release-assets/deepseek-harness-desktop-windows-x64-$VERSION.exe"
 
+      - name: Prepare bilingual release notes
+        shell: bash
+        env:
+          RELEASE_NOTES_ZH: ${{ inputs.release_notes_zh }}
+          RELEASE_NOTES_EN: ${{ inputs.release_notes_en }}
+        run: |
+          {
+            printf '%s\n\n' '## 更新日志'
+            printf '%s\n\n' "$RELEASE_NOTES_ZH"
+            printf '%s\n\n' '## Release Notes'
+            printf '%s\n' "$RELEASE_NOTES_EN"
+          } > release-notes.md
+
       - name: Publish GitHub Release
         shell: bash
         env:
@@ -166,5 +195,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$SOURCE_SHA" \
             --title "$RELEASE_TAG" \
-            --generate-notes \
+            --notes-file release-notes.md \
             --fail-on-no-commits
