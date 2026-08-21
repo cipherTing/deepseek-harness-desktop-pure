@@ -45,9 +45,9 @@ window.__ModuleLoader__.load({
     // ── dictionaries ───────────────────────────────────────────────────────
     const NS = "desktopClientUi";
     const zh = {
-      "about.nav": "关于桌面版",
+      "about.nav": "关于DeepDive",
       "about.title": "DeepDive",
-      "about.desktopVersion": "桌面版版本",
+      "about.desktopVersion": "DeepDive版本",
       "about.kernelVersion": "Harness 内核版本",
       "about.repository": "项目地址",
       "about.author": "作者",
@@ -63,9 +63,9 @@ window.__ModuleLoader__.load({
       "dialog.go": "去更新",
     };
     const en = {
-      "about.nav": "About Desktop",
+      "about.nav": "About DeepDive",
       "about.title": "DeepDive",
-      "about.desktopVersion": "Desktop version",
+      "about.desktopVersion": "DeepDive version",
       "about.kernelVersion": "Harness kernel version",
       "about.repository": "Repository",
       "about.author": "Author",
