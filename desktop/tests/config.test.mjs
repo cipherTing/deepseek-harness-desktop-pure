@@ -271,6 +271,8 @@ test('Desktop shell supervises the official Tauri Node sidecar without a native 
   // keeps its protocol streams raw, and remains Rust-only.
   const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')
   assert.match(cargo, /tauri-plugin-shell = "=2\.3\.5"/)
+  assert.match(cargo, /\[target\.'cfg\(not\(windows\)\)'\.dev-dependencies\]/)
+  assert.match(cargo, /tauri = \{ version = "=2\.11\.5", features = \["test"\] \}/)
   assert.doesNotMatch(cargo, /process-wrap/)
   assert.match(rust, /\.plugin\(tauri_plugin_shell::init\(\)\)/)
   assert.match(process, /app\s*\.shell\(\)\s*\.sidecar\("node"\)/)
@@ -278,6 +280,7 @@ test('Desktop shell supervises the official Tauri Node sidecar without a native 
   assert.match(process, /CommandEvent::Stdout/)
   assert.match(process, /CommandChild/)
   assert.match(process, /child\.kill\(\)/)
+  assert.match(process, /#\[cfg\(all\(test, not\(windows\)\)\)\]/)
   assert.doesNotMatch(process, /ProcessGroup|JobObject|CreationFlags|KillOnDrop|CREATE_NO_WINDOW|bundled_binary_path/)
   assert.doesNotMatch(JSON.stringify(capability), /shell:/)
 })

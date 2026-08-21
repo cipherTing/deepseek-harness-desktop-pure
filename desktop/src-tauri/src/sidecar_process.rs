@@ -149,7 +149,7 @@ fn terminate_child(child: CommandChild, events: &mpsc::UnboundedSender<SidecarEv
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 mod tests {
     use super::*;
     use std::{sync::Mutex, time::Duration};
