@@ -252,7 +252,7 @@ async replace(ns: SettingsNamespace, section: object, expectedRevision?: number)
 async mutate(ns: SettingsNamespace, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>
 ```
 
-Source: [`packages/settings/settings/src/index.ts:350`](../../packages/settings/settings/src/index.ts)
+Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
 
 <a id="settings-events"></a>
 
@@ -279,7 +279,7 @@ One registered namespace's RAW user section changed, whether or not the resolved
 'settings/document-updated'(ns: SettingsNamespace, revision: number): void
 ```
 
-Source: [`packages/settings/settings/src/types.ts:48`](../../packages/settings/settings/src/types.ts)
+Source: [`packages/settings/settings/src/types.ts`](../../packages/settings/settings/src/types.ts)
 
 <a id="settingsupdated--emit"></a>
 
@@ -306,5 +306,5 @@ Committed change to one registered namespace's resolved value. Emitted after the
 'settings/updated'(ns: SettingsNamespace, next: unknown, prev: unknown, source: SettingsUpdateSource): void
 ```
 
-Source: [`packages/settings/settings/src/types.ts:35`](../../packages/settings/settings/src/types.ts)
+Source: [`packages/settings/settings/src/types.ts`](../../packages/settings/settings/src/types.ts)
 <!-- END GENERATED cordis-surface -->

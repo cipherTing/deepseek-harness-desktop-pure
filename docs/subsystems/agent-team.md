@@ -179,5 +179,5 @@ tryMembership(agent: Agent): TeamMembership | undefined
 
 Types: [Agent](core.md)
 
-Source: [`packages/experimental/agent-team/src/index.ts:56`](../../packages/experimental/agent-team/src/index.ts)
+Source: [`packages/experimental/agent-team/src/index.ts`](../../packages/experimental/agent-team/src/index.ts)
 <!-- END GENERATED cordis-surface -->

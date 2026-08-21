@@ -84,5 +84,5 @@ Package-owned invariant registry with global and regex-based selection.
 register(packageName: string, installer: InvariantInstaller): () => void
 ```
 
-Source: [`packages/runtime-diagnostics/invariants/src/index.ts:94`](../../packages/runtime-diagnostics/invariants/src/index.ts)
+Source: [`packages/runtime-diagnostics/invariants/src/index.ts`](../../packages/runtime-diagnostics/invariants/src/index.ts)
 <!-- END GENERATED cordis-surface -->

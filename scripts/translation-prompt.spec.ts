@@ -26,7 +26,7 @@ const retainedExamples = [
   ['### Slang/jargon → Professional phrasing', 'The committed agent workflow lives in .agents/skills/dsh-translate-docs', '仓库内置的 agent 工作流见 .agents/skills/dsh-translate-docs'],
   ['### "For humans" — translate the intent, not the word', 'For humans, start with the development guide', '面向开发者：请先阅读开发指南'],
   ['### Code block comments — NEVER translate', '# full-screen TUI coding agent (needs DEEPSEEK_API_KEY)', 'keep exactly as-is, byte-for-byte'],
-  ['### Language switcher — flip direction', 'English | [中文](README.zh.md)', '[English](README.md) | 中文'],
+  ['### Language switcher — flip direction', '[中文](README.md) | English', '中文 | [English](README.en.md)'],
 ]
 
 describe('translation prompt rendering', () => {

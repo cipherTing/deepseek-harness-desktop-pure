@@ -266,7 +266,7 @@ abstract run(spec: ShellExecSpec): Promise<ShellRunResult>
 abstract start(spec: ShellExecSpec): ShellProcess
 ```
 
-Source: [`packages/shell/shell/src/index.ts:65`](../../packages/shell/shell/src/index.ts)
+Source: [`packages/shell/shell/src/index.ts`](../../packages/shell/shell/src/index.ts)
 
 <a id="ctxshellenv--shellenvregistry"></a>
 
@@ -299,5 +299,5 @@ list(): BashEnvVariableInfo[]
 
 Types: [DshEnvironment](subprocess.md) · [ToolExecution](tools.md)
 
-Source: [`packages/shell/shell-env/src/index.ts:89`](../../packages/shell/shell-env/src/index.ts)
+Source: [`packages/shell/shell-env/src/index.ts`](../../packages/shell/shell-env/src/index.ts)
 <!-- END GENERATED cordis-surface -->

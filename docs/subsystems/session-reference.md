@@ -127,7 +127,7 @@ abstract list( agent: Agent, query: string, signal: AbortSignal, ): Promise<File
 
 Types: [Agent](core.md)
 
-Source: [`packages/context/file-reference/src/index.ts:27`](../../packages/context/file-reference/src/index.ts)
+Source: [`packages/context/file-reference/src/index.ts`](../../packages/context/file-reference/src/index.ts)
 
 <a id="ctxsessionreferenceresolver--sessionreferenceresolver"></a>
 
@@ -170,5 +170,5 @@ async prepare( agent: Agent, content: ContentBlock[], references: SessionReferen
 
 Types: [Agent](core.md) · [ContentBlock](llm-streaming.md)
 
-Source: [`packages/context/session-reference/src/index.ts:75`](../../packages/context/session-reference/src/index.ts)
+Source: [`packages/context/session-reference/src/index.ts`](../../packages/context/session-reference/src/index.ts)
 <!-- END GENERATED cordis-surface -->

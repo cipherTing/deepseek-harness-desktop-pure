@@ -262,5 +262,5 @@ Storage-domain sidecar service. It inspects persisted Session history and never 
 @Remote('delete') delete(request: MessageFeedbackDeleteRequest): Promise<MessageFeedbackDeleteResult>
 ```
 
-Source: [`packages/feedback/message-feedback/src/index.ts:150`](../../packages/feedback/message-feedback/src/index.ts)
+Source: [`packages/feedback/message-feedback/src/index.ts`](../../packages/feedback/message-feedback/src/index.ts)
 <!-- END GENERATED cordis-surface -->

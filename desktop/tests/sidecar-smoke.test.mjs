@@ -88,7 +88,7 @@ async function runSidecarSmoke(launchMode) {
     const index = await fetch(`${origin}/`)
     assert.equal(index.status, 200)
     const html = await index.text()
-    assert.match(html, /window\.__DSH_BOOT__/)
+    assert.match(html, /(?:window\.__DSH_BOOT__|globalThis\["__DSH_BOOT__"\])/)
     assert.match(html, /desktop-bridge\.js/)
     assert.match(html, /html,body\{overscroll-behavior:none\}/)
 
@@ -107,7 +107,9 @@ async function runSidecarSmoke(launchMode) {
     assert.equal(typeof info.author, 'string')
 
     // Plugin bundles come from the live module table with the manifest rev.
-    const manifest = JSON.parse(html.match(/window\.__DSH_BOOT__ = (.*?)<\/script>/s)[1])
+    const bootMatch = html.match(/(?:window\.__DSH_BOOT__|globalThis\["__DSH_BOOT__"\])\s*=\s*(.*?)<\/script>/s)
+    assert.ok(bootMatch, 'web host must inject a boot manifest')
+    const manifest = JSON.parse(bootMatch[1])
     const nativePicker = manifest.entries.find(entry => (
       entry.id === '@deepseek-ai/dsh-client-ui-directory-picker-native'))
     assert.ok(nativePicker !== undefined, 'desktop overlay must keep the native picker entry')

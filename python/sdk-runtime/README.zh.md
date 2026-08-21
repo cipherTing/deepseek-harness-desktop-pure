@@ -1,6 +1,6 @@
 # DeepSeek Harness 运行时 wheel 包
 
-[English](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk-runtime/README.md) | 中文
+[English](README.md) | 中文
 
 Python SDK 的运行时载体包（分发名 `deepseek-harness-runtime-bin`，模块名 `deepseek_harness_runtime`）：它定位 `deepseek-harness-sdk` 客户端要 spawn 的内置运行时二进制，并附带支撑零配置运行的默认配置。
 

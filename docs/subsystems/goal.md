@@ -247,7 +247,7 @@ block(agent: Agent, ref: GoalRef, reason: GoalBlockReason): GoalView
 
 Types: [Agent](core.md)
 
-Source: [`packages/goal/goal/src/index.ts:183`](../../packages/goal/goal/src/index.ts)
+Source: [`packages/goal/goal/src/index.ts`](../../packages/goal/goal/src/index.ts)
 
 <a id="goal-events"></a>
 
@@ -273,5 +273,5 @@ Goal mutation accepted by one live agent. The matching `goal/change` session eve
 
 Types: [Agent](core.md) · [Scoped](scope.md)
 
-Source: [`packages/goal/goal/src/domain.ts:114`](../../packages/goal/goal/src/domain.ts)
+Source: [`packages/goal/goal/src/domain.ts`](../../packages/goal/goal/src/domain.ts)
 <!-- END GENERATED cordis-surface -->

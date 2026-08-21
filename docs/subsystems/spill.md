@@ -113,5 +113,5 @@ Semantics every implementation must honor:
 abstract saveText(input: SaveTextSpill): Promise<SpillRef>
 ```
 
-Source: [`packages/spill/spill/src/index.ts:45`](../../packages/spill/spill/src/index.ts)
+Source: [`packages/spill/spill/src/index.ts`](../../packages/spill/spill/src/index.ts)
 <!-- END GENERATED cordis-surface -->

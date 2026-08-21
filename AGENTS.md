@@ -14,7 +14,9 @@ A bundled Node.js sidecar starts the standard `web` profile on a random loopback
 
 ## Upstream synchronization
 
-Synchronization is manual. Do not automate selecting, validating, fetching, merging, rebasing, or recording upstream revisions. The maintainer fetches commits and tags, normally integrates a tagged commit (or latest commit when no tag exists), resolves Desktop conflicts deliberately, and verifies the fork.
+Synchronization is manual. Do not automate selecting, validating, fetching, merging, rebasing, or recording upstream revisions. The maintainer fetches commits and tags, normally integrates a tagged commit (or latest commit when no tag exists), resolves Desktop conflicts deliberately, and verifies the fork. Review and apply a large synchronization in complexity-ordered batches rather than as one opaque operation. After the batch review is complete, future synchronization history should use rebase instead of a synchronization merge commit; do not create a separate synchronization branch for the same target.
+
+Every synchronization note and adaptation document must name the exact upstream tag or commit it covers (for this cycle: `dsh-v0.1.1-rc.2`, version `0.1.1-rc.2`). This traceability does not change the independent Desktop version.
 
 After verification, replace the sole value in [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT). When synchronization targets an original-project tag, record that exact tag name; when it targets an untagged commit, record its full SHA. Never append history, record fork HEAD, or let tooling infer or rewrite it. Mirror a synchronized original-project tag into the fork, preserving its target.
 
@@ -97,7 +99,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   session/     durable session data: persistence, projection, titles, telemetry
   identity/    anonymous identity
   settings/    user-settings capability + file provider
-  credentials/ credential-reference capability + env/.env provider
+  credentials/ credential/authorization capabilities + env/.env provider
   acp/         automation-only Agent Client Protocol server
   interaction/ approval/interaction capabilities, permission, commands, ask-user
   boot/        shared app-bin glue

@@ -951,6 +951,12 @@ function anchorFor(headingText: string): string[] {
   return [`<a id="${githubSlug(headingText)}"></a>`, '']
 }
 
+/** Render a subsystem `file:line` source pointer as a file-only link. */
+function sourceLink(source: string): string {
+  const file = source.split(':')[0]
+  return `[\`${file}\`](../../${file})`
+}
+
 /** Render one harness event entry onto its owning page, nested under its scope heading. */
 function renderEvent(e: EventEntry, onPage: string, linkedTypePages: Readonly<Record<string, string>>): string[] {
   const out = [...anchorFor(`${e.name} — ${e.mode}`), `#### \`${e.name}\` — ${e.mode}`, '']
@@ -958,7 +964,7 @@ function renderEvent(e: EventEntry, onPage: string, linkedTypePages: Readonly<Re
   out.push('```' + FENCE, e.jsDoc, e.signature, '```', '')
   const links = typeLinks(e.signature, onPage, linkedTypePages)
   if (links) out.push(links, '')
-  out.push(`Source: [\`${e.source}\`](../../${e.source.split(':')[0]})`, '')
+  out.push(`Source: ${sourceLink(e.source)}`, '')
   return out
 }
 
@@ -978,7 +984,7 @@ function renderService(s: ServiceEntry, onPage: string, linkedTypePages: Readonl
     const links = typeLinks(methods.map(method => method.signature).join('\n'), onPage, linkedTypePages)
     if (links) out.push(links, '')
   }
-  out.push(`Source: [\`${s.source}\`](../../${s.source.split(':')[0]})`, '')
+  out.push(`Source: ${sourceLink(s.source)}`, '')
   return out
 }
 

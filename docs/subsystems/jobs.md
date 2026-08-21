@@ -286,5 +286,5 @@ abstract attachController(name: string): () => void
 
 Types: [Agent](core.md)
 
-Source: [`packages/jobs/jobs/src/index.ts:62`](../../packages/jobs/jobs/src/index.ts)
+Source: [`packages/jobs/jobs/src/index.ts`](../../packages/jobs/jobs/src/index.ts)
 <!-- END GENERATED cordis-surface -->

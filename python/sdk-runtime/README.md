@@ -1,6 +1,6 @@
 # DeepSeek Harness Runtime Wheel
 
-English | [中文](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk-runtime/README.zh.md)
+English | [中文](README.zh.md)
 
 Runtime carrier package for the Python SDK (dist `deepseek-harness-runtime-bin`, module `deepseek_harness_runtime`): it locates the bundled runtime binaries the `deepseek-harness-sdk` client spawns, and ships the default configuration behind zero-config runs.
 

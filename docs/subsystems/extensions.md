@@ -62,7 +62,7 @@ resolveClientQuery( agent: Agent, requestId: CordisInspectRequestId, resolution:
 
 Types: [Agent](core.md)
 
-Source: [`packages/extensions/cordis-host-runner/src/inspect-registry.ts:46`](../../packages/extensions/cordis-host-runner/src/inspect-registry.ts)
+Source: [`packages/extensions/cordis-host-runner/src/inspect-registry.ts`](../../packages/extensions/cordis-host-runner/src/inspect-registry.ts)
 
 <a id="ctxdynamiccordisrunner--dynamiccordisrunnerservice"></a>
 
@@ -254,7 +254,7 @@ inspectPackage( agent: Agent, pluginId: CordisDynamicPluginId, packageId: Cordis
 
 Types: [Agent](core.md)
 
-Source: [`packages/extensions/cordis-host-runner/src/index.ts:124`](../../packages/extensions/cordis-host-runner/src/index.ts)
+Source: [`packages/extensions/cordis-host-runner/src/index.ts`](../../packages/extensions/cordis-host-runner/src/index.ts)
 
 <a id="cordis-events"></a>
 
@@ -275,7 +275,7 @@ One exact Plugin/Package activation is now live in the Host.
 'cordis/dynamic-package'(pkg: DynamicCordisPackage): void
 ```
 
-Source: [`packages/extensions/cordis-host-runner/src/types.ts:379`](../../packages/extensions/cordis-host-runner/src/types.ts)
+Source: [`packages/extensions/cordis-host-runner/src/types.ts`](../../packages/extensions/cordis-host-runner/src/types.ts)
 
 <a id="cordisdynamic-retract--emit"></a>
 
@@ -292,7 +292,7 @@ One exact activation was withdrawn.
 'cordis/dynamic-retract'(retracted: DynamicCordisRetracted): void
 ```
 
-Source: [`packages/extensions/cordis-host-runner/src/types.ts:385`](../../packages/extensions/cordis-host-runner/src/types.ts)
+Source: [`packages/extensions/cordis-host-runner/src/types.ts`](../../packages/extensions/cordis-host-runner/src/types.ts)
 
 <a id="cordisinspect-query--emit"></a>
 
@@ -309,7 +309,7 @@ Request a live read-only query from the Client inspect registry.
 'cordis/inspect-query'(request: CordisInspectQueryRequest): void
 ```
 
-Source: [`packages/extensions/cordis-host-runner/src/types.ts:391`](../../packages/extensions/cordis-host-runner/src/types.ts)
+Source: [`packages/extensions/cordis-host-runner/src/types.ts`](../../packages/extensions/cordis-host-runner/src/types.ts)
 
 <a id="cordisinspect-query-resolved--emit"></a>
 
@@ -326,7 +326,7 @@ Notify every Client that an inspect query has settled or been cancelled.
 'cordis/inspect-query-resolved'(resolved: CordisInspectQueryResolved): void
 ```
 
-Source: [`packages/extensions/cordis-host-runner/src/types.ts:397`](../../packages/extensions/cordis-host-runner/src/types.ts)
+Source: [`packages/extensions/cordis-host-runner/src/types.ts`](../../packages/extensions/cordis-host-runner/src/types.ts)
 
 <a id="cordisrequest-run--emit"></a>
 
@@ -343,7 +343,7 @@ A Client-bearing activation needs a browser page, and may require a user decisio
 'cordis/request-run'(request: DynamicCordisRunRequest): void
 ```
 
-Source: [`packages/extensions/cordis-host-runner/src/types.ts:367`](../../packages/extensions/cordis-host-runner/src/types.ts)
+Source: [`packages/extensions/cordis-host-runner/src/types.ts`](../../packages/extensions/cordis-host-runner/src/types.ts)
 
 <a id="cordisrequest-run-resolved--emit"></a>
 
@@ -360,5 +360,5 @@ A pending Client activation request left the answerable state.
 'cordis/request-run-resolved'(resolved: DynamicCordisRequestResolved): void
 ```
 
-Source: [`packages/extensions/cordis-host-runner/src/types.ts:373`](../../packages/extensions/cordis-host-runner/src/types.ts)
+Source: [`packages/extensions/cordis-host-runner/src/types.ts`](../../packages/extensions/cordis-host-runner/src/types.ts)
 <!-- END GENERATED cordis-surface -->

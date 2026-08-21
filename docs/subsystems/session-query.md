@@ -491,5 +491,5 @@ async readEvent(request: SessionEventReadRequest, signal?: AbortSignal): Promise
 
 Types: [SessionId](core.md) · [SessionTitleSnapshot](session-title.md)
 
-Source: [`packages/session-query/session-query/src/index.ts:81`](../../packages/session-query/session-query/src/index.ts)
+Source: [`packages/session-query/session-query/src/index.ts`](../../packages/session-query/session-query/src/index.ts)
 <!-- END GENERATED cordis-surface -->

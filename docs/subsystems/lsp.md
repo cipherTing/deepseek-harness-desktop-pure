@@ -198,5 +198,5 @@ registerProvider(provider: LspProvider): () => void
 query(request: LspQueryRequest, signal?: AbortSignal): Promise<LspQueryResult>
 ```
 
-Source: [`packages/lsp/lsp/src/types.ts:113`](../../packages/lsp/lsp/src/types.ts)
+Source: [`packages/lsp/lsp/src/types.ts`](../../packages/lsp/lsp/src/types.ts)
 <!-- END GENERATED cordis-surface -->

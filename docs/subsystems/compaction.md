@@ -192,7 +192,7 @@ abstract compactRegion( start: number, end: number, agent: CompactionAgentContex
 
 Types: [CommandId](commands.md)
 
-Source: [`packages/compaction/compaction/src/index.ts:96`](../../packages/compaction/compaction/src/index.ts)
+Source: [`packages/compaction/compaction/src/index.ts`](../../packages/compaction/compaction/src/index.ts)
 
 <a id="ctxtoolresultpruner--toolresultpruner"></a>
 
@@ -234,5 +234,5 @@ pruneSession(session: Session): PruneResult
 
 Types: [ContentBlock](llm-streaming.md) · [Session](session.md)
 
-Source: [`packages/compaction/compaction-tool-result-pruner/src/index.ts:44`](../../packages/compaction/compaction-tool-result-pruner/src/index.ts)
+Source: [`packages/compaction/compaction-tool-result-pruner/src/index.ts`](../../packages/compaction/compaction-tool-result-pruner/src/index.ts)
 <!-- END GENERATED cordis-surface -->

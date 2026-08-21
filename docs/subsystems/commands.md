@@ -184,7 +184,7 @@ find(agent: Agent, name: string): CommandDefinition | undefined
 
 Types: [Agent](core.md) · [EncodedImageAttachment](attachment.md)
 
-Source: [`packages/interaction/commands/src/index.ts:250`](../../packages/interaction/commands/src/index.ts)
+Source: [`packages/interaction/commands/src/index.ts`](../../packages/interaction/commands/src/index.ts)
 
 <a id="commands-events"></a>
 
@@ -206,5 +206,5 @@ A command was registered or unregistered. This is an unfiltered registry notific
 'commands/change'(): void
 ```
 
-Source: [`packages/interaction/commands/src/types.ts:80`](../../packages/interaction/commands/src/types.ts)
+Source: [`packages/interaction/commands/src/types.ts`](../../packages/interaction/commands/src/types.ts)
 <!-- END GENERATED cordis-surface -->

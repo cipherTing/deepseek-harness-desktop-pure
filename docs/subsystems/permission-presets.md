@@ -127,5 +127,5 @@ set(session: Session, name: string): void
 
 Types: [Session](session.md) · [SessionEvent](session.md)
 
-Source: [`packages/interaction/permission-presets/src/index.ts:159`](../../packages/interaction/permission-presets/src/index.ts)
+Source: [`packages/interaction/permission-presets/src/index.ts`](../../packages/interaction/permission-presets/src/index.ts)
 <!-- END GENERATED cordis-surface -->

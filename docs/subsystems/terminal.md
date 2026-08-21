@@ -180,5 +180,5 @@ list(owner: Agent): TerminalSessionSnapshot[]
 
 Types: [Agent](core.md)
 
-Source: [`packages/terminal/terminal/src/index.ts:105`](../../packages/terminal/terminal/src/index.ts)
+Source: [`packages/terminal/terminal/src/index.ts`](../../packages/terminal/terminal/src/index.ts)
 <!-- END GENERATED cordis-surface -->

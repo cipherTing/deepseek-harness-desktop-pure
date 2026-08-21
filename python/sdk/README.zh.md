@@ -1,6 +1,6 @@
 # DeepSeek Harness Python SDK
 
-[English](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk/README.md) | 中文
+[English](README.md) | 中文
 
 通过 JSON-RPC stdio 驱动 DeepSeek Harness 的 Python 子进程 SDK。运行时继承常规的 DeepSeek Harness 环境变量（如 `DEEPSEEK_BASE_URL` 与 `DEEPSEEK_API_KEY`），调用方可以直接使用真实模型端点，也可以把这些变量指向本地代理。
 
