@@ -1,54 +1,67 @@
 <p align="center">
-  <img src=".github/assets/deepdive-banner.png" width="100%" alt="DeepDive · 探索未知之境">
+  <img src=".github/assets/deepdive-banner.png" width="100%" alt="DeepDive">
 </p>
 
-<p align="center"><strong>将 DeepSeek Harness 带到桌面：直接安装、沿用同一份配置与数据、无需 Node.js。</strong></p>
+<p align="center">
+  <strong>为 DeepSeek Harness 打造的独立桌面发行版。</strong><br>
+  <sub>安装即可启动，继续使用已有的配置、会话、插件和工作区。</sub>
+</p>
 
 <p align="center">
-  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><strong>下载最新版本</strong></a>
-  · <a href="https://github.com/deepseek-ai/deepseek-harness">查看上游项目</a>
-  · <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/issues">提交问题</a>
+  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><strong>下载 DeepDive</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest">发行说明</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/issues">反馈 Desktop 问题</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness 上游</a>
 </p>
 
 <p align="center">
   <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><img src="https://img.shields.io/github/v/release/cipherTing/deepseek-harness-desktop-pure?display_name=tag&sort=semver&label=release" alt="Latest release"></a>
   <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml"><img src="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml/badge.svg" alt="Desktop build"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Windows%20x64-0f766e" alt="Supported platforms">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/cipherTing/deepseek-harness-desktop-pure" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Windows%20x64-2f6feb" alt="Supported platforms">
 </p>
 
 <p align="center">简体中文 · <a href="README.en.md">English</a></p>
 
-<p align="center"><sub>DeepDive 原名 DeepSeek Harness Desktop；出于品牌与商标边界考虑，为避免与 DeepSeek Harness 的名称和品牌产生混淆而更名。DeepDive 是独立发行版，不隶属于也未获 DeepSeek 背书。</sub></p>
+> **独立发行说明**
+>
+> DeepDive 原名 DeepSeek Harness Desktop。为清晰区分本项目与 DeepSeek Harness 的名称和品牌，现以 DeepDive 独立发布；本项目不隶属于、也未获 DeepSeek 背书。
 
-> **项目边界：本项目只做一件事，将 DeepSeek Harness Web 客户端打包成纯净的 Desktop 发行版。** 不新增 Harness 功能，不改变业务逻辑，不维护另一套配置、会话、工作区或用户数据，也不把原项目改造成所谓的“Desktop 模式”。
+## 一个桌面入口，不另造一套 Harness
 
-## 项目定位
+DeepDive 将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Web 客户端封装为 macOS 和 Windows 安装包。它只负责桌面窗口、随包运行环境和必要的系统适配；Harness 的功能、Web 界面、插件机制和用户数据仍由上游运行时负责。
 
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 是本项目唯一的 Harness 功能来源。本仓库是独立的桌面发行 fork，只负责 Tauri 外壳、随包运行环境、Desktop 必需的系统适配以及 macOS/Windows 安装包发布。
-
-| 原则 | 说明 |
+| | |
 | --- | --- |
-| **纯净封装** | 保留 DeepSeek Harness Web 界面、API、事件流、动态插件和 Harness 运行语义，不复制或重写 Web 功能。 |
-| **零环境安装** | 安装包内携带 Node.js 和 Harness 生产运行闭包，用户无需安装 Node.js、pnpm、Rust 或其他开发环境。 |
-| **同一套数据** | Desktop 与原生 Web 使用相同的 `DSH_HOME`、`~/.dsh`、`.env` 加载规则、设置、凭据、会话、工作区和缓存。 |
-| **极低侵入** | Desktop 适配优先留在 `desktop/`；只有 Tauri 集成确实无法完成时，才允许对原项目代码做最小且直接相关的修改。 |
-| **独立发行** | Desktop 使用自己的 SemVer 版本和 GitHub Release；原项目同步记录与 Desktop 版本彼此独立。 |
+| **直接安装** | 安装包内包含 Node.js 与 Harness 的生产运行环境，不需要用户安装 Node.js、pnpm、Rust 或其他开发工具。 |
+| **不分叉数据** | Desktop 与原生 Web 使用同一个 `DSH_HOME`、设置、凭据、会话、工作区和缓存。 |
+| **只做 Desktop** | 不新增 Harness 功能，不改写业务逻辑，不维护一个所谓的“Desktop 模式”。 |
 
 ## 下载与安装
 
-前往 [GitHub Releases](https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest) 下载对应平台的最新安装包。安装完成后直接启动即可，用户不需要额外配置 Node.js 或包管理器。
+从 [GitHub Releases](https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest) 下载对应平台的最新安装包，安装完成后直接启动。
 
 | 平台 | 安装包 | 支持范围 |
 | --- | --- | --- |
-| macOS | `deepdive-macos-arm64-<version>.dmg` | macOS 11 或更高版本，仅支持 Apple Silicon。 |
-| Windows | `deepdive-windows-x64-<version>.exe` | Windows x64，使用系统 Evergreen WebView2 Runtime；缺失时由安装程序联网补齐。 |
+| macOS | `deepdive-macos-arm64-<version>.dmg` | macOS 11 或更高版本，仅 Apple Silicon。 |
+| Windows | `deepdive-windows-x64-<version>.exe` | Windows x64；使用系统 Evergreen WebView2 Runtime，缺失时由安装程序联网补齐。 |
 
-> **安装提醒：** 当前 macOS 包采用 ad-hoc 签名且未进行 Apple notarization，Windows 包也未购买商业代码签名。首次安装时系统可能显示开发者或 SmartScreen 提醒；请确认下载来源确实是本仓库的 GitHub Release。
+> **首次安装提醒：** macOS 包采用 ad-hoc 签名且未进行 Apple notarization，Windows 包未使用商业代码签名证书。首次安装时系统可能显示开发者或 SmartScreen 提醒；请确认下载来源是本仓库的 GitHub Release。
 
-## 运行方式
+## 继续使用你已有的 Harness 环境
 
-Desktop 不把 Harness 后端改写进 Rust，也不重新实现浏览器传输。Tauri 启动随包 Node.js sidecar，sidecar 以标准 `web` profile 在 `127.0.0.1` 的随机端口运行 DeepSeek Harness Web Host，系统 WebView 直接加载该地址。端口只绑定本机回环地址，不对局域网或公网开放。
+- 已设置的 `DSH_HOME` 会被原样继承；未设置时仍由 Harness 解析为 `~/.dsh`。
+- `.env` 保持 Harness 原有的加载顺序，Desktop 不引入专属环境文件。
+- sidecar 以系统用户主目录为工作目录，不使用 Tauri 的安装、资源或应用数据目录作为 Harness 工作目录。
+- Desktop 和原生 Web 可以读取同一套 profile、插件、设置、凭据、会话、工作区和缓存。
+- 随包 Node.js、JavaScript 依赖和 Tauri 资源只属于应用运行时，不会混入 Harness 的用户数据目录。
+
+## 它如何运行
+
+DeepDive 不把 Harness 后端重写进 Rust，也不重新实现浏览器传输。Tauri 启动随包 Node.js sidecar；sidecar 以标准 `web` profile 在随机 `127.0.0.1` 端口运行，系统 WebView 直接加载该本地地址。端口只绑定回环地址，不会暴露到局域网或公网。
 
 ```mermaid
 flowchart LR
@@ -60,77 +73,48 @@ flowchart LR
   H --> D["DSH_HOME / ~/.dsh"]
 ```
 
-这种结构让 index 注入、客户端插件 bundle、`/api`、事件流和动态插件热更新继续由 DeepSeek Harness Web Host 按请求生成，Desktop 只承担桌面窗口、进程生命周期和必要的原生系统交互。
+DeepSeek Harness Web Host 继续生成页面、客户端插件 bundle、`/api`、事件流和动态插件更新；DeepDive 只拥有原生窗口、进程生命周期、安装包和必需的操作系统交互。
 
-## 配置与数据兼容
+## 问题该提到哪里
 
-- `DSH_HOME` 已设置时原样继承；未设置时仍由 Harness 解析为 `~/.dsh`。
-- `.env` 继续按照 Harness 原有顺序加载，不增加 Desktop 专属环境文件。
-- sidecar 的工作目录固定为当前系统用户主目录，不使用 Tauri 安装目录、资源目录或应用数据目录作为 Harness 工作目录。
-- Desktop 与原生 Web 可以读取同一套设置、凭据、profile、会话、工作区和缓存。
-- 安装包内部的 Node.js、JavaScript 依赖和 Tauri 资源只属于运行时文件，不会与 Harness 用户数据混用。
+| 问题 | 反馈位置 |
+| --- | --- |
+| 安装、启动、打包、签名、窗口行为、原生对话框、sidecar 生命周期 | [本仓库 Issues](https://github.com/cipherTing/deepseek-harness-desktop-pure/issues) |
+| Harness 功能、模型提供方、Agent 行为、插件机制、Web 产品功能 | [DeepSeek Harness Issues](https://github.com/deepseek-ai/deepseek-harness/issues) |
 
-## 原生 Web 与 DeepSeek Harness 源码
+如果一个能力应该同时存在于 CLI、原生 Web 或其他 Harness 运行方式中，它应当进入 DeepSeek Harness，而不是作为 DeepDive 的私有功能。
+
+## 给维护者
 
 <a id="run"></a>
 
-### 运行
+### 运行原生 Web
 
-需要直接启动原生 Web 客户端时，请使用 [DeepSeek Harness 原项目运行说明](https://github.com/deepseek-ai/deepseek-harness#run)。Desktop 不替代或改变这条启动路径。
+需要直接启动原生 Web 客户端时，请使用 [DeepSeek Harness 原项目运行说明](https://github.com/deepseek-ai/deepseek-harness#run)。DeepDive 不替代或改变这条路径。
 
 <a id="run-from-source"></a>
 
-### 从源码运行
+### 从源码开发
 
-需要开发 Harness 本体或使用 DeepSeek Harness 源码启动时，请使用 [DeepSeek Harness 原项目从源码运行说明](https://github.com/deepseek-ai/deepseek-harness#run-from-source)。本仓库只在其基础上增加 Desktop 打包层。
-
-## 本地开发
-
-本仓库保留 DeepSeek Harness 原项目的开发方式，并额外提供两个 Desktop 根命令。Desktop CI 与正式打包固定使用 Node.js `22.23.2`、pnpm `11.7.0`、Rust `1.96.0` 和 Tauri 2。
-
-安装依赖：
+开发 Harness 本体时，请使用 [DeepSeek Harness 原项目从源码运行说明](https://github.com/deepseek-ai/deepseek-harness#run-from-source)。开发 Desktop 外壳则在仓库根目录执行：
 
 ```sh
 pnpm install
-```
-
-启动 Desktop 开发环境：
-
-```sh
 pnpm desktop:dev
-```
-
-构建当前平台安装包：
-
-```sh
 pnpm desktop:build
 ```
 
 macOS 安装包只能在 Apple Silicon Mac 上构建，Windows x64 安装包只能在 Windows x64 环境构建。完整的维护规则、增量开发命令和发布约束见 [AGENTS.md](AGENTS.md)。
 
-## 版本与发布
+### 版本与发布
 
-- [`desktop/package.json`](desktop/package.json) 是 Desktop 版本的唯一来源。
-- 修改版本时运行 `pnpm desktop:version:set -- <version>`，并用 `pnpm desktop:version:check` 检查所有版本镜像。
-- [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) 只记录本 fork 最新同步完成的原项目版本：同步到原项目 tag 时记录该 tag 名称；同步到没有 tag 的 commit 时记录完整 SHA；不记录本仓库 HEAD。
-- GitHub Actions 仅支持维护者手动触发；从 `master` 发布时需要填写中文和英文的高层 Markdown 列表更新日志，macOS 与 Windows 均构建成功后会将其作为 `v<version>` Release 正文发布。
-- 原项目同步不会由 CI 自动 fetch、merge 或 rebase，必须由维护者检查并手动完成。
+- [`desktop/package.json`](desktop/package.json) 是 Desktop 版本的唯一来源；使用 `pnpm desktop:version:set -- <version>` 更新版本，并用 `pnpm desktop:version:check` 校验。
+- [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) 只记录本 fork 已完成同步的上游 tag 或完整 SHA，不记录本仓库 HEAD。
+- GitHub Actions 仅由维护者手动触发；只有 `master` 可以在两个平台构建成功后发布 `v<version>`。
+- Release 正文使用中英文的简短 Markdown 列表，只概述用户可感知的更新，不记录实现细节。
 
-## 问题归属
+## 贡献与许可
 
-| 问题类型 | 反馈位置 |
-| --- | --- |
-| Desktop 安装、启动、打包、签名、原生对话框、窗口行为、sidecar 生命周期 | [本仓库 Issues](https://github.com/cipherTing/deepseek-harness-desktop-pure/issues) |
-| Harness 功能、模型提供方、Agent 行为、插件机制、Web 业务功能 | [DeepSeek Harness 原项目](https://github.com/deepseek-ai/deepseek-harness/issues) |
+欢迎修复 Desktop 打包、平台兼容、Tauri 适配和发布链路问题。提交前请阅读 [AGENTS.md](AGENTS.md)，并保持改动最小、完整、低侵入且不改变 Harness 行为。
 
-本仓库不接受与 Desktop 打包无关的新 Harness 功能。一个功能如果应该同时存在于 CLI、原生 Web 或其他 Harness 运行方式中，就应当提交到 DeepSeek Harness 原项目，而不是在这里增加 Desktop 私有实现。
-
-## 贡献
-
-欢迎修复 Desktop 打包、平台兼容、Tauri 适配和发布链路问题。提交修改前请先阅读 [AGENTS.md](AGENTS.md)，并始终以“最小完整、极低侵入、不改变原项目业务”为判断标准。
-
-维护者：[cipherTing](https://github.com/cipherTing)
-
-## 许可证与归属
-
-本 fork 保留 DeepSeek Harness 原项目的 [MIT License](LICENSE)。第三方依赖及许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。DeepSeek 名称与标志归其各自权利人所有，本项目仅使用相关标志说明所封装的 DeepSeek Harness Web；图标来源与许可说明见 [desktop/assets/README.md](desktop/assets/README.md)。
+本 fork 保留 DeepSeek Harness 原项目的 [MIT License](LICENSE)。第三方依赖及许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。DeepSeek 名称与标志归其各自权利人所有；图标来源与许可说明见 [desktop/assets/README.md](desktop/assets/README.md)。
