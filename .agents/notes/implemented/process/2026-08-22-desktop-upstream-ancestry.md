@@ -10,11 +10,11 @@ A complexity-ordered manual synchronization can reproduce an upstream release's 
 
 ## Decision
 
-Every completed Desktop synchronization makes the exact upstream tag or commit an ancestor of the fork HEAD. A target that is not already an ancestor is recorded through a normal `--no-ff` merge after its changes have been reviewed and resolved in complexity-ordered batches. Published `master` history and release tags are never rebased or force-pushed to repair ancestry.
+Every completed Desktop synchronization confirms the target's peeled commit SHA against the upstream remote and makes that verified commit an ancestor of the fork HEAD. A target that is not already an ancestor is recorded through a normal `--no-ff` merge of the verified SHA after its changes have been reviewed and resolved in complexity-ordered batches. Published `master` history and release tags are never rebased or force-pushed to repair ancestry.
 
-The already integrated `dsh-v0.1.1-rc.2` target uses one tree-preserving `-s ours` merge as a named exception. The rc2 content remains owned by the existing [synchronization decision and verification](2026-08-21-desktop-sync-dsh-0.1.1-rc.2.md); the exception only adds the target as a second parent. It neither applies nor verifies upstream files and cannot be reused for a later target.
+The already integrated `dsh-v0.1.1-rc.2` target at `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` uses one tree-preserving `-s ours` merge as a named exception. The rc2 content remains owned by the existing [synchronization decision and verification](2026-08-21-desktop-sync-dsh-0.1.1-rc.2.md); the exception only adds the target as a second parent. It neither applies nor verifies upstream files and cannot be reused for a later target.
 
-A completed synchronization verifies that the target is an ancestor and that no commits from the fixed target remain on the right side of `HEAD...target`. The rc2 repair also verifies its two parents and an empty tree diff against its first parent.
+A completed synchronization verifies the target's upstream identity, confirms that it is an ancestor, and reports no commits from the fixed target on the right side of `HEAD...target`. The ancestry and count checks do not prove content integration. The rc2 repair also verifies its two parents and an empty tree diff against its first parent.
 
 ## Alternatives considered
 

@@ -10,11 +10,11 @@ Status: implemented
 
 ## Decision
 
-每次完成 Desktop 同步后，精确的上游 tag 或 commit 都必须成为 fork HEAD 的祖先。目标尚未成为祖先时，在按复杂度分批审查和解决其改动后，通过正常的 `--no-ff` merge 记录祖先关系。不得为了修复祖先关系而 rebase 或 force-push 已发布的 `master` 历史和 release tag。
+每次完成 Desktop 同步前，都必须从上游远端确认目标最终指向的 commit SHA，并让这个已验证的 commit 成为 fork HEAD 的祖先。目标尚未成为祖先时，在按复杂度分批审查和解决其改动后，通过对已验证 SHA 执行正常的 `--no-ff` merge 记录祖先关系。不得为了修复祖先关系而 rebase 或 force-push 已发布的 `master` 历史和 release tag。
 
-已经完成内容接入的 `dsh-v0.1.1-rc.2` 允许一次保持代码树不变的 `-s ours` merge 作为具名例外。rc2 内容仍由既有的[同步决策与验证](2026-08-21-desktop-sync-dsh-0.1.1-rc.2.zh.md)负责；该例外只把目标补为第二父提交。它既不应用也不验证上游文件，后续目标不得复用。
+已经完成内容接入的 `dsh-v0.1.1-rc.2`，其 commit 为 `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`，允许一次保持代码树不变的 `-s ours` merge 作为具名例外。rc2 内容仍由既有的[同步决策与验证](2026-08-21-desktop-sync-dsh-0.1.1-rc.2.zh.md)负责；该例外只把目标补为第二父提交。它既不应用也不验证上游文件，后续目标不得复用。
 
-同步完成时必须验证目标已经成为祖先，并确认固定目标没有提交残留在 `HEAD...target` 的右侧。rc2 修复还必须验证两个父提交，并确认相对第一父提交的代码树 diff 为空。
+同步完成时必须验证目标的上游身份、确认目标已经成为祖先，并确认固定目标没有提交残留在 `HEAD...target` 的右侧。祖先和数量检查都不能证明内容已经接入。rc2 修复还必须验证两个父提交，并确认相对第一父提交的代码树 diff 为空。
 
 ## Alternatives considered
 
