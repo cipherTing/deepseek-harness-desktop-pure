@@ -344,7 +344,10 @@ test('Desktop update affordance stacks below settings and follows theme contrast
   const clientUi = readFileSync(new URL('../client-ui/src/client.js', import.meta.url), 'utf8')
   assert.match(settingsCss, /\.triggerRow\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/s)
   assert.match(clientUi, /\.dab-badge\{position:static/)
-  assert.match(clientUi, /\.dab-buttonPrimary\{background:var\(--dsw-alias-button-primary-fill\);[^}]*color:var\(--dsw-alias-label-primary-foreground\)/)
+  assert.match(clientUi, /require\("@deepseek-ai\/dsh-client-ui-primitives"\)/)
+  assert.match(clientUi, /\.dab-startLink\{[^}]*background:var\(--dsw-alias-button-primary-fill\);[^}]*color:var\(--dsw-alias-label-primary-foreground\)/)
+  assert.match(clientUi, /\.dab-releaseNotes\{[^}]*max-height:[^}]*overflow-y:auto[^}]*overscroll-behavior:contain/)
+  assert.match(clientUi, /React\.createElement\(MarkdownText, \{ text: latest\.notes \}\)/)
 })
 
 test('Windows uses downloadBootstrapper without an offline installer', () => {

@@ -6,6 +6,13 @@ window.__ModuleLoader__.load({
     Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
     const React = require("react");
+    const {
+      Button,
+      IconChevronRightOutline14,
+      IconDownloadOutline16,
+      MarkdownText,
+      Modal,
+    } = require("@deepseek-ai/dsh-client-ui-primitives");
 
     // ── styles ─────────────────────────────────────────────────────────────
     const css = [
@@ -16,21 +23,35 @@ window.__ModuleLoader__.load({
       ".dab-row span:last-child,.dab-row a{color:var(--dsw-alias-label-primary);text-align:right;word-break:break-all}",
       ".dab-row a{text-decoration:none}",
       ".dab-row a:hover{text-decoration:underline}",
-      ".dab-check{display:flex;align-items:center;gap:10px;margin-top:4px}",
+      ".dab-check{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px}",
       ".dab-button{height:30px;padding:0 14px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;cursor:pointer}",
       ".dab-button:hover{background:var(--dsw-alias-interactive-bg-hover)}",
-      ".dab-buttonPrimary{background:var(--dsw-alias-button-primary-fill);border-color:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}",
       ".dab-status{font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}",
       ".dab-statusWarn{color:var(--dsw-alias-state-warn-label)}",
       ".dab-badge{position:static;align-self:stretch;z-index:1;flex:none;height:30px;margin:0 0 4px;padding:0 10px;border-radius:10px;border:none;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font-size:12px;font-weight:600;line-height:16px;cursor:pointer}",
       ".dab-badgeRail{align-self:center;width:10px;height:10px;margin:0 0 4px;padding:0;border:2px solid var(--dsw-alias-bg-layer-1);border-radius:50%;font-size:0;line-height:0}",
       ".dab-brandLabel{font-size:17px;font-weight:600;letter-spacing:0;white-space:nowrap}",
       ".dab-brandVersion{display:inline-flex;align-items:center;height:16px;padding:0 4px;border-radius:3px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-label-primary);font-family:var(--ds-font-family-code);font-size:8px;font-weight:500;line-height:16px}",
-      ".dab-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center}",
-      ".dab-dialog{width:min(400px,calc(100vw - 48px));border:1px solid var(--dsw-alias-border-inverted);border-radius:14px;background:var(--dsw-specific-menu,var(--dsw-alias-bg-overlay));box-shadow:var(--dsw-shadow-lv3);padding:20px;display:flex;flex-direction:column;gap:10px;color:var(--dsw-alias-label-primary)}",
-      ".dab-dialogTitle{font-size:16px;font-weight:600;line-height:24px}",
-      ".dab-dialogBody{font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}",
-      ".dab-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}",
+      ".dab-updateDialog{width:min(560px,100%);max-height:calc(100vh - 48px);min-height:0}",
+      ".dab-updateDialogContent{display:flex;min-height:0;flex:1 1 auto;overflow:hidden}",
+      ".dab-updateDialogContent>div:last-child{min-height:0;flex:1 1 auto;overflow:hidden}",
+      ".dab-versionSummary{display:grid;grid-template-columns:minmax(0,1fr) 18px minmax(0,1fr);align-items:center;gap:12px;padding:0 0 18px;border-bottom:1px solid var(--dsw-alias-border-l1)}",
+      ".dab-versionCell{display:flex;min-width:0;flex-direction:column;gap:3px}",
+      ".dab-versionLabel{font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}",
+      ".dab-versionValue{overflow:hidden;color:var(--dsw-alias-label-primary);font-family:var(--ds-font-family-code);font-size:15px;font-weight:600;line-height:22px;text-overflow:ellipsis;white-space:nowrap}",
+      ".dab-versionLatest .dab-versionValue{color:var(--dsw-alias-brand-primary)}",
+      ".dab-versionArrow{display:flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-tertiary)}",
+      ".dab-releaseSection{display:flex;min-height:0;flex:1 1 auto;flex-direction:column;gap:10px;padding-top:18px}",
+      ".dab-releaseHeading{margin:0;font-size:13px;font-weight:600;line-height:20px;color:var(--dsw-alias-label-primary)}",
+      ".dab-releaseNotes{min-height:0;max-height:min(48vh,420px);flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 10px 0 0;color:var(--dsw-alias-label-secondary)}",
+      ".dab-releaseNotes :is(h1,h2,h3,h4,h5,h6){margin:14px 0 8px;font-size:14px;font-weight:600;line-height:22px;letter-spacing:0;color:var(--dsw-alias-label-primary)}",
+      ".dab-releaseNotes :is(h1,h2,h3,h4,h5,h6):first-child{margin-top:0}",
+      ".dab-releaseNotes :is(p,ul,ol){font-size:13px;line-height:21px}",
+      ".dab-releaseNotes :is(ul,ol){padding-left:20px}",
+      ".dab-releaseNotesEmpty{margin:0;font-size:13px;line-height:21px;color:var(--dsw-alias-label-caption)}",
+      ".dab-startLink{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:36px;padding:0 14px;border-radius:18px;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground);font-size:14px;line-height:22px;text-decoration:none}",
+      ".dab-startLink:hover{background:var(--dsw-alias-button-primary-hover);text-decoration:none}",
+      ".dab-startLinkIcon{display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center}",
     ].join("");
 
     const tagId = "@deepseek-ai/dsh-desktop-client-ui/about.module.css";
@@ -56,11 +77,16 @@ window.__ModuleLoader__.load({
       "about.upToDate": "已是最新版本（{version}）",
       "about.checkFailed": "检查更新失败（网络不可用）",
       "about.updateFound": "发现新版本 {version}",
+      "about.view": "查看更新",
       "badge.update": "更新",
-      "dialog.title": "发现新版本",
-      "dialog.body": "当前版本 {current}，最新版本 {latest}。点击「去更新」前往发布页面。",
+      "dialog.title": "DeepDive 更新",
+      "dialog.close": "关闭更新窗口",
+      "dialog.current": "当前版本",
+      "dialog.latest": "新版本",
+      "dialog.notes": "更新内容",
+      "dialog.emptyNotes": "此版本未提供更新说明。",
       "dialog.later": "稍后",
-      "dialog.go": "去更新",
+      "dialog.start": "开始更新",
     };
     const en = {
       "about.nav": "About DeepDive",
@@ -74,24 +100,57 @@ window.__ModuleLoader__.load({
       "about.upToDate": "Up to date ({version})",
       "about.checkFailed": "Update check failed (network unavailable)",
       "about.updateFound": "New version available: {version}",
+      "about.view": "View update",
       "badge.update": "Update",
-      "dialog.title": "New version available",
-      "dialog.body": "Current {current}, latest {latest}. Use “Go to update” to open the release page.",
+      "dialog.title": "DeepDive update",
+      "dialog.close": "Close update dialog",
+      "dialog.current": "Current version",
+      "dialog.latest": "New version",
+      "dialog.notes": "What's new",
+      "dialog.emptyNotes": "No release notes were provided for this version.",
       "dialog.later": "Later",
-      "dialog.go": "Go to update",
+      "dialog.start": "Start update",
     };
 
     // ── helpers ────────────────────────────────────────────────────────────
+    function compareNumericIdentifier(a, b) {
+      if (a.length !== b.length) return a.length > b.length ? 1 : -1;
+      if (a === b) return 0;
+      return a > b ? 1 : -1;
+    }
     function parseVersion(value) {
-      return String(value).replace(/^v/i, "").split("-")[0].split(".").map((part) => parseInt(part, 10) || 0);
+      const match = String(value).trim().match(
+        /^[vV]?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
+      );
+      if (match === null) return null;
+      const prerelease = match[4] === undefined ? [] : match[4].split(".");
+      if (prerelease.some((part) => /^\d+$/.test(part) && part.length > 1 && part.startsWith("0"))) return null;
+      return {
+        core: [match[1], match[2], match[3]],
+        prerelease,
+      };
     }
     function isNewer(candidate, baseline) {
       const a = parseVersion(candidate);
       const b = parseVersion(baseline);
-      for (let i = 0; i < Math.max(a.length, b.length); i++) {
-        const da = a[i] ?? 0;
-        const db = b[i] ?? 0;
-        if (da !== db) return da > db;
+      if (a === null || b === null) return false;
+      for (let i = 0; i < a.core.length; i++) {
+        const comparison = compareNumericIdentifier(a.core[i], b.core[i]);
+        if (comparison !== 0) return comparison > 0;
+      }
+      if (a.prerelease.length === 0 || b.prerelease.length === 0) {
+        return a.prerelease.length === 0 && b.prerelease.length > 0;
+      }
+      for (let i = 0; i < Math.max(a.prerelease.length, b.prerelease.length); i++) {
+        const da = a.prerelease[i];
+        const db = b.prerelease[i];
+        if (da === undefined || db === undefined) return da !== undefined;
+        if (da === db) continue;
+        const aNumeric = /^\d+$/.test(da);
+        const bNumeric = /^\d+$/.test(db);
+        if (aNumeric && bNumeric) return compareNumericIdentifier(da, db) > 0;
+        if (aNumeric !== bNumeric) return !aNumeric;
+        return da > db;
       }
       return false;
     }
@@ -99,6 +158,12 @@ window.__ModuleLoader__.load({
       const match = String(repository).match(/github\.com\/([^/]+)\/([^/\s#]+)/);
       if (match === null) return null;
       return `https://api.github.com/repos/${match[1]}/${match[2].replace(/\.git$/, "")}/releases/latest`;
+    }
+    function releaseAssetName(version) {
+      const normalized = String(version).replace(/^v/i, "");
+      if (navigator.userAgent.includes("Windows")) return `deepdive-windows-x64-${normalized}.exe`;
+      if (navigator.userAgent.includes("Macintosh")) return `deepdive-macos-arm64-${normalized}.dmg`;
+      return null;
     }
     async function fetchLatest(repository) {
       const url = releasesUrl(repository);
@@ -108,7 +173,17 @@ window.__ModuleLoader__.load({
         if (!response.ok) return null;
         const data = await response.json();
         if (typeof data?.tag_name !== "string" || typeof data?.html_url !== "string") return null;
-        return { version: data.tag_name, htmlUrl: data.html_url };
+        const expectedAsset = releaseAssetName(data.tag_name);
+        const asset = expectedAsset === null || !Array.isArray(data.assets)
+          ? null
+          : data.assets.find((candidate) => candidate?.name === expectedAsset
+            && typeof candidate?.browser_download_url === "string");
+        return {
+          version: data.tag_name,
+          htmlUrl: data.html_url,
+          downloadUrl: asset?.browser_download_url ?? data.html_url,
+          notes: typeof data.body === "string" ? data.body.trim() : "",
+        };
       } catch {
         return null;
       }
@@ -128,22 +203,45 @@ window.__ModuleLoader__.load({
 
     // ── components ─────────────────────────────────────────────────────────
     function UpdateDialog({ latest, info, t, onClose }) {
-      const go = () => {
-        if (typeof latest?.htmlUrl === "string" && latest.htmlUrl !== "") window.location.href = latest.htmlUrl;
-      };
-      return React.createElement("div", { className: "dab-backdrop", onClick: onClose },
-        React.createElement("div", {
-          className: "dab-dialog",
-          role: "dialog",
-          "aria-modal": "true",
-          onClick: (event) => { event.stopPropagation(); },
+      const footer = React.createElement(React.Fragment, null,
+        React.createElement(Button, { variant: "outline", onClick: onClose }, t("dialog.later")),
+        React.createElement("a", {
+          className: "dab-startLink",
+          href: latest.downloadUrl,
+          target: "_self",
         },
-          React.createElement("div", { className: "dab-dialogTitle" }, t("dialog.title")),
-          React.createElement("div", { className: "dab-dialogBody" },
-            t("dialog.body", { current: info?.desktopVersion ?? "?", latest: latest.version })),
-          React.createElement("div", { className: "dab-actions" },
-            React.createElement("button", { type: "button", className: "dab-button", onClick: onClose }, t("dialog.later")),
-            React.createElement("button", { type: "button", className: "dab-button dab-buttonPrimary", onClick: go }, t("dialog.go")),
+          React.createElement("span", { className: "dab-startLinkIcon" },
+            React.createElement(IconDownloadOutline16, { size: 16 })),
+          t("dialog.start"),
+        ),
+      );
+      return React.createElement(Modal, {
+        open: true,
+        onClose,
+        title: t("dialog.title"),
+        closeLabel: t("dialog.close"),
+        className: "dab-updateDialog",
+        contentClassName: "dab-updateDialogContent",
+        footer,
+      },
+        React.createElement("div", { className: "dab-versionSummary" },
+          React.createElement("div", { className: "dab-versionCell" },
+            React.createElement("span", { className: "dab-versionLabel" }, t("dialog.current")),
+            React.createElement("span", { className: "dab-versionValue" }, `v${String(info?.desktopVersion ?? "?").replace(/^v/i, "")}`),
+          ),
+          React.createElement("span", { className: "dab-versionArrow", "aria-hidden": "true" },
+            React.createElement(IconChevronRightOutline14, { size: 14 })),
+          React.createElement("div", { className: "dab-versionCell dab-versionLatest" },
+            React.createElement("span", { className: "dab-versionLabel" }, t("dialog.latest")),
+            React.createElement("span", { className: "dab-versionValue" }, latest.version),
+          ),
+        ),
+        React.createElement("section", { className: "dab-releaseSection" },
+          React.createElement("h3", { className: "dab-releaseHeading" }, t("dialog.notes")),
+          React.createElement("div", { className: "dab-releaseNotes" },
+            latest.notes === ""
+              ? React.createElement("p", { className: "dab-releaseNotesEmpty" }, t("dialog.emptyNotes"))
+              : React.createElement(MarkdownText, { text: latest.notes }),
           ),
         ),
       );
@@ -154,9 +252,11 @@ window.__ModuleLoader__.load({
       const [checking, setChecking] = React.useState(false);
       const [status, setStatus] = React.useState(null);
       const [latest, setLatest] = React.useState(null);
+      const [dialogOpen, setDialogOpen] = React.useState(false);
 
       const check = async () => {
         if (checking || info === null) return;
+        setDialogOpen(false);
         setChecking(true);
         setStatus("checking");
         const found = await fetchLatest(info.repository);
@@ -195,10 +295,15 @@ window.__ModuleLoader__.load({
             status === "uptodate" && React.createElement("span", { className: "dab-status" }, t("about.upToDate", { version: latest?.version ?? "" })),
             status === "failed" && React.createElement("span", { className: "dab-status dab-statusWarn" }, t("about.checkFailed")),
             status === "update" && React.createElement("span", { className: "dab-status dab-statusWarn" }, t("about.updateFound", { version: latest?.version ?? "" })),
+            status === "update" && React.createElement("button", {
+              type: "button",
+              className: "dab-button",
+              onClick: () => { setDialogOpen(true); },
+            }, t("about.view")),
           ),
         ),
-        status === "update" && latest !== null && React.createElement(UpdateDialog, {
-          latest, info, t, onClose: () => { setStatus("uptodate"); },
+        dialogOpen && status === "update" && latest !== null && React.createElement(UpdateDialog, {
+          latest, info, t, onClose: () => { setDialogOpen(false); },
         }),
         close !== undefined && null,
       );
@@ -215,7 +320,11 @@ window.__ModuleLoader__.load({
         const poll = async () => {
           const found = await fetchLatest(info.repository);
           if (!live || found === null) return;
-          setLatest((previous) => previous?.version === found.version ? previous : found);
+          setLatest((previous) => previous?.version === found.version
+            && previous?.notes === found.notes
+            && previous?.downloadUrl === found.downloadUrl
+            ? previous
+            : found);
         };
         void poll();
         const interval = setInterval(() => { void poll(); }, 30 * 60 * 1000);
