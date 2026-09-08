@@ -55,13 +55,14 @@ async function bench(isLoopback = true) {
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, settingsDescribe, settingsOpenDocument }
 }
 
-/** Declare the shell's six child slots the way ui-settings' entry does. */
+/** Declare the shell's seven child slots the way ui-settings' entry does. */
 function declare(slots: SlotRegistry): () => void {
   return slots.register(
     {
       name: 'root',
       children: {
         'settings.trigger': { kind: 'single', scope: 'root' },
+        'settings.update': { kind: 'single', scope: 'root' },
         'settings.header': { kind: 'single', scope: 'root' },
         'settings.action': { kind: 'list', scope: 'root' },
         'settings.close': { kind: 'single', scope: 'root' },
@@ -98,6 +99,7 @@ describe('ui-settings-general apply', () => {
     // The onboarding hole stays declared for feature-owned steps; this plugin
     // no longer seats one.
     expect(before.slots.entries('settings.onboarding')).toEqual([])
+    expect(before.slots.entries('settings.update')).toEqual([])
     const action = before.slots.entries('settings.action')[0]!
     const actionInjected = (action.inject as unknown as () => SettingsDocumentActionInjected)()
     expect(actionInjected.controller.store.getSnapshot().status).toBe('idle')

@@ -43,6 +43,8 @@ interface TranslationPairTarget {
   zh: string
 }
 
+const ROOT_README_PAIR: TranslationPairTarget = { source: 'README.en.md', zh: 'README.md' }
+
 interface ResolvedTranslationLink {
   pair: TranslationPairTarget
   targetPath: string
@@ -135,6 +137,9 @@ function resolveRepositoryTarget(
 }
 
 function translationPairTarget(targetPath: string, context: TranslationLinkContext): TranslationPairTarget | undefined {
+  if ((targetPath === ROOT_README_PAIR.source || targetPath === ROOT_README_PAIR.zh)
+    && repositoryFileExists(context, ROOT_README_PAIR.source)
+    && repositoryFileExists(context, ROOT_README_PAIR.zh)) return ROOT_README_PAIR
   const source = targetPath.endsWith('.zh.md')
     ? targetPath.replace(/\.zh\.md$/, '.md')
     : targetPath.endsWith('.md') ? targetPath : undefined
@@ -165,6 +170,9 @@ function expectedLocalePath(
   context: TranslationLinkContext,
   expectedPath: string,
 ): string {
+  if (expectedPath === ROOT_README_PAIR.source || expectedPath === ROOT_README_PAIR.zh) {
+    return relativeExpectedPath(context, expectedPath, rawPath)
+  }
   if (locale === 'zh' && rawPath.endsWith('.md') && !rawPath.endsWith('.zh.md')) {
     return rawPath.replace(/\.md$/, '.zh.md')
   }

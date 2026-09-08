@@ -17,7 +17,7 @@ const root = resolve(import.meta.dirname, '..')
 /** Files to check: doc-typecheck's scope, system-prompt expected outputs, and the AGENTS.md pair. */
 const PATTERNS = [
   'README.md',
-  'README.zh.md',
+  'README.en.md',
   '.agents/notes/**/*.md',
   'docs/**/*.md',
   'packages/*/*.md',

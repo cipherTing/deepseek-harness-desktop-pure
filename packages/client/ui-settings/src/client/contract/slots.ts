@@ -23,6 +23,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'settings.trigger': { kind: 'single'; scope: 'root'; owner: SettingsTriggerOwnerProps }
     /**
+     * Optional badge seat rendered after the settings trigger in the sidebar
+     * foot stack (same owner share: sidebar width state). Absent contribution
+     * renders nothing. Desktop owns the update badge; Web leaves the seat empty.
+     */
+    'settings.update': { kind: 'single'; scope: 'root'; owner: SettingsTriggerOwnerProps }
+    /**
      * The panel title text seat. Content renders inside the nav heading row;
      * the dialog's accessible name points at that node via aria-labelledby.
      * Absent contribution leaves the heading empty.

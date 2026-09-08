@@ -30,6 +30,8 @@ function fixture(): string {
   writeFileSync(join(root, 'docs/unpaired.md'), '# Only\n')
   writeFileSync(join(root, 'docs/section/index.md'), '# Section\n')
   writeFileSync(join(root, 'docs/section/index.zh.md'), '# 章节\n')
+  writeFileSync(join(root, 'README.md'), '# 根说明\n')
+  writeFileSync(join(root, 'README.en.md'), '# Root README\n')
   writeFileSync(join(root, 'packages/outside.md'), '# Outside\n')
   writeFileSync(join(root, 'packages/outside.zh.md'), '# 范围外\n')
   return root
@@ -104,6 +106,26 @@ describe('translation link locale validation', () => {
       '[paired](reference.zh.md) [outside](../packages/outside.md)\n',
       linkContext(root, 'docs/guide.zh.md'),
     )).toEqual([])
+  })
+
+  it('localizes the fork root README pair with its reversed filenames', () => {
+    const root = fixture()
+    expect(rewriteTranslationLinkLocales(
+      '[Root](../README.md#run)\n',
+      linkContext(root, 'docs/guide.md'),
+    )).toEqual({ content: '[Root](../README.en.md#run)\n', rewritten: 1 })
+    expect(rewriteTranslationLinkLocales(
+      '[根说明](../README.en.md#run)\n',
+      linkContext(root, 'docs/guide.zh.md'),
+    )).toEqual({ content: '[根说明](../README.md#run)\n', rewritten: 1 })
+    expect(normalizeTranslationMarkdownLinks(
+      '[Root](../README.en.md#run)\n',
+      linkContext(root, 'docs/guide.md'),
+    )).toBe('[Root](dsh-translation-target:README.en.md#run)\n')
+    expect(normalizeTranslationMarkdownLinks(
+      '[根说明](../README.md#run)\n',
+      linkContext(root, 'docs/guide.zh.md'),
+    )).toBe('[根说明](dsh-translation-target:README.en.md#run)\n')
   })
 
   it('does not fall back when an active target is missing its locale sibling', () => {
