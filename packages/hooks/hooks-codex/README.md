@@ -84,7 +84,7 @@ Each supported event programs against one harness extension point: `SessionStart
 
 ### Payloads and environment
 
-Payloads are Codex-shaped: snake_case with `turn_id` on turn-scoped events, `model` and `permission_mode: "default"` on every event, and stdin written without a trailing newline. A tool call's payload carries the real `tool_name` and the `tool_input: { command }` shape (the `command` argument when present, else `''`), so non-shell tool arguments are not faithfully exposed. The base payload carries `session_id` and `transcript_path`; the latter resolves through `ctx.sessionPersistence.locate(session.header)` when available and otherwise is `null`, preserving the Codex `string | null` shape — lookup never creates or flushes the artifact. Codex performs no command substitution and injects no plugin environment.
+Payloads are Codex-shaped: snake_case with `turn_id` on turn-scoped events, `model` and `permission_mode: "default"` on every event, and stdin written without a trailing newline. A tool call's payload carries the real `tool_name` and the `tool_input: { command }` shape (the `command` argument when present, else `''`), so non-shell tool arguments are not faithfully exposed. The base payload carries `session_id` and `transcript_path`; the latter keeps the Codex `string | null` shape but is always `null` — the persistence seam exposes no artifact paths, and the default-zstd session log is not readable by hook scripts. Codex performs no command substitution and injects no plugin environment.
 
 ### Matcher subjects and serial execution
 
@@ -102,7 +102,7 @@ The matcher subject is the tool name (`PreToolUse` / `PostToolUse`) or the sessi
 - **Dispose reaches quiescence.** Detached runs are tracked and drained on disposal so no hook process or late callback outlives the fiber.
 - **Dialect-shaped, not maximal.** Payloads stay snake_case with `turn_id` / `model`, stdin carries no trailing newline, and the bridge implements no pre-tool approval or rewrite path — the protocol's shape is preserved even where the harness could do more.
 
-The [hook-bridges Agent Note](../../../.agents/notes/implemented/feature/2026-06-30-hook-bridges.md) records the bridge design and the deferred gaps; the [hook-protocol-lib Agent Note](../../../.agents/notes/implemented/feature/2026-06-30-hook-protocol-lib.md) records the shared-versus-per-dialect split.
+The [hook-bridges Agent Note](../../../.agents/notes/archived/feature/2026-06-30-hook-bridges.md) records the bridge design and the deferred gaps; the [hook-protocol-lib Agent Note](../../../.agents/notes/archived/feature/2026-06-30-hook-protocol-lib.md) records the shared-versus-per-dialect split.
 
 ### Source map
 
@@ -123,7 +123,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 - [Hooks group map](../README.md) — the sibling group page and its package table.
 - [Hook protocol library](../hook-protocol/README.md) — the shared hook rules this bridge applies.
-- [Hook bridges Agent Note](../../../.agents/notes/implemented/feature/2026-06-30-hook-bridges.md) — the bridge design, decision mapping, and deferred gaps.
+- [Hook bridges Agent Note](../../../.agents/notes/archived/feature/2026-06-30-hook-bridges.md) — the bridge design, decision mapping, and deferred gaps.
 - [Interception extension-points Agent Note](../../../.agents/notes/implemented/feature/2026-06-30-interception-extension-points.md) — the typed-Decision surface the bridge maps onto.
 - [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-hooks-codex) — every accepted config field and its source declaration.
 
@@ -173,7 +173,7 @@ These limits describe what your Codex hooks cannot do through this bridge yet, a
 - **`PreToolUse` is partial** — blocking works, but `additionalContext`, `permissionDecision: "allow"`, and `updatedInput` are ignored. Every tool is represented as `tool_input: { command }`, so non-shell tool arguments are not faithfully exposed to the hook.
 - **`PostToolUse` is partial** — blocking feedback and JSON `additionalContext` work, but `{"continue": false}` is not enforced, non-shell tool arguments are reduced to `{ command }`, and structured tool output is flattened to text in `tool_response`.
 - **`Stop` is partial** — blocking forces another model turn, but `stop_hook_active` is always `false`, `last_assistant_message` is always `null`, and `{"continue": false}` is not enforced. An unconditionally blocking hook therefore force-continues every step unless it self-limits.
-- **Common payload and output fields are partial** — every mapped event reports the statically configured `model` and `permission_mode: "default"` instead of current Codex runtime values. `systemMessage` is logged + warned but not surfaced, and `{"continue": false}` is recorded but does not apply Codex's event-specific stop behavior.
+- **Common payload and output fields are partial** — every mapped event reports the statically configured `model` and `permission_mode: "default"` instead of current Codex runtime values, and `transcript_path` is never populated: it is always `null`, because the persistence seam exposes no artifact paths and the default-zstd session log is not readable by hook scripts. `systemMessage` is logged + warned but not surfaced, and `{"continue": false}` is recorded but does not apply Codex's event-specific stop behavior.
 - **Config loading and execution are partial** — one process-level `configPath` is parsed at load; Codex's active user, project, session, system/managed, and plugin layers, trust controls, and inline `config.toml` hook form are not implemented. Only synchronous `command` handlers run, current metadata such as `statusMessage` and `commandWindows` is ignored, and matching handlers run serially rather than with Codex's concurrent launch semantics.
 
 <a id="dev-note"></a>

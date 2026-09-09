@@ -1,5 +1,5 @@
 // PTC mode browser round trip with nested sub-calls and details selection.
-// Record: DSH_SNAPSHOT=record rewrites session.jsonl, then a keyless
+// Record: DSH_SNAPSHOT=record writes session.v2.jsonl, then a keyless
 // DSH_SNAPSHOT=refresh regenerates ui.expected.md.
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -8,12 +8,12 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  captureExpandedTurnProcessAria, compareOrRefreshGolden, fixtureUserPrompts,
+  acknowledgeReloadConnectionLoss, captureExpandedTurnProcessAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/ptc-round/session.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/ptc-round/session.v2.jsonl', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/ptc-round/ui.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 
@@ -102,18 +102,42 @@ describe('web e2e: PTC mode round renders nested sub-calls', () => {
     expect(await nest.locator('[data-state="error"]').count()).toBeGreaterThanOrEqual(1)
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('a bash sub-row click leaves the default details panel closed', async () => {
+  it.skipIf(MODE === 'record')('expands the nested bash terminal inline before and after reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ptc-details'))
-    const nest = page.locator('[data-subcalls]').first()
-    const frame = page.locator('[style*="grid-template-columns"]').first()
-    expect(await frame.getAttribute('data-details-collapsed')).toBe('true')
-    await expandOwningTurnProcess(page, nest)
-    await nest.locator('[data-sample="bash"]').first().click()
-    await expect.poll(() => frame.getAttribute('data-details-collapsed'), { timeout: 5_000 }).toBe('true')
+    let liveTerminalAria: string | undefined
+    for (const reloaded of [false, true]) {
+      if (reloaded) {
+        const warningStart = tripwire.warnings.length
+        await page.reload({ waitUntil: 'load' })
+        acknowledgeReloadConnectionLoss(tripwire, warningStart)
+        await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
+      }
+      const nest = page.locator('[data-subcalls]').first()
+      const frame = page.locator('[style*="grid-template-columns"]').first()
+      expect(await frame.getAttribute('data-details-collapsed')).toBe('true')
+      await expandOwningTurnProcess(page, nest)
+      const row = nest.locator('[data-sample="bash"]').first()
+      await expect.poll(() => row.getAttribute('data-state')).toBe('ok')
+      await expect.poll(() => row.getAttribute('aria-expanded')).toBe('false')
+      await row.click()
+      await expect.poll(() => row.getAttribute('aria-expanded')).toBe('true')
+      const terminal = row.locator('xpath=..').locator('[data-terminal]')
+      await terminal.waitFor()
+      await terminal.getByText('echo CODE_ROUND_OK', { exact: true }).waitFor()
+      await terminal.getByText('CODE_ROUND_OK', { exact: true }).waitFor()
+      await expect.poll(() => terminal.locator('[data-state]').getAttribute('data-state')).toBe('done')
+      await expect.poll(() => frame.getAttribute('data-details-collapsed'), { timeout: 5_000 }).toBe('true')
+      const aria = await terminal.ariaSnapshot()
+      if (reloaded) expect(aria).toBe(liveTerminalAria)
+      else liveTerminalAria = aria
+    }
   })
 
   it.skipIf(MODE === 'record')('matches the expanded conversation aria golden with stable anchors', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ptc-aria'))
+    const row = page.locator('[data-subcalls] [data-sample="bash"]').first()
+    await expandOwningTurnProcess(page, row)
+    if (await row.getAttribute('aria-expanded') !== 'true') await row.click()
     const snapshot = await captureExpandedTurnProcessAria(
       page,
       '[class*="centerCol"]',

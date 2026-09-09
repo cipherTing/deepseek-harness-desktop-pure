@@ -23,12 +23,13 @@ interface ContentBlockMap {
   'text': TextBlock
   'reasoning': ReasoningBlock
   'image': ImageBlock
+  'file': FileBlock
   'tool-call': ToolCallBlock
   'tool-result': ToolResultBlock
 }
 ```
 
-The block interfaces (full fields in source): `TextBlock` (`text`), `ReasoningBlock` (thinking, distinct from visible text), `ImageBlock` (a durable [image attachment](attachment.md)), `ToolCallBlock` (`id: ToolCallId`, `name`, raw-JSON `arguments`), and `ToolResultBlock` (`toolCallId`, nested `content: ContentBlock[]`, `isError?`). `ContentBlock = ContentBlockMap[ContentBlockType]`. A new modality belongs in the merge-extensible map only when its adapter, UI, compaction, and durable replay paths honor it.
+The block interfaces (full fields in source): `TextBlock` (`text`), `ReasoningBlock` (thinking, distinct from visible text), `ImageBlock` (a durable [image attachment](attachment.md)), `FileBlock` (a durable verbatim [file attachment](attachment.md) that request assembly projects to handle text for every route), `ToolCallBlock` (`id: ToolCallId`, `name`, raw-JSON `arguments`), and `ToolResultBlock` (`toolCallId`, nested `content: ContentBlock[]`, `isError?`). `ContentBlock = ContentBlockMap[ContentBlockType]`. A new modality belongs in the merge-extensible map only when its adapter, UI, compaction, and durable replay paths honor it.
 
 Image access belongs to request serialization rather than the durable attachment or deterministic request-image version. `resolveImageAttachmentAccess()` combines the attachment provider's optional host object path with a mapping supplied by the consumer for the current tool execution filesystem. The result is available only for that request and does not participate in `variantId`.
 
@@ -216,6 +217,16 @@ type StreamChunk =
   }
 ```
 
+<a id="compact-assistant-streams"></a>
+
+## Compact Assistant streams
+
+`AssistantStreamAccumulator` pairs each `StreamChunk` with its original safe-integer timestamp and produces `AssistantStreamRecord[]`. Consecutive text, reasoning, or tool-argument deltas for the same block become one record with `time0`, exact timestamp gaps, and one array entry per original delta; every other chunk stays a timestamped raw record. This representation removes repeated event envelopes without joining token boundaries or dropping terminal, usage, block, failure, or replay facts.
+
+`snapshot()` returns a detached immutable stream. `expandAssistantStream()` strictly checks record keys, member counts, indexes, timestamps, tool-call identity, and lossless JSON before recreating the exact timed chunk sequence. The Session log embeds this stream in `assistant/message` for a surface result or `assistant/attempt` for an attempt with no surface message.
+
+Process-local `agent/assistant-stream` frames carry live presentation. Durable replay and restore validation still expand the embedded settlement; telemetry, token accounting, and Host folds read the compact records directly. Record-level readers (`assistantStreamFirstTokenTime`, `assistantStreamHasVisibleContent`, `assistantStreamHasVisibleText`, `lastAssistantStreamChunk`, `assistantStreamChunks`, `joinAssistantStreamText`, `assembleAssistantStream`, and the per-run `runFirstTokenTime` and `runFirstVisibleTime`) answer consumer questions in one pass over the records with early exit, so a large history costs O(records) per settlement instead of O(members) expansion ([fold decision](../../.agents/notes/implemented/architecture/2026-09-06-embedded-stream-record-readers.md)). `expandAssistantStream()` remains the validating path for records read at a durable boundary and for consumers that need every member.
+
 ## `LlmFailure`
 
 Every thrown or in-band final-adapter failure normalizes to one serializable provider-neutral payload. `providerRetryAfterMs` is a validated positive delay requested by the provider, not a retry decision; `ProviderRequestId` is an opaque branded string for diagnostics.
@@ -280,11 +291,11 @@ Every adapter MUST obey these, and every consumer may rely on them:
 
 - **`usage` before `finish`, nothing after `finish`.** Defer both to the provider's end-of-stream marker so a trailing usage-only chunk can't violate the ordering.
 - **Tool-call `arguments` stay raw JSON strings end-to-end.** Partial fragments stream via `argumentsDelta`; a provider that hands back parsed objects re-stringifies at `block-end`.
-- **Two sanctioned error paths, one `LlmFailure` type.** A failure may either THROW from `stream()` (transport/protocol errors) **or** end the stream with `finish {kind:'error'|'aborted', failure}` (provider in-band errors, for adapters that can't throw mid-stream). `LlmError.failure` carries the same `LlmFailure`. After the call selects its adapter, the stream preserves the exact thrown `Error` object and associates immutable facts plus the serving registration's immutable retry policy with that call; the agent loop closes the failed step and offers the error, facts, immutable prior-retried facts, serving policy, and turn signal to `agent/request-error`. A handling listener returns `{ kind: 'retry' }` after its awaited repair; absent recovery the structured failure becomes the turn error, and no normal assistant message or tool side effect is committed for that attempt.
+- **Two sanctioned error paths, one `LlmFailure` type.** A failure may either THROW from `stream()` (transport/protocol errors) **or** end the stream with `finish {kind:'error'|'aborted', failure}` (provider in-band errors, for adapters that can't throw mid-stream). `LlmError.failure` carries the same `LlmFailure`. After the call selects its adapter, the stream preserves the exact thrown `Error` object and associates immutable facts plus the serving registration's immutable retry policy with that call; the agent loop commits the attempt stream as `assistant/attempt`, closes the failed step, and offers the error, facts, immutable prior-retried facts, serving policy, and turn signal to `agent/request-error`. A handling listener returns `{ kind: 'retry' }` after its awaited repair; absent recovery the structured failure becomes the turn error, and no surface Assistant message or tool side effect is committed for that attempt.
 - **One adapter call is one provider attempt.** Adapters disable library retries. Agent-level recovery opens another durable numbered turn; direct `ctx.llm.stream()` callers remain single-attempt.
 - **Provider stalls are bounded at the transport.** Both shipping remote adapters expose positive finite `streamIdleTimeoutMs` with a five-minute default. The watchdog arms only while iterator `next()` is outstanding, uses one stable signal for the whole request, maps its own expiry to `TIMEOUT`, and keeps an earlier caller abort as `ABORTED`.
 - **Context overflow has one canonical code.** Both DeepSeek adapters classify explicit provider detail through `isContextWindowExceededError()` and surface `CONTEXT_WINDOW_EXCEEDED`, whether the failure arrives as a thrown HTTP `LlmError` or an in-band finish error. Consumers route on the code, never provider text.
-- **An empty completion is a retryable error, not a silent success.** Both adapters map a terminal `stop` finish that carried no content blocks to `finish {kind:'error'}` with the canonical `EMPTY_RESPONSE` code, and `dsh-llm-retry` retries it by default; see [empty model responses are retryable](../../.agents/notes/implemented/bug-fix/2026-07-24-empty-model-response-is-retryable.md).
+- **An empty completion is a retryable error, not a silent success.** Both adapters map a terminal `stop` finish that carried no content blocks to `finish {kind:'error'}` with the canonical `EMPTY_RESPONSE` code, and `dsh-llm-retry` retries it by default.
 - **Every provider HTTP request carries the app-attribution header.** Adapters send `attributionHeaders()` (below) - the `User-Agent` baseline - and prove it with a wire-level test.
 - **Replay state is adapter-owned; its split is shared.** A successful `finish` may carry a `ReplayEnvelope`: opaque response-level metadata plus optional per-block entries aligned with the emitted block sequence. The alignment is the harness's vocabulary — when assembly drops a block it drops the entry at the same position, so stored metadata always describes stored content. The loop stores the pruned envelope with the assembled assistant message. On a later request, `LlmRuntime` passes the state only when the historical provider and target provider are currently registered to the exact same adapter instance. That adapter validates the state and owns any cross-model or cross-provider conversion; other adapters receive the provider-neutral content plus provider/model fields without the private state. Durable content stays authoritative: a stored state the reading adapter cannot use degrades that one message to provider-neutral conversion with a diagnostic instead of failing the request.
 
@@ -952,6 +963,14 @@ providerRetryPolicy(provider: string): ResolvedRetryPolicy
 imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined
 
 /**
+ * Resolve the exact text one durable file occurrence contributes to every
+ * provider request in the current execution environment.
+ * @param ref - durable verbatim file reference from model history.
+ * @returns the same deterministic handle text used at adapter dispatch.
+ */
+fileRequestText(ref: FileAttachmentRef): string
+
+/**
  * Discover models advertised by one registered provider. Catalog membership
  * is advisory and never changes routing or request validation.
  * @param provider - registered provider route to inspect.
@@ -1005,6 +1024,8 @@ async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<Prepared
  */
 stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 ```
+
+Types: [FileAttachmentRef](attachment.md)
 
 Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 

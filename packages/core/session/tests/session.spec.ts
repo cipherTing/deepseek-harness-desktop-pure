@@ -28,8 +28,12 @@ describe('Session', () => {
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    session.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'hi' } })
+    session.append('assistant/attempt', {
+      turn: 1, step: 1,
+      stream: [{ type: 'text-chunks', time0: 1, index: 0, dt: [], texts: ['hi'] }],
+    })
     session.append('assistant/message', {
+      stream: [],
       turn: 1, step: 1,
       message: createMessage({
         role: 'assistant',
@@ -122,6 +126,7 @@ describe('Session', () => {
       content: [{ type: 'text', text: 'q' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     original.append('assistant/message', {
+      stream: [],
       turn: 1, step: 1,
       message: createMessage({
         role: 'assistant',
@@ -185,6 +190,89 @@ describe('Session', () => {
     } as unknown as SessionEvent
     expect(Session.create(SessionId('primitive-plugin-data'), [unrelatedPrimitiveData]).snapshotEvents().slice(0, 1))
       .toEqual([unrelatedPrimitiveData])
+  })
+
+  it('validates Assistant settlement fields without replaying embedded streams', () => {
+    const id = SessionId('invalid-restored-assistant-stream')
+    const header = {
+      version: SESSION_FORMAT_VERSION,
+      id,
+      createdAt: 1,
+      isSeeded: false,
+      delegationDepth: 0,
+    } as const
+    for (const data of [
+      null,
+      { turn: '1', step: 1, stream: [] },
+      { turn: -1, step: 1, stream: [] },
+      { turn: -0, step: 1, stream: [] },
+      { turn: 1.5, step: 1, stream: [] },
+      { turn: 1, step: '1', stream: [] },
+      { turn: 1, step: -1, stream: [] },
+      { turn: 1, step: -0, stream: [] },
+      { turn: 1, step: 1.5, stream: [] },
+      { turn: 1, step: 1, stream: null },
+    ]) {
+      const invalidAttempt = {
+        type: 'assistant/attempt', seq: 0, time: 1, data,
+      } as unknown as SessionEvent
+      expect(() => Session.fromRestore(
+        id,
+        [invalidAttempt],
+        header,
+        SessionLogOffset(0),
+        'detached',
+      ))
+        .toThrow(/invalid settlement fields/)
+    }
+
+    const mismatchedMessage = {
+      type: 'assistant/message',
+      seq: 0,
+      time: 1,
+      data: {
+        turn: 1,
+        step: 1,
+        message: {
+          id: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'different' }],
+          source: { kind: 'model', provider: 'mock', model: 'mock' },
+        },
+        stream: [{ type: 'text-chunks', time0: 1, index: 0, dt: [], texts: ['streamed'] }],
+      },
+      surfaceOp: 'append',
+    } as unknown as SessionEvent
+    const restored = Session.fromRestore(
+      id,
+      [mismatchedMessage],
+      header,
+      SessionLogOffset(0),
+      'detached',
+    )
+    expect(restored.eventAt(SessionSeq(0))).toBe(mismatchedMessage)
+    expect(Object.isFrozen(mismatchedMessage)).toBe(false)
+  })
+
+  it('rejects historical or malformed request-header lifecycle markers on seed/load', () => {
+    const base = {
+      type: 'request/header', seq: SessionSeq(0), time: 1,
+      data: { header: { config: { provider: 'mock', model: 'model' } }, reason: 'initial' },
+    } as const
+    for (const reason of ['fallback', 'unknown', null]) {
+      const invalid = structuredClone(base) as unknown as SessionEvent
+      if (invalid.type !== 'request/header') throw new Error('test fixture must be a request header')
+      invalid.data.reason = reason as never
+      expect(() => Session.create(SessionId('invalid-header-reason'), [invalid]))
+        .toThrow('seed request/header at index 0 has an invalid reason')
+    }
+    for (const startsSeries of [false, 1, 'true']) {
+      const invalid = structuredClone(base) as unknown as SessionEvent
+      if (invalid.type !== 'request/header') throw new Error('test fixture must be a request header')
+      invalid.data.startsSeries = startsSeries as never
+      expect(() => Session.create(SessionId('invalid-series-marker'), [invalid]))
+        .toThrow('seed request/header at index 0 has an invalid startsSeries marker')
+    }
   })
 
   it('rejects event-specific malformed message shapes on seed/load', () => {
@@ -926,37 +1014,6 @@ describe('Session', () => {
     expect(() => { (appendedEvent.data.content[0] as { text: string }).text = 'mutated' }).toThrow(TypeError)
   })
 
-  it('iteratively freezes deeply nested restored event data', () => {
-    const depth = 20_000
-    const data: Record<string, unknown> = {}
-    let tail = data
-    for (let index = 0; index < depth; index += 1) {
-      const child: Record<string, unknown> = {}
-      tail['child'] = child
-      tail = child
-    }
-    const event = {
-      type: 'test/deep-restore', seq: 0, time: 1, data,
-    } as unknown as SessionEvent
-
-    expect(() => Session.fromRestore(SessionId('deep-restore'), [event], {
-      version: SESSION_FORMAT_VERSION,
-      id: SessionId('deep-restore'),
-      createdAt: 1,
-      isSeeded: false,
-    }, SessionLogOffset(0))).not.toThrow()
-
-    let current: unknown = event
-    let frozenNodes = 0
-    for (let index = 0; index <= depth + 1; index += 1) {
-      if (!Object.isFrozen(current)) break
-      frozenNodes += 1
-      current = (current as Record<string, unknown>)['data']
-        ?? (current as Record<string, unknown>)['child']
-    }
-    expect(frozenNodes).toBe(depth + 2)
-  })
-
   it('returns cached frozen event-array snapshots that do not grow after append', () => {
     const session = Session.create(SessionId('events-snapshot'))
     session.append('turn/start', { turn: 1 })
@@ -1002,7 +1059,7 @@ describe('Session', () => {
       cwd: '/accepted',
       parentSession: SessionId('parent'),
       isSeeded: true,
-    }
+    } satisfies SessionHeader
 
     const session = Session.create(SessionId('header-owned'), [], input, SessionLogOffset(0))
     input.cwd = '/caller-mutated'
@@ -1032,7 +1089,13 @@ describe('Session', () => {
 
     expect(() => Session.create(SessionId('header-invalid'), undefined, new ExoticHeader()))
       .toThrow(/not losslessly JSON-serializable/)
-    expect(() => Session.fromRestore(SessionId('header-invalid'), [], new ExoticHeader(), SessionLogOffset(0)))
+    expect(() => Session.fromRestore(
+      SessionId('header-invalid'),
+      [],
+      new ExoticHeader(),
+      SessionLogOffset(0),
+      'detached',
+    ))
       .toThrow(/not a plain JSON record/)
     for (const header of [null, 1, []]) {
       expect(() => Session.fromRestore(
@@ -1040,6 +1103,7 @@ describe('Session', () => {
         [],
         header as unknown as SessionHeader,
         SessionLogOffset(0),
+        'detached',
       )).toThrow(/not a plain JSON record/)
     }
     expect(() => Session.create(SessionId('header-invalid'), undefined, {
@@ -1067,7 +1131,7 @@ describe('Session', () => {
     const cases: Array<{ header: unknown; error: RegExp }> = [
       { header: 1, error: /not a plain JSON record/ },
       { header: null, error: /not a plain JSON record/ },
-      { header: { ...base, version: 1 }, error: /header version/ },
+      { header: { ...base, version: SESSION_FORMAT_VERSION + 1 }, error: /header version/ },
       { header: { ...base, createdAt: '123' }, error: /createdAt must be a non-negative safe integer/ },
       { header: { ...base, cwd: 1 }, error: /header cwd must be a string/ },
       { header: { ...base, cwd: 'relative' }, error: /header cwd must be an absolute path/ },
@@ -1515,18 +1579,10 @@ describe('SessionStore', () => {
       }
     })
 
-    expect(() => session.append('assistant/message', {
-      turn: 1,
-      step: 1,
-      message: createMessage({
-        role: 'assistant',
-        content: [{ type: 'text', text: 'replacement' }],
-        source: {
-          kind: 'model',
-          ...{ provider: 'mock', model: 'mock' },
-        },
-      }),
-    }, {
+    expect(() => session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'replacement' }],
+      source: { kind: 'plugin', plugin: 'test' },
+    }), {
       surfaceOp: { op: 'replace', start: SessionSeq(2), end: SessionSeq(2) },
       sourceEventSeqs: [SessionSeq(2)],
     })).toThrow('reject surface candidate')

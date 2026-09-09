@@ -25,6 +25,8 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
+声明类型使用 [`DshClientManifest`](../../util/package-manifest/README.zh.md)。Client-modules 负责 JSON 校验和归一化的启动图。
+
 组合或构建浏览器客户端插件时使用它：本包把包的 `dsh.client` 声明变成可加载的浏览器 bundle，无需任何逐插件接线。它随 web 组合激活；外壳在任何插件运行前启动它。
 
 ### 声明客户端插件

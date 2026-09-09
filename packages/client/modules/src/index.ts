@@ -33,6 +33,7 @@ import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
+import type { DshClientManifest } from '@deepseek-ai/dsh-package-manifest'
 import { optionalStringArray, stripClientSuffix } from './client/manifest.ts'
 import type { WebBootBatch, WebBootBatchPhase, WebBootEntry, WebBootGraph } from './client/manifest.ts'
 
@@ -46,22 +47,6 @@ declare module '@deepseek-ai/cordis' {
     /** The web plugin table (provided by the client-modules node half). */
     clientModules: ClientModuleRegistry
   }
-}
-
-/** package.json `dsh.client` declaration fields, validated one by one after reading the file. */
-interface DshClientDeclaration {
-  inject?: string[]
-  platform: string
-  /** Boot phase-one registration barrier; absent rows still ride the shared application batch. */
-  immediately?: boolean
-  /**
-   * Exact module-table requests beyond the implicit client baseline. Any
-   * specifier is valid, including subpaths such as `<pkg>/client`; each
-   * importing package declares its own exceptional requests. A type-only
-   * import is not a request because the transform erases it before resolution.
-   * Absent means the package uses only the baseline externals.
-   */
-  external?: string[]
 }
 
 /** The declared fields a graph row carries, normalized (absent array declarations become empty). */
@@ -198,7 +183,7 @@ function exactPackageSpecifier(specifier: string): string | undefined {
 }
 
 /** Narrow an unknown parsed JSON value to the `dsh.client` declaration, throwing on malformed fields. */
-function parseDshClient(pkgName: string, value: unknown): DshClientDeclaration | undefined {
+function parseDshClient(pkgName: string, value: unknown): DshClientManifest | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'object' || value === null) {
     throw new Error(`client-modules: ${pkgName} has a non-object dsh.client declaration`)

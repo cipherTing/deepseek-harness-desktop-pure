@@ -4,11 +4,11 @@
  * a real Loader tree, kept live through transactional HMR.
  */
 
-import { mkdirSync, mkdtempSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Hmr from '@deepseek-ai/cordis-plugin-hmr'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -17,13 +17,23 @@ import Timer from '@deepseek-ai/cordis-plugin-timer'
 import {
   boot,
   loadOptionalPatches,
+  loadOverlayPatches,
   PROFILE_PATCH_FILENAME,
   watchUserPatches,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
 
-const tmp = (): string => mkdtempSync(join(tmpdir(), 'dsh-user-patches-'))
+const tempRoots: string[] = []
+afterAll(() => {
+  for (const root of tempRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+const tmp = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-user-patches-'))
+  tempRoots.push(dir)
+  return dir
+}
 
 async function eventually(test: () => boolean, message: string): Promise<void> {
   const deadline = Date.now() + 10_000
@@ -63,6 +73,43 @@ describe('loadOptionalPatches', () => {
       config: { model: { __jsExpr: 'process.env.DSH_SPEC_MODEL' } },
     })
     expect(patches?.[1]?.insert).toHaveLength(1)
+  })
+
+  it.each([
+    { label: 'optional', load: loadOptionalPatches },
+    { label: 'overlay', load: loadOverlayPatches },
+  ])('loads absolute plugin paths from patch files as file URLs ($label)', async ({ load }) => {
+    const dir = tmp()
+    const pluginPath = join(dir, 'absolute #100%.mjs')
+    const pluginUrl = pathToFileURL(pluginPath).href
+    writeFileSync(pluginPath, 'export function apply(ctx) { ctx.provide("absolutePatchLoaded", true) }\n')
+    const patchPath = join(dir, PROFILE_PATCH_FILENAME)
+    writeFileSync(patchPath, JSON.stringify([
+      { id: 'existing', name: pluginPath },
+      { insert: [
+        { id: 'absolute', name: pluginPath },
+        { id: 'url', name: pluginUrl },
+        { id: 'bare', name: '@deepseek-ai/dsh-system-prompt' },
+        { id: 'nested', name: 'cordis:group', group: true, config: [
+          { id: 'child', name: pluginPath },
+        ] },
+      ] },
+    ]))
+    const patches = load(NAME, patchPath)!
+    expect(patches[0]?.name).toBe(pluginPath)
+    expect(patches[1]?.insert?.map(entry => entry.name)).toEqual([
+      pluginUrl, pluginUrl, '@deepseek-ai/dsh-system-prompt', 'cordis:group',
+    ])
+    expect((patches[1]?.insert?.[3]?.config as { name: string }[])[0]?.name).toBe(pluginUrl)
+
+    const configPath = join(dir, 'cordis.yml')
+    writeFileSync(configPath, '[]\n')
+    const ctx = await boot(NAME, configPath, [{ insert: [patches[1]!.insert![0]!] }])
+    try {
+      expect(ctx.get('absolutePatchLoaded')).toBe(true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('anchors inserted relative plugins to the patch file and keeps assertion names literal', () => {

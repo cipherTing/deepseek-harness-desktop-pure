@@ -141,6 +141,7 @@ describe('gate graph validation', () => {
     'ci-static',
     'ci-lint-contracts-ready',
     'ci-coverage',
+    'ci-bench',
     'ci-snapshot',
     'ci-artifacts',
     'ci-consumers',
@@ -184,7 +185,7 @@ describe('gate graph validation', () => {
     expect(ids).toEqual([
       'rescope-vendor', 'publint', 'constraints', 'package-dependencies', 'application-entrypoints',
       'dsh-package-licenses', 'package-invariants', 'built-package-invariants', 'node-next-types',
-      'optional-dependency-imports', 'client-packages', 'client-ui-i18n', 'cordis-config',
+      'optional-dependency-imports', 'client-packages', 'client-ui-i18n', 'no-bare-dispatcher', 'cordis-config',
       'runtime-closure', 'vendored-links',
     ])
     expect(defaultConcurrency('hygiene', ids.length, 8)).toEqual({
@@ -547,6 +548,7 @@ describe('Node 24 lane ownership', () => {
     })
     expect(subject.find(item => item.id === 'built-bin-smoke')?.args).toEqual(
       expect.arrayContaining([
+        'packages/subprocess/subprocess-local/tests/spawn-runner-built.e2e.ts',
         'packages/subagent/subagent-codex/tests/loader-composition.e2e.ts',
         'packages/subagent/subagent-claude-code/tests/loader-composition.e2e.ts',
         'packages/experimental/agent-team/tests/built-lib.e2e.ts',

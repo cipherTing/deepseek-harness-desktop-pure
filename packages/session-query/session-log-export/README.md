@@ -29,7 +29,7 @@ Use this package when the Web bundle should let users export a session log. It r
 
 ### When to choose it
 
-Choose it for a Web deployment that needs user-facing session export with a visible download dialog. Avoid it when a programmatic or Host-side export is needed: this package produces a browser download, not a Host path write, and it requires the shipped JSONL provider's per-Session raw artifact in plaintext or zstd form.
+Choose it for a Web deployment that needs user-facing session export with a visible download dialog. Avoid it when a programmatic or Host-side export is needed: this package produces a browser download, not a Host path write. The logs are serialized from persistence read handles, so any mounted backend is supported.
 
 ### Composition
 
@@ -55,7 +55,7 @@ The Web bundle mounts the package with Connection, `dsh-commands`, `dsh-client-u
 
 ### What to expect
 
-The modal reports preparation, browser download start, native file save completion, or failure. A native save cancellation closes the modal without reporting success. Closing the modal does not cancel an in-flight operation, and the modal does not reopen when that operation later settles. One Session admits one active download at a time; repeated gestures share that operation. The export includes the live Session's newest events: the Host endpoint flushes a live root Session before reading, so a slash-triggered ZIP includes the `command/run` and `command/done` pair that started the download; cold persisted Sessions need no flush.
+The modal reports preparation, browser download start, native file save completion, or failure. A native save cancellation closes the modal without reporting success. Closing the modal does not cancel an in-flight operation, and the modal does not reopen when that operation later settles. One Session admits one active download at a time; repeated gestures share that operation. The export includes the live Session's newest events: the Host endpoint flushes a live root Session before reading, so a slash-triggered ZIP includes the `command/run` and `command/done` pair that started the download; cold persisted Sessions need no flush. Each logical log uses the current generation's canonical filename inside the archive (`session.jsonl` for v0, otherwise `session.vN.jsonl`), including beneath each sub-session directory. Images use `media/<attachmentId>.<ext>`, and generic files use `files/<digest-prefix>/<digest>/<name>`. Generic-file bytes are read and compressed as bounded chunks, so exporting a large upload does not buffer it in full.
 
 ### Failures
 
@@ -79,7 +79,7 @@ The package has two halves. The Host half ([`src/index.ts`](src/index.ts)) regis
 
 Both entry paths issue a `HEAD` preflight to `GET /api/session.export?...`, then hand the GET URL and safe filename to the active save carrier without buffering the ZIP in JavaScript. The default carrier clicks a browser download anchor and returns immediately; an embedding surface may install `globalThis.__DSH_DOWNLOAD_CARRIER__` before client boot and settle with `file-saved` or `cancelled`. One controller owns one in-flight download per Session, collapses concurrent gestures into that operation, and cancels the preflight on plugin disposal. Modal state lives in a snapshot store keyed by Session, so the button and the command share one modal per Session.
 
-The Host route is a feature-owned exact Fetch contribution. Connection applies its Host/Origin and browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, raw artifact and attachment reads, ZIP generation, and HTTP status semantics.
+The Host route is a feature-owned exact Fetch contribution. Connection applies its Host/Origin and browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, handle-based log reads and attachment reads, ZIP generation, and HTTP status semantics.
 
 </details>
 
@@ -121,8 +121,7 @@ None. The log-only command lifecycle and browser download do not change the deri
 
 These limits define when this package is a poor fit or needs special operational care. They are current package constraints, not a task backlog.
 
-- **Requires a per-Session raw artifact** — the download endpoint reads the shipped JSONL provider's plaintext or zstd artifact; an out-of-tree provider without a raw artifact cannot serve this route.
-- **No Host-path write API by default** — the default carrier lets the browser choose the local destination. An embedding surface may install a native save carrier, but the page receives no general filesystem access or Host path result.
+- **Browser download or embedding save carrier, not a Host-path writer** — the default carrier lets the browser choose the local destination. An embedding surface may install a native save carrier, but the page receives no general filesystem access or Host path result.
 - **Preflight reports only pre-stream failures** — a descendant or attachment failure after the browser accepts the GET is reported by the browser download manager, not by the dialog.
 
 <a id="dev-note"></a>

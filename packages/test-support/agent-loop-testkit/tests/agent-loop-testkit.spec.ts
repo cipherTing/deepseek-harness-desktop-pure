@@ -8,7 +8,7 @@ describe('dsh-agent-loop-testkit', () => {
   it('mounts a configurable prerequisite spine that can activate AgentLoop', async () => {
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx, {
-      systemPrompt: { persona: 'Test persona.' },
+      systemPrompt: { personaPrefix: 'Test persona.' },
       tools: { mode: 'native' },
     })
 

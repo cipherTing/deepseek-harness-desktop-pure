@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-Desktop 客户端插件在运行时 `inject` 列表中声明 `locale` 和 `slots`，并通过已声明的上下文属性读取它们。Cordis 会在两个服务都存在前保持插件 pending，并在服务提供方消失后重新出现时重新加载插件。各项贡献仍通过 `slots.inject()` 注册，使每个注册跟随其声明 slot 的生命周期，具体规则见 [slot 声明注入](../architecture/2026-08-05-slot-declaration-injection.zh.md)。
+Desktop 客户端插件在运行时 `inject` 列表中声明 `locale` 和 `slots`，并通过已声明的上下文属性读取它们。Cordis 会在两个服务都存在前保持插件 pending，并在服务提供方消失后重新出现时重新加载插件。各项贡献仍通过 `slots.inject()` 注册，使每个注册跟随其声明 slot 的生命周期，具体规则见 [slot 声明注入](../../archived/architecture/2026-08-05-slot-declaration-injection.md)。
 
 包级 `dsh.client.inject` 元数据将真正提供 renderer-owned `slots` 服务的包记录为 `@deepseek-ai/dsh-client-ui-renderer`。这项元数据不能替代运行时服务声明。不需要修改 Harness 核心、renderer 或附件接纳逻辑。
 

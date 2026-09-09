@@ -16,8 +16,11 @@ import { basename, delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  assertPersistedSessionVersion,
+  assertSessionFixtureVersion,
   captureExpectedWorkspaceSnapshot,
   captureWorkspaceSnapshot,
+  normalizeSessionFormatProvenance,
   normalizeSessionLog,
   normalizeSessionSnapshots,
   normalizeStdout,
@@ -32,13 +35,17 @@ import {
   scrubRequestHeaders,
   scrubSessionSnapshot,
   scrubSystemPrompts,
+  sessionFixtureName,
   sessionFixtureNames,
+  sessionHeaderVersion,
   stabilizeFixtureMessageIds,
   stabilizeRefreshLog,
   tokenizeSessionFixtureCwd,
+  writesCurrentSessionFixtures,
   materializeProfilePatch,
   formatSystemPromptSnapshot,
   formatToolSchemasSnapshot,
+  latestPersistedSessionPaths,
   type HarvestedLog,
   type NormalizeContext,
   type SnapshotManifest,
@@ -51,6 +58,7 @@ import {
   type RunResult,
   type SdkPromptContentBlock,
 } from '@deepseek-ai/dsh-sdk-client'
+import { prepareSessionEventNotificationsForComparison } from '@deepseek-ai/dsh-llm-replay'
 
 const corpusRoot = fileURLToPath(new URL('../', import.meta.url))
 
@@ -67,6 +75,7 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 const mode = process.env.DSH_SNAPSHOT ?? 'replay'
 const recording = mode === 'record'
 const refreshing = mode === 'refresh'
+const sessionWriteMode = recording ? 'record' : refreshing ? 'refresh' : 'replay'
 const RUNTIME_WORKSPACE_ENTRIES = [
   '.agents',
   '.child-dsh',
@@ -109,6 +118,9 @@ interface SdkAssertions {
 }
 
 const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
+  'subagent-continuable': {
+    environment: { DSH_SNAPSHOT_HUMAN_STEER: '1' },
+  },
   'subagent-dsh-sdk-diagnostic': {
     environment: { DSH_TEST_CHILD_PATCH: dshSdkDiagnosticChildPatch },
   },
@@ -218,13 +230,14 @@ interface PersistedLog {
 
 async function jsonlFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { recursive: true })
-  return entries.filter(entry => entry.endsWith('.jsonl')).map(entry => join(dir, entry)).sort()
+  return latestPersistedSessionPaths(entries).map(entry => join(dir, entry))
 }
 
 async function persistedLogs(sessionsRoot: string): Promise<PersistedLog[]> {
   const files = await jsonlFiles(sessionsRoot)
   return Promise.all(files.map(async (path) => {
     const content = await readFile(path, 'utf8')
+    assertPersistedSessionVersion(basename(path), content)
     const header = JSON.parse(content.slice(0, content.indexOf('\n'))) as Record<string, unknown>
     return { path, content, header }
   }))
@@ -300,7 +313,11 @@ function contextOfContents(contents: readonly string[]): NormalizeContext {
 
 async function fixtureFiles(scenario: CorpusScenario): Promise<string[]> {
   const names = sessionFixtureNames(await readdir(scenario.dir))
-  return names.map(name => join(scenario.dir, name))
+  return Promise.all(names.map(async (name) => {
+    const path = join(scenario.dir, name)
+    assertSessionFixtureVersion(name, await readFile(path, 'utf8'))
+    return path
+  }))
 }
 
 async function hydrateReplayFixtures(scenario: CorpusScenario, cwd: string): Promise<string[]> {
@@ -322,11 +339,17 @@ function normalizeNotifications(notifications: readonly HarnessNotification[], c
   const events = notifications
     .filter(n => n.method === 'session.event')
     .map(n => n.params.event as Record<string, unknown>)
+  const typedFeedback = events.some(event => event.type === 'feedback/message-put')
+  const eventLog = events.map(event => JSON.stringify(event)).join('\n') + '\n'
+  const typedLog = typedFeedback
+    ? redactSessionSnapshotIds([JSON.stringify({ type: 'session', id: ctx.sessionIds[0] }) + '\n' + eventLog])[0]!.split('\n').slice(1).join('\n')
+    : eventLog
   const normalizedEvents = events.length === 0
     ? []
     : scrubRequestHeaders(normalizeSessionLog(
-      `${events.map(event => JSON.stringify(event)).join('\n')}\n`,
+      normalizeSessionFormatProvenance(typedLog),
       ctx,
+      typedFeedback ? { identityMode: 'preserve' } : {},
     )).trimEnd().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
   let eventIndex = 0
   const records = notifications.map((notification) => {
@@ -334,7 +357,11 @@ function normalizeNotifications(notifications: readonly HarnessNotification[], c
     const event = normalizedEvents[eventIndex++]
     return { method: notification.method, params: { ...notification.params, event } }
   })
-  return normalizeStdout(`${records.map(record => JSON.stringify(record)).join('\n')}\n`, ctx)
+  let output = records.map(record => JSON.stringify(record)).join('\n') + '\n'
+  if (typedFeedback) {
+    for (const [index, id] of ctx.sessionIds.entries()) output = output.replaceAll(id, '{{session:' + (index + 1) + '}}')
+  }
+  return normalizeStdout(output, ctx, typedFeedback ? { identityMode: 'preserve' } : {})
 }
 
 /** Normalize the owned-run projection. */
@@ -583,6 +610,12 @@ async function runScenario(scenario: CorpusScenario): Promise<{
           },
         })
         results.push(result)
+        if (scenario.manifest.environment?.DSH_SNAPSHOT_FEEDBACK === '1') {
+          const feedback = result.events.filter(event => event.type.startsWith('feedback/'))
+          expect(feedback.map(event => event.type)).toEqual([
+            'feedback/record', 'feedback/message-put', 'feedback/message-put', 'feedback/message-delete',
+          ])
+        }
         await waitForRootEvent(
           subscription,
           sessionId,
@@ -675,7 +708,8 @@ async function verifyHeaders(
   dshSdkChildConfig?: Readonly<Record<string, unknown>>,
 ): Promise<void> {
   const pin = headerPin(scenario)
-  const pinFixture = await readFile(join(pin.dir, 'session.jsonl'), 'utf8')
+  const [pinFixturePath] = await fixtureFiles(pin)
+  const pinFixture = await readFile(pinFixturePath as string, 'utf8')
   const firstLine = pinFixture.split('\n').find(line => line.trim() !== '') ?? '{}'
   const pinHeader = JSON.parse(firstLine) as JsonObject
   const pinned = normalizedHeaders(pinFixture, {
@@ -723,15 +757,19 @@ async function verifyHeaders(
 
 describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
   for (const scenario of sdkScenarios) {
-    const scenarioTest = recording && scenario.manifest.recording === 'authored' ? it.skip : it
+    const scenarioTest = recording
+      && (scenario.manifest.recording === 'authored' || scenario.manifest.sessionFormat !== undefined)
+      ? it.skip
+      : it
     scenarioTest(`${mode}s ${scenario.name} through dsh --profile sdk`, async () => {
       const scenarioDir = scenario.dir
       const notificationsExpectedPath = join(scenarioDir, 'notifications.expected.jsonl')
       const resultExpectedPath = join(scenarioDir, 'result.expected.json')
       const hasWireGoldens = existsSync(notificationsExpectedPath) || existsSync(resultExpectedPath)
       const assertions = SDK_ASSERTIONS[scenario.name] ?? {}
+      const writesSessionFixtures = writesCurrentSessionFixtures(scenario.manifest, sessionWriteMode)
 
-      const files = await fixtureFiles(scenario)
+      let files = await fixtureFiles(scenario)
       const { results, notifications, observedMethods, logs, initialWorkspace, finalWorkspace, cwd } = await runScenario(scenario)
       const ordered = orderLogs(
         logs,
@@ -749,7 +787,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         ))
       }
 
-      if (refreshing) {
+      if (refreshing && writesSessionFixtures) {
         const harvested = ordered.map((log): HarvestedLog => ({
           id: String(log.header.id),
           createdAt: Number(log.header.createdAt),
@@ -767,20 +805,13 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         expectedContents = redactSessionSnapshotIds(stabilizeFixtureMessageIds(refreshed, expectedContents))
       }
 
-      if (recording || refreshing) {
-        const outputFiles = [
-          join(scenarioDir, 'session.jsonl'),
-          ...Array.from({ length: expectedContents.length - 1 }, (_, index) => join(scenarioDir, `session.${index + 1}.jsonl`)),
-        ]
+      if (writesSessionFixtures) {
+        const outputFiles = ordered.map((log, index) => join(scenarioDir, sessionFixtureName(
+          index,
+          sessionHeaderVersion(log.content, `harvested Session ${index}`),
+        )))
         await Promise.all(expectedContents.map((stable, index) => writeFile(outputFiles[index] as string, stable)))
-        if (recording) {
-          const retained = new Set(outputFiles.map(file => basename(file)))
-          for (const entry of await readdir(scenarioDir, { withFileTypes: true })) {
-            if (entry.isFile() && /^session\.[1-9]\d*\.jsonl$/u.test(entry.name) && !retained.has(entry.name)) {
-              await rm(join(scenarioDir, entry.name))
-            }
-          }
-        }
+        files = outputFiles
         await writeHeaderSidecars(scenario, ordered, actualContext)
       }
 
@@ -795,9 +826,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       const expectedContext = contextOfContents(expectedContents)
       const actualSnapshots = normalizeSessionSnapshots(ordered.map(log => log.content), actualContext)
       const expectedSnapshots = normalizeSessionSnapshots(expectedContents, expectedContext)
-      for (const [index, actual] of actualSnapshots.entries()) {
-        expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
-      }
+      expect(actualSnapshots.map(records), `${scenario.name}: sessions`).toEqual(expectedSnapshots.map(records))
       await verifyHeaders(scenario, ordered, actualContext, assertions.dshSdkChild?.agentConfig)
 
       // Genuine SDK protocol cases retain their secondary wire projections.
@@ -810,7 +839,12 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
           await writeFile(notificationsExpectedPath, normalizedNotifications)
           await writeFile(resultExpectedPath, normalizedResult)
         }
-        expect(normalizedNotifications).toBe(await readFile(notificationsExpectedPath, 'utf8'))
+        const expectedNotifications = await readFile(notificationsExpectedPath, 'utf8')
+        expect(
+          records(prepareSessionEventNotificationsForComparison(normalizedNotifications)),
+          `${scenario.name}: notifications`,
+        )
+          .toEqual(records(prepareSessionEventNotificationsForComparison(expectedNotifications)))
         expect(normalizedResult).toBe(await readFile(resultExpectedPath, 'utf8'))
       }
 

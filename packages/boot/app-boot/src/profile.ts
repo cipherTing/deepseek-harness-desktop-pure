@@ -34,6 +34,7 @@ import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import type { DshManifest, DshModuleFallbackManifest, ProfilePatchReload } from '@deepseek-ai/dsh-package-manifest'
 import { resolve as resolvePackage, type Package as ResolvePackageManifest } from 'resolve.exports'
 import { loadOverlayPatches } from './index.ts'
 
@@ -46,23 +47,6 @@ export const PROFILE_PATCH_FILENAME = 'cordis.patch.yml'
 /** Profile-private package links projected into its pnpm-managed node_modules. */
 const PROFILE_MODULE_FALLBACK_DIR = '.dsh-module-fallback'
 
-/** The bundle half of the `dsh` manifest section: what a bundle package exports. */
-export interface DshBundleManifest {
-  /** The patch layer this bundle exports, relative to its package root. */
-  patch: string
-}
-
-/** The profile half of the `dsh` manifest section: what a profile directory composes. */
-export interface DshProfileManifest {
-  /** Ordered bundle layer list (package names). */
-  bundles?: string[]
-  /** Whether user patch files reload while this profile remains active. */
-  patchReload?: ProfilePatchReload
-}
-
-/** User patch-file lifecycle selected by a profile. */
-export type ProfilePatchReload = 'live' | 'startup'
-
 /** Installation-owned defaults used when a shipped profile is first opened. */
 export interface ProfileTemplate {
   /** Ordered bundle layer list. */
@@ -71,23 +55,12 @@ export interface ProfileTemplate {
   patchReload: ProfilePatchReload
 }
 
-/**
- * The profile-launcher slice of the `dsh`-owned package.json section. A
- * manifest may declare both roles; other consumers own additional keys.
- */
-export interface DshManifestSection {
-  /** Bundle metadata consumed by the profile launcher. */
-  bundle?: DshBundleManifest
-  /** Profile metadata consumed by the profile launcher. */
-  profile?: DshProfileManifest
-}
-
 /** The slice of package.json both profiles and bundles use. */
 export interface ProfileManifest {
   name?: string
   dependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
-  dsh?: DshManifestSection
+  dsh?: DshManifest
 }
 
 /** One resolved bundle layer of a profile. */
@@ -335,7 +308,7 @@ interface ModuleProxyManifest {
   private: true
   type: 'module'
   exports: Record<string, string>
-  dsh: { moduleFallback: { targets: Record<string, string> } }
+  dsh: { moduleFallback: DshModuleFallbackManifest }
 }
 
 interface ModuleProxyRecord {

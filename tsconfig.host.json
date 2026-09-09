@@ -9,6 +9,7 @@
   },
   "include": [
     "apps/web/tests/scaffold.ts",
+    "apps/web/tests/scaffold-generation.spec.ts",
     "apps/web/tests/default-model.e2e.ts",
     "apps/web/tests/github-ready-review.e2e.ts",
     "apps/web/tests/streaming-fence-highlight.e2e.ts",
@@ -50,6 +51,7 @@
     "apps/web/tests/composer-draft-scroll.e2e.ts",
     "apps/web/tests/cordis-tool-round.e2e.ts",
     "apps/web/tests/web-search-round.e2e.ts",
+    "apps/web/tests/file-upload-round.e2e.ts",
     "apps/web/tests/message-actions.e2e.ts",
     "apps/web/tests/message-feedback.e2e.ts",
     "apps/web/tests/message-feedback-layout.e2e.ts",
@@ -59,6 +61,7 @@
     "apps/web/tests/math-rendering.e2e.ts",
     "apps/web/tests/markdown-cjk-strong.e2e.ts",
     "apps/web/tests/markdown-inline-code-links.e2e.ts",
+    "apps/web/tests/clickable-links-gallery.e2e.ts",
     "apps/web/tests/queue-actions.e2e.ts",
     "apps/web/tests/queue-image.e2e.ts",
     "apps/web/tests/skill-invocation-policy.e2e.ts",
@@ -96,17 +99,20 @@
     "apps/web/tests/workflow-run.e2e.ts",
     "apps/web/stress-tests/reasoning-chunks.stress.ts",
     "apps/cli/tests/**/*.ts",
+    "benchmarks/**/*.ts",
     "packages/*/*/tests/**/*.ts",
     "scripts/**/*.ts",
     "website/**/*.ts",
     "website/.vitepress/**/*.ts"
   ],
-  // Under packages/client a test file names the face it covers: `*.client.*`
-  // belongs to the Client aggregate, `*.host.spec.ts` to this one. The two
+  // Under packages/client and benchmarks, a test file names the face it covers:
+  // `*.client.*` belongs to the Client aggregate, `*.host.spec.ts` to this one. The two
   // suffixes are mutually exclusive, so each aggregate excludes the other's
   // and the package test glob above needs no per-file entry.
   "exclude": [
     "packages/client/*/src/**",
+    "benchmarks/**/*.client.ts",
+    "benchmarks/**/*.client.tsx",
     "packages/*/*/tests/**/*.client.ts",
     "packages/*/*/tests/**/*.client.tsx",
     "packages/*/*/tests/**/*.client.spec.ts",
@@ -128,6 +134,8 @@
     { "path": "./vendor/hmr" },
     { "path": "./vendor/logger-console" },
     { "path": "./packages/util/brand" },
+    { "path": "./packages/util/package-manifest" },
+    { "path": "./packages/util/http-proxy" },
     { "path": "./packages/util/launch-environment" },
     { "path": "./packages/util/native-command" },
     { "path": "./packages/util/home-paths" },
@@ -141,6 +149,7 @@
     { "path": "./packages/util/atomic-write" },
     { "path": "./packages/attachment/attachment" },
     { "path": "./packages/attachment/attachment-local" },
+    { "path": "./packages/client/file-upload/tsconfig.host.json" },
     { "path": "./packages/llm/llm" },
     { "path": "./packages/llm/deepseek-llm-api-extensions" },
     { "path": "./packages/llm/token-meter" },
@@ -155,6 +164,10 @@
     { "path": "./packages/api/workspace-controller/tsconfig.host.json" },
     { "path": "./packages/typert/loader" },
     { "path": "./packages/session/session-persistence" },
+    { "path": "./packages/session/session-format" },
+    { "path": "./packages/session/session-format-v0-to-v1" },
+    { "path": "./packages/session/session-format-v1-to-v2" },
+    { "path": "./packages/session/session-format-catalog" },
     { "path": "./packages/session/session-checkpoint-policy" },
     { "path": "./packages/session/session-log-deepseek" },
     { "path": "./packages/session/session-persistence-jsonl" },
@@ -320,6 +333,7 @@
     { "path": "./packages/host/directory-picker-browse" },
     { "path": "./packages/host/directory-picker-native" },
     { "path": "./packages/host/frontend-static" },
+    { "path": "./packages/host/open-in-app" },
     { "path": "./packages/host/plugin-inventory" },
     { "path": "./packages/llm/plugin-package-inventory-deepseek" },
     { "path": "./packages/host/webserver" },

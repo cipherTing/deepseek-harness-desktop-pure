@@ -9,20 +9,30 @@
  * writes CRLF on Windows, so exact text assertions normalize line endings.
  */
 
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { PwshLocalExecutor, ENCODING_PREAMBLE, candidatePwshPaths, resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SubprocessRuntime from '@deepseek-ai/dsh-subprocess'
-import type { SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessOutcome, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { ShellProcess } from '@deepseek-ai/dsh-shell'
 
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-pwsh-exec-spec-'))
+
+afterAll(() => {
+  rmSync(spillDir, { recursive: true, force: true })
+})
+
+/** Per-test temp dirs, removed after each test. */
+const tempDirs: string[] = []
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 
 // The probe follows the executor's own resolution (Program Files installs on
 // Windows are found even when bare `pwsh` is not on PATH).
@@ -114,6 +124,7 @@ describe('resolvePwshPath and candidatePwshPaths (pure, every platform)', () => 
 
   it('returns the first EXISTING win32 candidate, else pwsh', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwsh-resolve-'))
+    tempDirs.push(dir)
     const store = join(dir, 'store')
     mkdirSync(store, { recursive: true })
     writeFileSync(join(store, 'pwsh.exe'), '')
@@ -131,6 +142,7 @@ describe('resolvePwshPath and candidatePwshPaths (pure, every platform)', () => 
     // Store app execution aliases stat as EACCES but lstat as a link; a
     // dangling symlink reproduces that split on every platform.
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwsh-resolve-link-'))
+    tempDirs.push(dir)
     const store = join(dir, 'store')
     mkdirSync(store, { recursive: true })
     const link = join(store, 'pwsh.exe')
@@ -141,6 +153,7 @@ describe('resolvePwshPath and candidatePwshPaths (pure, every platform)', () => 
 
   it('skips a directory candidate and falls through to the PATH-resolution default', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwsh-resolve-dir-'))
+    tempDirs.push(dir)
     const store = join(dir, 'store')
     mkdirSync(join(store, 'pwsh.exe'), { recursive: true })
     expect(resolvePwshPath(undefined, {
@@ -155,20 +168,28 @@ describe('spawn construction (pure, every platform)', () => {
   /** A subprocess service that records spawn specs and settles instantly. */
   class CapturingSubprocessRuntime extends SubprocessRuntime {
     specs: SubprocessSpawnSpec[] = []
+    done: Promise<SubprocessOutcome> = Promise.resolve({ exitCode: 0, signal: null })
+    stderrText = ''
     override async resolveExecutable(command: string): Promise<string> { return command }
     override spawnTerminal(): Promise<never> { throw new Error('pwsh spawns pipes, never terminals') }
-    private readonly reader: SubprocessOutputReader = {
+    private readonly stdoutReader: SubprocessOutputReader = {
       readFrom: () => ({ text: '', lossy: false, nextOffset: 0 }),
+    }
+    private readonly stderrReader: SubprocessOutputReader = {
+      readFrom: offset => ({
+        text: this.stderrText.slice(offset),
+        lossy: false,
+        nextOffset: this.stderrText.length,
+      }),
     }
     override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
       this.specs.push(spec)
       return {
-        pid: -1,
         stdin: undefined,
         stdout: undefined,
         stderr: undefined,
-        collected: { stdout: this.reader, stderr: this.reader },
-        done: Promise.resolve({ exitCode: 0, signal: null }),
+        collected: { stdout: this.stdoutReader, stderr: this.stderrReader },
+        done: this.done,
         terminate: () => {},
         waitForExit: async () => true,
       }
@@ -187,6 +208,67 @@ describe('spawn construction (pure, every platform)', () => {
     expect(ENCODING_PREAMBLE).toContain('[Console]::OutputEncoding')
     expect(ENCODING_PREAMBLE).toContain('$OutputEncoding')
   })
+
+  it('reports both unread stderr and an asynchronous provider rejection exactly once', async () => {
+    const ctx = new Context()
+    const subprocess = new CapturingSubprocessRuntime(ctx)
+    await ctx.plugin(PwshLocalExecutor)
+    subprocess.stderrText = 'target stderr'
+    subprocess.done = Promise.reject(new Error('provider lost the direct outcome'))
+
+    const proc = ctx.shell.start(ctx.shell.resolve({ command: 'Write-Output maybe-ran' }))
+    await expect(proc.done).resolves.toBeUndefined()
+    expect(proc.status).toBe('killed')
+    const output = proc.readOutput().delta
+    expect(output).toContain('target stderr')
+    expect(output).toContain('subprocess failed before reporting an outcome:')
+    expect(output).not.toContain('spawn failed:')
+    expect(proc.readOutput().delta).toBe('')
+  })
+
+  it('settles an unprintable provider rejection instead of rejecting done', async () => {
+    const ctx = new Context()
+    const subprocess = new CapturingSubprocessRuntime(ctx)
+    await ctx.plugin(PwshLocalExecutor)
+    const providerError = new Error('unprintable provider error')
+    Object.defineProperty(providerError, Symbol.toPrimitive, {
+      value: () => { throw new Error('provider formatting must not escape') },
+    })
+    subprocess.done = Promise.reject(providerError)
+
+    const proc = ctx.shell.start(ctx.shell.resolve({ command: 'Write-Output maybe-ran' }))
+    await expect(proc.done).resolves.toBeUndefined()
+    expect(proc.status).toBe('killed')
+    expect(proc.readOutput().delta).toContain('unprintable provider failure')
+    expect(proc.readOutput().delta).toBe('')
+  })
+
+  it('preserves an explicit kill stamp and maps an aborted direct outcome to killed', async () => {
+    const ctx = new Context()
+    const subprocess = new CapturingSubprocessRuntime(ctx)
+    await ctx.plugin(PwshLocalExecutor)
+
+    const killedOutcome = Promise.withResolvers<SubprocessOutcome>()
+    subprocess.done = killedOutcome.promise
+    const killed = ctx.shell.start(ctx.shell.resolve({ command: 'Write-Output maybe-ran' }))
+    expect(killed.kill()).toBe(true)
+    killedOutcome.resolve({ exitCode: 0, signal: null })
+    await killed.done
+    expect(killed.status).toBe('killed')
+    expect(killed.exitCode).toBe(0)
+
+    const abortedOutcome = Promise.withResolvers<SubprocessOutcome>()
+    subprocess.done = abortedOutcome.promise
+    const controller = new AbortController()
+    const aborted = ctx.shell.start(ctx.shell.resolve({
+      command: 'Write-Output maybe-ran',
+      signal: controller.signal,
+    }))
+    controller.abort()
+    abortedOutcome.resolve({ exitCode: 0, signal: null })
+    await aborted.done
+    expect(aborted.status).toBe('killed')
+  })
 })
 
 describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
@@ -201,6 +283,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
   it('uses config cwd, overridable per call', async () => {
     const first = mkdtempSync(join(tmpdir(), 'dsh-pwsh-cwd-a-'))
     const second = mkdtempSync(join(tmpdir(), 'dsh-pwsh-cwd-b-'))
+    tempDirs.push(first, second)
     const { bash } = await setup({ cwd: first })
     const fromConfig = await bash.run(bash.resolve({ command: '(Get-Location).Path' }))
     expect(samePath(fromConfig.stdout.text.trim(), first)).toBe(true)
@@ -400,7 +483,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
     expect(lf(read.delta)).toContain('[stderr]')
   })
 
-  it('kill() terminates the process tree: true once, false after settlement', async () => {
+  it('kill() requests managed-range termination: true once, false after settlement', async () => {
     const { bash } = await setup()
     const proc = bash.start(bash.resolve({ command: 'Start-Sleep -Seconds 60' }))
     expect(proc.kill()).toBe(true)
@@ -436,13 +519,13 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
     expect(['SIGTERM', 'SIGKILL']).toContain(proc.signal)
   })
 
-  it('a background spawn failure settles as killed with the error readable on stderr', async () => {
+  it('an asynchronous creation failure settles as killed with a stage-neutral note', async () => {
     const { bash } = await setup()
     const proc = bash.start(bash.resolve({ command: 'Write-Output ok', workdir: '/nonexistent-dsh' }))
     // done resolves (never rejects) even though the process never ran.
     await expect(proc.done).resolves.toBeUndefined()
     expect(proc.status).toBe('killed')
-    expect(proc.readOutput().delta).toContain('spawn failed:')
+    expect(proc.readOutput().delta).toContain('subprocess failed before reporting an outcome:')
   })
 })
 

@@ -31,8 +31,14 @@
   - img
   - img
   - text: Code Run bash echo and catch missing file read
-- img
-- text: Bash Echo CODE_ROUND_OK Failed
+- button "Bash Echo CODE_ROUND_OK" [expanded]:
+  - img
+  - text: Bash Echo CODE_ROUND_OK
+- text: Done workspace echo CODE_ROUND_OK
+- button "Copy"
+- text: CODE_ROUND_OK
+- button "Inspect"
+- text: Failed
 - 'button "Read Error: cannot read \"{{cwd}}/workspace/missing.txt\": not found"':
   - img
   - text: "Read Error: cannot read \"{{cwd}}/workspace/missing.txt\": not found"
@@ -55,6 +61,8 @@
 - text: {{clock}}
 - textbox "Message or run a task... / commands, @ files or sessions"
 - button "Commands":
+  - img
+- button "Add attachment":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
 - button "Select model, current DeepSeek-V4-Flash":

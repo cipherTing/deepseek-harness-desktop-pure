@@ -27,7 +27,7 @@ export async function spawnHarness(workdir: string): Promise<Context> {
   // own description.
   await ctx.plugin(SessionProjectionRegistry)
   await mountAgentLoopTestDependencies(ctx, {
-    systemPrompt: { persona: 'You are a coding agent. Report only when the requested work is done.' },
+    systemPrompt: { personaPrefix: 'You are a coding agent. Report only when the requested work is done.' },
   })
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(LlmDeepSeek)

@@ -231,7 +231,7 @@ export async function makeBridgeHarness(options: {
   const ctx = new Context()
   const ownsPersistenceRoot = options.persistenceRoot === undefined
   const persistenceRoot = options.persistenceRoot ?? await mkdtemp(join(tmpdir(), 'dsh-acp-test-'))
-  await mountAgentLoopTestDependencies(ctx, { systemPrompt: { persona: options.persona ?? '' } })
+  await mountAgentLoopTestDependencies(ctx, { systemPrompt: { personaPrefix: options.persona ?? '' } })
   // The agent loop and the composed approval/permission services declare
   // sessionProjections a required injection: mount the registry (and with it
   // the loop's turnBoundary unit) before the loop activates.

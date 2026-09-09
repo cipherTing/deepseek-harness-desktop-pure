@@ -18,10 +18,19 @@
       "path": "../../../vendor/schemastery"
     },
     {
+      "path": "../../llm/llm"
+    },
+    {
       "path": "../../core/session"
     },
     {
       "path": "../session-persistence"
+    },
+    {
+      "path": "../session-format"
+    },
+    {
+      "path": "../session-format-catalog"
     }
   ]
 }

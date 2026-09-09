@@ -3,6 +3,7 @@ import {
   type NormalizeContext,
   extractSnapshotSpillPaths,
   normalizeSessionLog,
+  normalizeSessionFormatProvenance,
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
   normalizeStdout,
@@ -253,6 +254,14 @@ Additional instructions from: nested\AGENTS.md`,
 })
 
 describe('normalizeSessionLog', () => {
+  it('normalizes only message-feedback item clocks', () => {
+    const item = { messageId: 'answer', version: 'version', createdAt: 123, updatedAt: 456, note: 'keep 123' }
+    const input = ['feedback/message-put', 'tool/result'].map(type => JSON.stringify({ type, data: { item } })).join('\n')
+    const output = normalizeSessionLog(input, ctx)
+    expect(output).toContain('"createdAt":0,"updatedAt":0,"note":"keep 123"')
+    expect(output).toContain('"createdAt":123,"updatedAt":456,"note":"keep 123"')
+  })
+
   const header = (over: object) => JSON.stringify({ type: 'session', version: 0, id: 's', createdAt: 123, ...over })
   const event = (over: object) => JSON.stringify({ type: 'turn/start', seq: 1, time: 999, data: { turn: 1 }, ...over })
 
@@ -437,6 +446,43 @@ describe('normalizeSessionLog', () => {
     expect(out).not.toContain('212')
   })
 
+  it('normalizes timing inside an embedded Assistant stream and ignores opaque members', () => {
+    const event = JSON.stringify({
+      type: 'assistant/attempt',
+      seq: 2,
+      time: 9,
+      data: {
+        turn: 1,
+        step: 1,
+        stream: [
+          null,
+          'opaque',
+          { type: 'chunk', time: 8, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+          { type: 'usage', time: 7, time0: 6, dt: [5, 4], usage: { inputTokens: 1, outputTokens: 2 } },
+          { type: 'chunk', time: 8, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+        ],
+      },
+    })
+
+    const [, normalized] = normalizeSessionLog(`${header({})}\n${event}\n`, ctx)
+      .trimEnd()
+      .split('\n')
+      .map(line => JSON.parse(line) as Record<string, unknown>)
+
+    expect(normalized).toMatchObject({
+      time: 0,
+      data: {
+        stream: [
+          null,
+          'opaque',
+          { time: 0 },
+          { time: 0, time0: 0, dt: [0, 0] },
+          { type: 'chunk', time: 0, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+        ],
+      },
+    })
+  })
+
   it('normalizes a headerless packed-like stream record without decoding it', () => {
     const row = JSON.stringify({ type: 'text-chunks', seq0: 1, time0: 999, data: 'not-an-object' })
     const out = normalizeSessionLog(`${row}\n`, ctx)
@@ -503,7 +549,7 @@ describe('normalizeSessionSnapshot', () => {
     expect(normalizeSessionSnapshot(raw, ctx)).toContain('"dt":[0,0]')
   })
 
-  it('re-packs adjacent chunk runs split by persistence flushes', () => {
+  it('retains historical packed-row boundaries while normalizing their timing', () => {
     const raw = [
       JSON.stringify({ type: 'session', version: 0 }),
       JSON.stringify({
@@ -519,15 +565,21 @@ describe('normalizeSessionSnapshot', () => {
       JSON.stringify({ type: 'session', version: 0 }),
       JSON.stringify({
         type: 'text-chunks',
-        data: { turn: 1, step: 1, index: 0, dt: [0, 0, 0, 0, 0], texts: ['a', 'b', 'c', 'd', 'e', 'f'] },
+        data: { turn: 1, step: 1, index: 0, dt: [0, 0], texts: ['a', 'b', 'c'] },
+      }),
+      JSON.stringify({
+        type: 'text-chunks',
+        data: { turn: 1, step: 1, index: 0, dt: [0, 0], texts: ['d', 'e', 'f'] },
       }),
       '',
     ].join('\n'))
   })
 
-  it('re-packs multi-session fixtures after relationship-preserving id redaction', () => {
+  it('migrates and re-packs multi-session fixtures after relationship-preserving id redaction', () => {
     const raw = [
-      JSON.stringify({ type: 'session', version: 0 }),
+      JSON.stringify({ type: 'session', version: 0, id: '{{session:1}}', createdAt: 0, delegationDepth: 0 }),
+      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
+      JSON.stringify({ type: 'step/start', data: { turn: 1, step: 1 } }),
       JSON.stringify({
         type: 'reasoning-chunks',
         data: { turn: 1, step: 1, index: 0, dt: [1, 2], texts: ['a', 'b', 'c'] },
@@ -538,13 +590,218 @@ describe('normalizeSessionSnapshot', () => {
       }),
     ].join('\n') + '\n'
     expect(normalizeSessionSnapshots([raw], ctx)).toEqual([[
-      JSON.stringify({ type: 'session', version: 0 }),
       JSON.stringify({
-        type: 'reasoning-chunks',
-        data: { turn: 1, step: 1, index: 0, dt: [0, 0, 0, 0, 0], texts: ['a', 'b', 'c', 'd', 'e', 'f'] },
+        type: 'session', id: '{{session:1}}', createdAt: 0, isSeeded: false, delegationDepth: 0,
+      }),
+      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
+      JSON.stringify({ type: 'step/start', data: { turn: 1, step: 1 } }),
+      JSON.stringify({
+        type: 'assistant/attempt',
+        data: {
+          turn: 1,
+          step: 1,
+          stream: [{
+            type: 'reasoning-chunks',
+            time0: 0,
+            index: 0,
+            dt: [0, 0, 0, 0, 0],
+            texts: ['a', 'b', 'c', 'd', 'e', 'f'],
+          }],
+        },
       }),
       '',
     ].join('\n')])
+  })
+
+  it('normalizes an already-projected snapshot without a released-format field', () => {
+    const raw = `${JSON.stringify({
+      type: 'session',
+      id: '11111111-2222-3333-4444-555555555555',
+      createdAt: 9,
+    })}\n`
+
+    expect(normalizeSessionSnapshots([raw], { sessionIds: [], cwd: '/unused' })).toEqual([
+      `${JSON.stringify({ type: 'session', id: '{{session:1}}', createdAt: 0 })}\n`,
+    ])
+  })
+
+  it('rejects an empty snapshot before classifying its released format', () => {
+    expect(() => normalizeSessionSnapshots(['\n'], { sessionIds: [], cwd: '/unused' }))
+      .toThrow('session snapshot must start with a session header')
+  })
+
+  it('rejects a nonempty snapshot whose first record is not a session header', () => {
+    const raw = `${JSON.stringify({ type: 'turn/start', data: { turn: 1 } })}\n`
+    expect(() => normalizeSessionSnapshots([raw], { sessionIds: [], cwd: '/unused' }))
+      .toThrow('session snapshot must start with a session header')
+  })
+
+  it('compares migrated and fresh delivery watermarks without changing their raw generation identity', () => {
+    const id = '11111111-2222-3333-4444-555555555555'
+    const session = (version: 0 | 1, sessionFormatVersion?: number): string => [
+      JSON.stringify({ type: 'session', version, id, createdAt: 0, delegationDepth: 0 }),
+      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
+      JSON.stringify({
+        type: 'session-log-deepseek/delivery-accepted',
+        data: {
+          sessionId: id,
+          throughSeq: 0,
+          ...sessionFormatVersion === undefined ? {} : { sessionFormatVersion },
+        },
+      }),
+      JSON.stringify({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }),
+      '',
+    ].join('\n')
+
+    const migratedV0 = normalizeSessionSnapshots([session(0)], { sessionIds: [], cwd: '/unused' })
+    const freshV1 = normalizeSessionSnapshots([session(1, 1)], { sessionIds: [], cwd: '/unused' })
+
+    expect(migratedV0).toEqual(freshV1)
+    expect(freshV1[0]).not.toContain('"sessionFormatVersion"')
+  })
+
+  it('compares migrated and fresh session-reference captures without hiding other source fields', () => {
+    const id = '11111111-2222-3333-4444-555555555555'
+    const sourceId = '22222222-3333-4444-5555-666666666666'
+    const messageId = '33333333-4444-4555-8666-777777777777'
+    const session = (version: 0 | 1, capturedFormatVersion?: number): string => [
+      JSON.stringify({ type: 'session', version, id, createdAt: 0, delegationDepth: 0 }),
+      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
+      JSON.stringify({
+        type: 'user/message',
+        data: {
+          id: messageId,
+          role: 'user',
+          content: [{ type: 'text', text: 'remember' }],
+          source: {
+            kind: 'session-reference',
+            form: 'recall',
+            version: 1,
+            references: [{
+              sessionId: sourceId,
+              label: 'Source',
+              capturedThroughSeq: 0,
+              ...capturedFormatVersion === undefined ? {} : { capturedFormatVersion },
+              compacted: false,
+              originalMessages: 1,
+              retainedMessages: 1,
+              omittedMessages: 0,
+              omittedBytes: 0,
+              truncated: false,
+              inputIndex: 0,
+            }],
+          },
+        },
+        surfaceOp: 'append',
+      }),
+      JSON.stringify({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }),
+      '',
+    ].join('\n')
+
+    const migratedV0 = normalizeSessionSnapshots([session(0)], { sessionIds: [], cwd: '/unused' })
+    const freshV1 = normalizeSessionSnapshots([session(1, 1)], { sessionIds: [], cwd: '/unused' })
+
+    expect(migratedV0).toEqual(freshV1)
+    expect(freshV1[0]).toContain('"label":"Source"')
+    expect(freshV1[0]).toContain('"version":1')
+    expect(freshV1[0]).not.toContain('"capturedFormatVersion"')
+  })
+
+  it('removes generation qualifiers only from their exact provenance positions', () => {
+    const raw = [
+      JSON.stringify({
+        type: 'session',
+        id: '11111111-2222-3333-4444-555555555555',
+        createdAt: 0,
+      }),
+      JSON.stringify({
+        type: 'session-log-deepseek/delivery-accepted',
+        data: { sessionFormatVersion: 1, throughSeq: 21, otherVersion: 8 },
+      }),
+      JSON.stringify({
+        type: 'user/message',
+        data: {
+          role: 'user',
+          content: [],
+          source: {
+            kind: 'session-reference',
+            form: 'recall',
+            version: 1,
+            references: [
+              null,
+              'opaque',
+              [{ capturedFormatVersion: 6 }],
+              { capturedFormatVersion: 1, otherVersion: 9 },
+            ],
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'assistant/message',
+        data: {
+          message: {
+            role: 'assistant',
+            content: [],
+            source: [{ capturedFormatVersion: 7 }],
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'custom/event',
+        data: { capturedFormatVersion: 5, sessionFormatVersion: 4 },
+        ignorable: true,
+      }),
+      '',
+    ].join('\n')
+
+    const [normalized] = normalizeSessionSnapshots([raw], { sessionIds: [], cwd: '/unused' })
+    const [, delivery, captured, sourceLookalike, opaqueEvent] = normalized
+      ?.trimEnd()
+      .split('\n')
+      .map(line => JSON.parse(line) as Record<string, unknown>) ?? []
+
+    expect(delivery?.data).toEqual({ throughSeq: 21, otherVersion: 8 })
+    expect(captured?.data).toMatchObject({
+      source: {
+        references: [
+          null,
+          'opaque',
+          [{ capturedFormatVersion: 6 }],
+          { otherVersion: 9 },
+        ],
+      },
+    })
+    expect(sourceLookalike?.data).toEqual({
+      message: {
+        role: 'assistant',
+        content: [],
+        source: [{ capturedFormatVersion: 7 }],
+      },
+    })
+    expect(opaqueEvent?.data).toEqual({ capturedFormatVersion: 5, sessionFormatVersion: 4 })
+  })
+
+  it('keeps session-reference lookalikes outside Message source positions unchanged', () => {
+    const lookalike = [
+      JSON.stringify({ type: 'session', version: 1, id: 's', createdAt: 0, delegationDepth: 0 }),
+      JSON.stringify({
+        type: 'custom/event',
+        data: {
+          meta: {
+            kind: 'session-reference',
+            form: 'recall',
+            version: 1,
+            references: [{ capturedFormatVersion: 7 }],
+          },
+        },
+        ignorable: true,
+      }),
+      '',
+    ].join('\n')
+
+    const normalized = normalizeSessionFormatProvenance(lookalike).split('\n')
+    expect(JSON.parse(normalized[0] as string)).not.toHaveProperty('version')
+    expect(normalized[1]).toBe(lookalike.split('\n')[1])
   })
 
   it('projects persisted provenance ranges back to logical seq arrays', () => {
@@ -653,6 +910,36 @@ describe('tokenizeSessionFixtureCwd', () => {
 })
 
 describe('extractSnapshotSpillPaths', () => {
+  it.each([
+    ['/tmp', '/'],
+    ['/tmp', String.fromCharCode(92)],
+    ['C:/t', String.fromCharCode(92)],
+  ])('recognizes %s locators with %s separators in nested JSON omissions without scrubbing byte counts', (root, separator) => {
+    const locator = `${root}/dsh-acp-snap-123456789/session-123456abcdef/abcdef123456-session-reference-1.txt`.replaceAll('/', separator)
+    const notice = { sessionId: 'source', omittedBytes: 42, fullSnapshot: { status: 'saved', locator, bytes: 1234 } }
+    const log = JSON.stringify({ type: 'user/message', data: { content: [{ type: 'text', text: JSON.stringify([notice]) }] } })
+    const encodedLocator = JSON.stringify(JSON.stringify(locator).slice(1, -1)).slice(1, -1)
+    expect(extractSnapshotSpillPaths(log)).toEqual(new Map([['session-reference-1.txt', encodedLocator]]))
+    const normalized = normalizeSessionLog(log, ctx)
+    const unrelated = '/tmp/unrelated/session-123456abcdef/abcdef123456-session-reference-1.txt'
+    expect(normalizeSessionLog(log.replaceAll(encodedLocator, unrelated), ctx)).toContain(unrelated)
+    const expectedNotice = { ...notice, fullSnapshot: { ...notice.fullSnapshot, locator: '{{spillLocator:session-reference-1.txt}}' } }
+    expect(normalized).toBe(JSON.stringify({ type: 'user/message', data: { content: [{ type: 'text', text: JSON.stringify([expectedNotice]) }] } }) + '\n')
+    expect(normalized).toContain('{{spillLocator:session-reference-1.txt}}')
+    expect(normalized).toContain('omittedBytes\\":42')
+    expect(normalized).toContain('bytes\\":1234')
+  })
+
+  it.each(['canonical', 'native'] as const)('normalizes nested Windows local spill locators with %s paths', (cwdPathMode) => {
+    const locator = String.raw`{{cwd}}\.spill\session-123456abcdef\abcdef123456-session-reference-1.txt`
+    const notice = { locator, unrelated: String.raw`C:\work\literal\file.txt`, regex: String.raw`\d+\w` }
+    const log = JSON.stringify({ type: 'user/message', data: { text: JSON.stringify(notice) } })
+    const expected = { ...notice, locator: '{{spillLocator:session-reference-1.txt}}' }
+    expect(normalizeSessionLog(log, ctx, { cwdPathMode })).toBe(
+      JSON.stringify({ type: 'user/message', data: { text: JSON.stringify(expected) } }) + '\n',
+    )
+  })
+
   it('maps each spill filename to its full matched path, last match wins per name', () => {
     const log = [
       'Full formatted result stored at: /tmp/dsh-acp-snapshot-spill/session-c22bc3f1d2af/8a7b6c5d4e3f-bash.txt. Use read with offset/limit, or grep this path to search within it.',
@@ -723,6 +1010,19 @@ describe('scrubRequestHeaders', () => {
 })
 
 describe('scrubSessionSnapshot', () => {
+  it('writes stable feedback clocks while retaining notes and version identity', () => {
+    const input = [
+      { type: 'session', id: 's' },
+      { type: 'feedback/message-put', data: { item: { version: 'opaque-version', createdAt: 12, updatedAt: 34, note: 'keep 12' } } },
+      { type: 'feedback/message-put', data: null },
+      { type: 'feedback/message-put', data: { item: null } },
+      { type: 'feedback/message-put', data: { item: {} } },
+    ].map(record => JSON.stringify(record)).join('\n')
+    const output = scrubSessionSnapshot(input)
+    expect(output).toContain('"version":"opaque-version","createdAt":0,"updatedAt":0,"note":"keep 12"')
+    expect(scrubSessionSnapshot(output)).toBe(output)
+  })
+
   it('preserves the header while projecting and scrubbing each body record', () => {
     const header = '  {"type":"session","version":0,"id":"s","createdAt":7}  '
     const request = JSON.stringify({

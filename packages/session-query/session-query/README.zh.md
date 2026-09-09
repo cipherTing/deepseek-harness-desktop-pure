@@ -52,12 +52,13 @@ kind: "package-reference"
 
 ### 配置
 
-两个继承的旋钮通过挂载后端的配置设置：
+继承的旋钮通过挂载后端的配置设置：
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `readWindowMax` | `50` | `readEvent` 接受的 `before`/`after` 原始事件数上限 |
-| `persistedInspectConcurrency` | `4` | 一次批量标题读取中的并发持久化日志检查数 |
+| `persistedReadConcurrency` | `4` | 一次批量标题读取中的并发持久化日志读取数 |
+| `preparedSessionCacheSize` | `5` | 为跨 `observeSession` 读取复用而保留的冷 prepared-Session 观察数 |
 
 ### 失败与恢复
 
@@ -82,7 +83,7 @@ kind: "package-reference"
 - **精确读取具体，搜索抽象。** 读取、过滤与追踪在此只实现一次；两个全文方法是由后端拥有的唯一抽象表面。
 - **一次规范的表层折叠。** `listEvents`、`readSurface` 与 `traceEvent` 使用同一个 `dsh-session` 折叠校验整个日志，因此搜索与追踪和模型历史推导一致。
 
-决策历史记录在[统一服务决策](../../../.agents/notes/archived/architecture/2026-07-23-unified-session-query-service.md)、[追踪笔记](../../../.agents/notes/implemented/feature/2026-07-13-session-query-tracing.zh.md)与 [SQLite 提供方笔记](../../../.agents/notes/implemented/feature/2026-07-10-sqlite-session-query-provider.zh.md)中。
+决策历史记录在[统一服务决策](../../../.agents/notes/archived/architecture/2026-07-23-unified-session-query-service.md)、[追踪笔记](../../../.agents/notes/archived/feature/2026-07-13-session-query-tracing.md)与 [SQLite 提供方笔记](../../../.agents/notes/archived/feature/2026-07-10-sqlite-session-query-provider.md)中。
 
 ### 源码地图
 
@@ -90,6 +91,8 @@ kind: "package-reference"
 |---|---|
 | [`src/index.ts`](src/index.ts) | 服务定义：抽象 `SessionQueryEngine`、具体读取、配置校验 |
 | [`src/corpus.ts`](src/corpus.ts) | 实时优先的语料库解析、可选持久化绑定、批量投影 |
+| [`src/observation.ts`](src/observation.ts) | 实时优先的定点观察，带按修订键控的有界 prepared-Session 缓存 |
+| [`src/cold-read.ts`](src/cold-read.ts) | 基于 handle 的冷日志读取，附内存中的中断轮次闭合事件 |
 | [`src/types.ts`](src/types.ts) | 公共记录、过滤器、请求与分页类型 |
 | [`src/config.ts`](src/config.ts) | 继承配置与封闭的 `SessionQueryError` 分类体系 |
 | [`src/filters.ts`](src/filters.ts) | 提供方无关谓词与字面文本扫描 |
@@ -101,7 +104,11 @@ kind: "package-reference"
 
 ### 语料库解析
 
-`SessionCorpus` 通过 fiber 绑定可选的 `ctx.sessionPersistence`，并实时优先解析每次读取：已知实时目标直接快照，不查询持久化；否则先列出会话，再以不修改日志的方式检查，并在克隆前重新检查是否出现实时挂载。列表与加载观察之间会断言 header 兼容性。批量标题读取执行一次元数据列表与有界并发检查，把逐会话失败隔离，而取消会拒绝整个批次。
+`SessionCorpus` 通过 fiber 绑定可选的 `ctx.sessionPersistence`，并实时优先解析每次读取：已知实时目标直接快照，不查询持久化；否则先列出会话，再通过短生命周期的读取 handle 完整读出日志，并在克隆前重新检查是否出现实时挂载。写入者在轮次中途崩溃的冷日志用 `interruptedTurnClosers` 在内存中补齐 —— 读取从不修改持久化。列表与加载观察之间会断言 header 兼容性。批量标题读取执行一次元数据列表与有界并发读取，把逐会话失败隔离，而取消会拒绝整个批次。
+
+### 观察缓存
+
+`observeSession` 不经过列表预检直接构建定点观察。实时观察以当前日志长度固定 cut，并在首次读取时才物化 `events`，因此只需要 header、cursor 或 projection 的消费者永远不会复制日志；日志只会追加，所以延后的首次读取得到的仍然正好是该前缀。冷路径先对存储会话执行 `stat`，再查询自有的有界缓存，缓存键为持久化实例加 `stat` 修订：修订未变则复用已恢复的未发布 Session，不再重读日志；修订变化或持久化实例被替换则经 handle 缝重新加载并替换条目。缓存保留 `preparedSessionCacheSize` 个条目并按最久未用淘汰，被活跃观察租约钉住的条目从不被淘汰；读取中途转为实时的会话会重试实时路径。
 
 ### 读取与追踪
 
@@ -119,8 +126,8 @@ kind: "package-reference"
 - [会话查询子系统参考](../../../docs/subsystems/session-query.zh.md)——完整类型级约定：记录、过滤器、搜索页、血缘、有界读取与错误。
 - [dsh-session-query-sqlite](../session-query-sqlite/README.zh.md)——已发布的全文后端及其索引生命周期。
 - [dsh-tool-session-query](../tool-session-query/README.zh.md)——构建在本服务之上的面向模型消费方。
-- [会话查询关系追踪](../../../.agents/notes/implemented/feature/2026-07-13-session-query-tracing.zh.md)——追踪语义与校验边界。
-- [SQLite FTS5 会话搜索](../../../.agents/notes/implemented/feature/2026-07-10-sqlite-session-query-provider.zh.md)——搜索表面如何实现与对账。
+- [会话查询关系追踪](../../../.agents/notes/archived/feature/2026-07-13-session-query-tracing.md)——追踪语义与校验边界。
+- [SQLite FTS5 会话搜索](../../../.agents/notes/archived/feature/2026-07-10-sqlite-session-query-provider.md)——搜索表面如何实现与对账。
 
 -----
 
@@ -155,6 +162,6 @@ kind: "package-reference"
 
 #### 未来：提取器与搜索提供方注册表
 
-对被引用源事件的递归遍历、提取器与搜索提供方注册表以及更多面向模型表面均被推迟；[面向模型的工具笔记](../../../.agents/notes/implemented/feature/2026-07-24-model-facing-session-query-tools.zh.md)记录了当前的消费方表面。
+对被引用源事件的递归遍历、提取器与搜索提供方注册表以及更多面向模型表面均被推迟；[tool-session-query README](../tool-session-query/README.zh.md)说明了当前的消费方表面。
 
 </details>

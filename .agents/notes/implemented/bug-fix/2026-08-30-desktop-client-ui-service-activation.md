@@ -10,7 +10,7 @@ The Desktop browser bundle adapted to upstream tag `dsh-v0.1.2-alpha.1` (version
 
 ## Decision
 
-The returned Desktop client plugin declares `locale` and `slots` in its runtime `inject` list and reads them through the declared context properties. Cordis keeps the plugin pending until both services exist and reloads it when a provider disappears and returns. Contributions still use `slots.inject()` so each registration follows the declaring slot's lifetime, as specified by [slot declaration injection](../architecture/2026-08-05-slot-declaration-injection.md).
+The returned Desktop client plugin declares `locale` and `slots` in its runtime `inject` list and reads them through the declared context properties. Cordis keeps the plugin pending until both services exist and reloads it when a provider disappears and returns. Contributions still use `slots.inject()` so each registration follows the declaring slot's lifetime, as specified by [slot declaration injection](../../archived/architecture/2026-08-05-slot-declaration-injection.md).
 
 The package-level `dsh.client.inject` metadata names `@deepseek-ai/dsh-client-ui-renderer` as the package that provides the renderer-owned `slots` service. That metadata does not replace the runtime service declaration. No Harness core, renderer, or attachment-admission behavior changes are required.
 

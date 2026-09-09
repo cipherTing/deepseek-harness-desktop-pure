@@ -379,9 +379,9 @@ function makeHarness(
     useInput: (() => { throw new Error('unused') }),
     inputActions: {
       setDraft: () => {},
-      addImages: () => true,
-      removeImage: () => {},
-      pruneImages: () => {},
+      addAttachments: () => true,
+      removeAttachment: () => {},
+      pruneAttachments: () => {},
       submit: () => {},
     },
     useStore: bindSnapshotSelector(chat),
@@ -1041,7 +1041,7 @@ describe('ChatView', () => {
         pendingSubmissions: [
           {
             requestId: 'req-1' as never, placement: 'transcript',
-            time: 5_000, text: '即发即显', images: [],
+            time: 5_000, text: '即发即显', attachments: [],
           },
         ],
       },
@@ -1081,7 +1081,9 @@ describe('ChatView', () => {
           placement: 'steering',
           time: 5_500,
           text: '带图纠偏',
-          images: [{ previewUrl: 'blob:steer-preview', name: 'steer.png' }],
+          attachments: [{
+            type: 'image', value: { previewUrl: 'blob:steer-preview', name: 'steer.png' },
+          }],
         }],
       },
     )
@@ -1115,7 +1117,7 @@ describe('ChatView', () => {
         pendingSubmissions: [
           {
             requestId: 'req-q' as never, placement: 'queued',
-            time: 6_000, text: '排队中', images: [],
+            time: 6_000, text: '排队中', attachments: [],
           },
         ],
       },
@@ -1149,9 +1151,11 @@ describe('ChatView', () => {
           placement: 'transcript',
           time: 7_000,
           text: '',
-          images: [
-            { previewUrl: 'blob:echo-a', name: 'a.png', width: 4, height: 3 },
-            { previewUrl: 'blob:echo-b' },
+          attachments: [
+            {
+              type: 'image', value: { previewUrl: 'blob:echo-a', name: 'a.png', width: 4, height: 3 },
+            },
+            { type: 'image', value: { previewUrl: 'blob:echo-b' } },
           ],
         }],
       },
@@ -1159,15 +1163,72 @@ describe('ChatView', () => {
     const baseRenderSlot = h.props.renderSlot
     const renderSlot = ((key: string, owner: object, opts?: { fallback?: React.ReactNode }) => {
       if (key !== 'conversation.message.images') return baseRenderSlot(key as never, owner as never, opts as never)
-      const images = (owner as { images: readonly unknown[] }).images
-      return <div data-testid="echo-images" data-count={images.length} data-first={JSON.stringify(images[0])} />
+      const { images, compact } = owner as { images: readonly unknown[]; compact?: boolean }
+      return (
+        <div
+          data-testid="echo-image"
+          data-count={images.length}
+          data-compact={String(compact)}
+          data-first={JSON.stringify(images[0])}
+        />
+      )
     }) as unknown as ChatViewSlotProps['renderSlot']
     const view = render(<h.ChatView {...{ ...h.props, renderSlot }} />)
-    const gallery = view.getByTestId('echo-images')
-    expect(gallery.getAttribute('data-count')).toBe('2')
-    expect(JSON.parse(gallery.getAttribute('data-first') ?? '{}')).toEqual({
+    const images = view.getAllByTestId('echo-image')
+    expect(images).toHaveLength(2)
+    expect(images.every(image => image.getAttribute('data-count') === '1')).toBe(true)
+    expect(images.every(image => image.getAttribute('data-compact') === 'true')).toBe(true)
+    expect(images[0]?.parentElement).toBe(images[1]?.parentElement)
+    expect(JSON.parse(images[0]?.getAttribute('data-first') ?? '{}')).toEqual({
       preview: { url: 'blob:echo-a', name: 'a.png', width: 4, height: 3 },
     })
+  })
+
+  it('a mixed echo renders the Web file card between its selected images', () => {
+    const h = makeHarness(
+      { nodes: [] },
+      {
+        pendingSubmissions: [{
+          requestId: 'req-mixed' as never,
+          placement: 'transcript',
+          time: 7_500,
+          text: '',
+          attachments: [
+            { type: 'image', value: { previewUrl: 'blob:first', name: 'first.png' } },
+            {
+              type: 'file',
+              value: { attachmentId: 'file-1' as never, name: 'notes.txt', bytes: 23 },
+            },
+            { type: 'image', value: { previewUrl: 'blob:last', name: 'last.png' } },
+          ],
+        }],
+      },
+    )
+    const baseRenderSlot = h.props.renderSlot
+    const renderSlot = ((key: string, owner: object, opts?: { fallback?: React.ReactNode }) => {
+      if (key !== 'conversation.message.images') return baseRenderSlot(key as never, owner as never, opts as never)
+      const { images, compact } = owner as {
+        images: ReadonlyArray<{ preview?: { name?: string } }>
+        compact?: boolean
+      }
+      return (
+        <div
+          data-testid={`images-${images[0]?.preview?.name ?? 'unknown'}`}
+          data-compact={String(compact)}
+        />
+      )
+    }) as unknown as ChatViewSlotProps['renderSlot']
+    const view = render(<h.ChatView {...{ ...h.props, renderSlot }} />)
+    const first = view.getByTestId('images-first.png')
+    const file = view.getByTitle('notes.txt')
+    const last = view.getByTestId('images-last.png')
+    expect(first.getAttribute('data-compact')).toBe('true')
+    expect(last.getAttribute('data-compact')).toBe('true')
+    expect(first.parentElement).toBe(file.parentElement)
+    expect(file.parentElement).toBe(last.parentElement)
+    expect(first.compareDocumentPosition(file) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(file.compareDocumentPosition(last) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(view.getByText('TXT 23B')).toBeTruthy()
   })
 
   it('animates only the latest unresolved model retry', () => {
@@ -2324,6 +2385,162 @@ describe('ChatView', () => {
     metrics.setHeight(1_200)
     act(() => { h.setSession({ running: true }) })
     expect(scroller.scrollTop).toBe(900)
+  })
+
+  it('keeps following when a shrink clamp regrows before scrollend', () => {
+    const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const metrics = installScrollMetrics(scroller, 1_000, 300)
+    scroller.scrollTop = 700
+    fireEvent.scroll(scroller)
+    fireEvent(scroller, new Event('scrollend'))
+
+    metrics.setLayout(800, 700)
+    fireEvent.scroll(scroller)
+    metrics.setHeight(962)
+    act(() => { h.setSession({ running: true }) })
+    fireEvent(scroller, new Event('scrollend'))
+
+    expect(scroller.scrollTop).toBe(662)
+    expect(view.queryByLabelText('回到底部')).toBeNull()
+    expect(h.chatScroll.read()).toBeNull()
+  })
+
+  it('settles pinned deliveries before observer growth without reading row geometry', () => {
+    let notify: (() => void) | undefined
+    class ResizeObserverStub {
+      constructor(callback: ResizeObserverCallback) {
+        notify = () => { callback([], this as unknown as ResizeObserver) }
+      }
+
+      observe = vi.fn()
+      disconnect = vi.fn()
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const metrics = installScrollMetrics(scroller, 9_931, 300)
+    expect(notify).toBeDefined()
+    scroller.scrollTop = 9_631
+    fireEvent.scroll(scroller)
+    fireEvent(scroller, new Event('scrollend'))
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    rect.mockClear()
+    try {
+      metrics.setLayout(9_918, 9_631)
+      fireEvent.scroll(scroller)
+      metrics.setHeight(10_013)
+      act(() => { notify?.() })
+      expect(scroller.scrollTop).toBe(9_713)
+      fireEvent.scroll(scroller)
+      metrics.setHeight(10_093)
+      act(() => { notify?.() })
+      expect(scroller.scrollTop).toBe(9_793)
+      expect(rect).not.toHaveBeenCalled()
+      expect(h.chatScroll.read()).toBeNull()
+    } finally {
+      rect.mockRestore()
+    }
+  })
+
+  it('lets small reader movements accumulate past the follow threshold during growth', () => {
+    let notify: (() => void) | undefined
+    class ResizeObserverStub {
+      constructor(callback: ResizeObserverCallback) {
+        notify = () => { callback([], this as unknown as ResizeObserver) }
+      }
+
+      observe = vi.fn()
+      disconnect = vi.fn()
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const metrics = installScrollMetrics(scroller, 1_000, 300)
+    expect(notify).toBeDefined()
+    scroller.scrollTop = 700
+    fireEvent.scroll(scroller)
+    fireEvent(scroller, new Event('scrollend'))
+    scroller.scrollTop = 690
+    fireEvent.scroll(scroller)
+    metrics.setHeight(1_020)
+    act(() => { notify?.() })
+    expect(scroller.scrollTop).toBe(690)
+    scroller.scrollTop = 680
+    fireEvent.scroll(scroller)
+    fireEvent(scroller, new Event('scrollend'))
+    expect(view.getByLabelText('回到底部')).toBeTruthy()
+    metrics.setHeight(1_040)
+    act(() => { notify?.() })
+    expect(scroller.scrollTop).toBe(680)
+  })
+
+  it('clears an away sample when a back-to-bottom delivery restores pinned ownership', () => {
+    const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const metrics = installScrollMetrics(scroller, 1_000, 300)
+    scroller.scrollTop = 700
+    fireEvent.scroll(scroller)
+    scroller.scrollTop = 500
+    fireEvent.scroll(scroller)
+    fireEvent(scroller, new Event('scrollend'))
+    scroller.scrollTop = 400
+    fireEvent.scroll(scroller)
+    fireEvent.click(view.getByLabelText('回到底部'))
+    fireEvent.scroll(scroller)
+    metrics.setHeight(1_200)
+    act(() => { h.setSession({ running: true }) })
+    expect(scroller.scrollTop).toBe(900)
+    expect(h.chatScroll.read()).toBeNull()
+  })
+
+  it('samples away-reader geometry on the interval or scrollend and cancels it on unmount', () => {
+    vi.useFakeTimers()
+    try {
+      const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
+      const view = render(<h.ChatView {...h.props} />)
+      const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+      installScrollMetrics(scroller, 1_000, 300)
+      scroller.scrollTop = 700
+      fireEvent.scroll(scroller)
+      scroller.scrollTop = 500
+      fireEvent.scroll(scroller)
+      fireEvent(scroller, new Event('scrollend'))
+      expect(view.getByLabelText('回到底部')).toBeTruthy()
+      const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      try {
+        act(() => { vi.advanceTimersByTime(500) })
+        rect.mockClear()
+        scroller.scrollTop = 400
+        fireEvent.scroll(scroller)
+        scroller.scrollTop = 300
+        fireEvent.scroll(scroller)
+        act(() => { vi.advanceTimersByTime(499) })
+        expect(rect).not.toHaveBeenCalled()
+        act(() => { vi.advanceTimersByTime(1) })
+        expect(rect).toHaveBeenCalled()
+        rect.mockClear()
+        scroller.scrollTop = 200
+        fireEvent.scroll(scroller)
+        expect(rect).not.toHaveBeenCalled()
+        fireEvent(scroller, new Event('scrollend'))
+        expect(rect).toHaveBeenCalled()
+        scroller.scrollTop = 100
+        fireEvent.scroll(scroller)
+        view.unmount()
+        rect.mockClear()
+        act(() => { vi.advanceTimersByTime(500) })
+        expect(rect).not.toHaveBeenCalled()
+      } finally {
+        rect.mockRestore()
+      }
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('uses the last delivered top when compositor scrolling precedes scroll delivery', () => {
