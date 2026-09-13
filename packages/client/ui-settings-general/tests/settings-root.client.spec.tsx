@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
-import { en } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
+
+// Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
+const usePanelInfo: GlobalStandardProps['usePanelInfo'] = selector => selector({ activePanelId: null })
 
 afterEach(() => {
   cleanup()
@@ -30,6 +35,7 @@ const useSessionPendingInteraction: SettingsRootComponentProps['useSessionPendin
 
 function mount({
   wide = true,
+  dictionary = en,
   connectionState = 'connected',
   onboardingActive = true,
   rows = [
@@ -43,6 +49,7 @@ function mount({
   ],
 }: {
   wide?: boolean
+  dictionary?: typeof en | typeof zh
   connectionState?: ConnectionSnapshot
   onboardingActive?: boolean
   rows?: Row[]
@@ -73,10 +80,11 @@ function mount({
   const props: SettingsRootComponentProps = {
     useSessions,
     useSessionPendingInteraction,
+    usePanelInfo, useResource,
     useWorkspaces: unusedHook,
     wide,
     reconnect,
-    t: makeTranslate(en),
+    t: makeTranslate(dictionary),
     useConnectionState: (select) => {
       const [, force] = useState(0)
       useEffect(() => {
@@ -122,15 +130,23 @@ function openPanel() {
 }
 
 describe('SettingsRoot trigger', () => {
-  it('renders the trigger seat content as the accessible name (no aria-label of its own)', () => {
-    const { renderSlot } = mount()
-    const trigger = screen.getByRole('button', { name: 'Settings' })
-    expect(trigger.hasAttribute('aria-label')).toBe(false)
-    expect(renderSlot).toHaveBeenCalledWith('settings.trigger', { wide: true })
+  it.each([
+    { column: 'expanded English', wide: true, dictionary: en, name: 'Settings' },
+    { column: 'collapsed English', wide: false, dictionary: en, name: 'Settings' },
+    { column: 'expanded Chinese', wide: true, dictionary: zh, name: '设置' },
+    { column: 'collapsed Chinese', wide: false, dictionary: zh, name: '设置' },
+  ])('uses the locale name and accepts keyboard-style activation for the $column trigger', ({
+    wide, dictionary, name,
+  }) => {
+    const { renderSlot } = mount({ wide, dictionary })
+    const trigger = screen.getByRole('button', { name })
+    expect(trigger.getAttribute('aria-label')).toBe(name)
+    expect(renderSlot).toHaveBeenCalledWith('settings.trigger', { wide })
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
-    fireEvent.click(trigger)
+    trigger.focus()
+    fireEvent.click(trigger, { detail: 0 })
     expect(screen.getByRole('dialog')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Settings', expanded: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name, expanded: true })).toBeTruthy()
   })
 
   it('renders the optional update seat after the trigger', () => {

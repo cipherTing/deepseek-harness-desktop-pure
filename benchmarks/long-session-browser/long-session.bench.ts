@@ -56,10 +56,12 @@ async function watchInputOverlap(composer: Locator): Promise<void> {
   await composer.evaluate((element, markers) => {
     element.removeAttribute('data-benchmark-input-witness')
     element.removeAttribute('data-benchmark-input-overlap')
+    element.removeAttribute('data-benchmark-input-timing')
     element.addEventListener('input', (event) => {
       const transcript = Array.from(document.querySelectorAll('[data-chat-flow-kind="assistant-step"]')).at(-1)?.textContent ?? ''
       element.setAttribute('data-benchmark-input-overlap', String(event.isTrusted && transcript.includes(markers.first) && !transcript.includes(markers.done)))
       element.setAttribute('data-benchmark-input-witness', JSON.stringify({ trusted: event.isTrusted, first: transcript.includes(markers.first), done: transcript.includes(markers.done) }))
+      element.setAttribute('data-benchmark-input-timing', JSON.stringify({ atMs: window.performance.now(), eventAtMs: event.timeStamp, focused: document.activeElement === element }))
     }, { once: true })
   }, { first: FIRST, done: DONE })
 }
@@ -154,18 +156,21 @@ it('opens, pages, navigates and streams into a 240-turn browser history', async 
           )
           await watchInputOverlap(composer)
           const started = performance.now()
-          await page.locator('[data-composer-seat]').getByRole('button', { name: 'Send message', exact: true }).click()
+          await page.keyboard.press('Enter')
           const reply = page.locator('[data-chat-flow-kind="assistant-step"]').last()
           await reply.getByText(FIRST, { exact: false }).last().waitFor()
           const first = performance.now() - started
-          // Observe the actual trusted input event, not state before asynchronous click/typing.
+          const firstObservation = await composer.evaluate((element, markers) => {
+            const transcript = Array.from(document.querySelectorAll('[data-chat-flow-kind="assistant-step"]')).at(-1)?.textContent ?? ''
+            return { atMs: window.performance.now(), focused: document.activeElement === element, first: transcript.includes(markers.first), done: transcript.includes(markers.done) }
+          }, { first: FIRST, done: DONE })
+          // Keep focus across submission; mouse actionability must not delay the input probe.
           const input = await measure(page, async () => {
-            await composer.click()
             await page.keyboard.type('next synthetic question')
             await expect.poll(() => composer.textContent()).toBe('next synthetic question')
           })
           const inputOverlapped = await composer.getAttribute('data-benchmark-input-overlap') === 'true'
-          console.log(JSON.stringify({ benchmark: 'long-session-browser/input', sample, first, input, witness: await composer.getAttribute('data-benchmark-input-witness') }))
+          console.log(JSON.stringify({ benchmark: 'long-session-browser/input', sample, first, input, firstObservation, witness: await composer.getAttribute('data-benchmark-input-witness'), inputTiming: await composer.getAttribute('data-benchmark-input-timing') }))
           expectInputOverlap(inputOverlapped)
           await reply.getByText(DONE, { exact: false }).last().waitFor()
           const settlement = await settled

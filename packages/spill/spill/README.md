@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-spill` lets any plugin or tool save oversized text through `ctx.spillStore` and receive an opaque locator, the exact byte count, and retrieval guidance the model can act on. It defines what a spill backend does, not how it stores — a deployment mounts a backend such as `dsh-spill-local` for real persistence, and the `dsh-spill-policy` plugin decides when a tool result is too large. Choose it when a deployment must keep oversized text retrievable without flooding the model's context. The service owns storage only: no retention policy, no tool-result replacement, and no retrieval or search API. A real storage failure rejects loudly, so the caller decides how to degrade.
+`dsh-spill` lets plugins and tools save oversized text through the public `ctx.spillStore` API and receive an opaque locator, exact byte count, and retrieval guidance. Choose it when full results must remain retrievable without filling model context. Configure `dsh-spill-local` for local persistence, and add `dsh-spill-policy` when oversized tool results should become bounded previews. The API does not offer retention, replacement, retrieval, or search operations. A save rejects on storage failure, leaving the caller to keep the content inline or fail.
 
 ## Table of Contents
 

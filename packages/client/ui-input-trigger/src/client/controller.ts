@@ -364,6 +364,16 @@ export class InputTriggerController {
     this.reduce({ type: 'close' })
   }
 
+  /** Re-fetch the currently open menu without changing its hit or visible rows. */
+  refreshOpenMenu(): void {
+    if (this.disposed || !this.menu.getSnapshot().open || this.hit === null) return
+    const launched = this.launcher.getSnapshot()
+    const roster = this.deps.roster.sources(this.hit.trigger)
+      .filter(source => launched === null || source.name === launched)
+    if (roster.length === 0) return
+    this.fetchCandidates(this.hit, roster)
+  }
+
   /** Scope teardown: close and abort (the service deletes the map entry). */
   dispose(): void {
     this.disposed = true

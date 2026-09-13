@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page, WebSocketRoute } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureExpandedTurnProcessAria,
@@ -23,14 +23,15 @@ import {
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft,
+  connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE,
 } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome', import.meta.url))
-const FIXTURE = join(SNAPSHOT_DIR, 'session.v2.jsonl')
+const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const REPLAY_OVERRIDE = join(SNAPSHOT_DIR, 'replay.override.json')
 const HERO_EXPECTED = join(SNAPSHOT_DIR, 'hero.expected.md')
 const COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu.expected.md')
+const COMMAND_MENU_ZH_EXPECTED = join(SNAPSHOT_DIR, 'command-menu-zh.expected.md')
 const FUZZY_COMMAND_MENU_EXPECTED = join(SNAPSHOT_DIR, 'command-menu-fuzzy.expected.md')
 const PLAN_ACTIVE_EXPECTED = join(SNAPSHOT_DIR, 'plan-active.expected.md')
 const CONNECTION_ERROR_EXPECTED = join(SNAPSHOT_DIR, 'connection-error.expected.md')
@@ -71,10 +72,17 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
 
   it.skipIf(MODE === 'record')('opens the shared slash menu from plus with only Command candidates', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-command-menu-launcher'))
+    const input = page.locator('[data-composer-input]').first()
+    onTestFinished(async () => {
+      await input.press('Escape')
+      await writeComposerDraft(page, input, '')
+      await page.getByRole('listbox', { name: 'Trigger suggestions' }).waitFor({ state: 'hidden' })
+    })
     const launcher = page.getByRole('button', { name: 'Commands' })
     await launcher.click()
     const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
-    await menu.waitFor({ timeout: 10_000 })
+    await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
+    await menu.getByRole('status').waitFor({ state: 'hidden', timeout: 10_000 })
     const snapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(COMMAND_MENU_EXPECTED, snapshot, MODE)
     expect(snapshot).toContain('text: Commands')
@@ -83,9 +91,9 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     const launchedBox = await menu.boundingBox()
     await page.locator('[data-composer-input]').first().press('Escape')
     await expect.poll(() => menu.count()).toBe(0)
-    const input = page.locator('[data-composer-input]').first()
     await writeComposerDraft(page, input, '/')
-    await menu.waitFor({ timeout: 10_000 })
+    await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
+    await menu.getByRole('status').waitFor({ state: 'hidden', timeout: 10_000 })
     const typedBox = await menu.boundingBox()
     expect(launchedBox).not.toBeNull()
     expect(typedBox).not.toBeNull()
@@ -101,6 +109,27 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     await compareOrRefreshGolden(FUZZY_COMMAND_MENU_EXPECTED, fuzzySnapshot, MODE)
     await writeComposerDraft(page, input, '')
     await expect.poll(() => menu.count()).toBe(0)
+  })
+
+  it.skipIf(MODE === 'record')('localizes slash-command descriptions from the browser language', async () => {
+    const zhPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+    const zhTripwire = watchConsole(zhPage)
+    onTestFailed(() => saveFailureShot(zhPage, 'web-e2e-command-menu-zh'))
+    try {
+      await zhPage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await zhPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      const launcher = zhPage.getByRole('button', { name: '指令' })
+      await launcher.click()
+      const menu = zhPage.getByRole('listbox', { name: '触发候选建议' })
+      await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
+      await menu.getByRole('status').waitFor({ state: 'hidden', timeout: 10_000 })
+      const snapshot = await captureStableAria(zhPage, '[role="listbox"]', scaffold.workspaceCwd)
+      await compareOrRefreshGolden(COMMAND_MENU_ZH_EXPECTED, snapshot, MODE)
+      expect(zhTripwire.pageErrors).toEqual([])
+      expect(zhTripwire.warnings).toEqual([])
+    } finally {
+      await zhPage.close()
+    }
   })
 
   it.skipIf(MODE === 'record')('shows active Plan as the warn-state status action', async () => {
@@ -184,6 +213,17 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     const observeTurn = async () => {
       const originalViewport = page.viewportSize() ?? { width: 1680, height: 1000 }
       if (MODE !== 'record') await page.setViewportSize({ width: 480, height: 1000 })
+      const observedReasoning = Promise.withResolvers<undefined>()
+      const releaseStream = MODE === 'record' ? undefined : scaffold.ctx.on('llm/stream', async function* (_options, next) {
+        let reasoning = false
+        for await (const chunk of next()) {
+          if (reasoning && chunk.type !== 'reasoning-delta') {
+            await observedReasoning.promise
+          }
+          if (chunk.type === 'reasoning-delta') reasoning = true
+          yield chunk
+        }
+      })
       try {
         await input.press('Enter')
         if (MODE !== 'record') {
@@ -199,8 +239,11 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
             })
           }, { timeout: 10_000, interval: 10 }).toBe(true)
         }
+        observedReasoning.resolve(undefined)
         return await settled
       } finally {
+        observedReasoning.resolve(undefined)
+        releaseStream?.()
         if (MODE !== 'record') await page.setViewportSize(originalViewport)
       }
     }
@@ -222,7 +265,8 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     ).toBeGreaterThanOrEqual(1)
     await expect.poll(() => page.locator('[role="treeitem"][aria-selected="true"]').count(), { timeout: 10_000 }).toBe(1)
     await expect.poll(() => page.getByText('LIGHTHOUSE', { exact: true }).count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
-    await expect.poll(() => page.getByText('Cache hit 99.5%', { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    // The usage pill's one label span concatenates the billed total and the cache-hit share.
+    await expect.poll(() => page.getByRole('button', { name: /Cache hit 99\.5%/ }).count(), { timeout: 15_000 }).toBe(1)
     // Host: the session's durable header cwd is the folder the workspace
     // flow created and adopted (<workspaceCwd>/workspace) — the proof the
     // send went through workspace materialization rather than a bare
@@ -327,6 +371,14 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       expect(await connecting.innerText()).toMatch(/^Reconnecting\.{1,3}$/)
       const connectingGeometry = await connectionIndicatorGeometry(connecting)
       expect(await connectionIndicatorTextAlignment(connecting)).toBe('left')
+      // Animated dots must remain hidden with their state label during hover.
+      await connecting.evaluate((element) => {
+        for (const animation of element.getAnimations({ subtree: true })) {
+          if (!(animation instanceof CSSAnimation)) continue
+          animation.pause()
+          animation.currentTime = 1_250
+        }
+      })
       await connecting.hover()
       expect(await connecting.innerText()).toBe('Reconnect now')
       expect(await connectionIndicatorGeometry(connecting)).toEqual(connectingGeometry)
@@ -413,8 +465,9 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.v2.jsonl', 'replay.override.json', 'command-menu.expected.md',
-      'command-menu-fuzzy.expected.md', 'connection-error.expected.md', 'hero.expected.md', 'plan-active.expected.md',
+      'session.v3.jsonl', 'replay.override.json', 'command-menu.expected.md',
+      'command-menu-fuzzy.expected.md', 'command-menu-zh.expected.md', 'connection-error.expected.md',
+      'hero.expected.md', 'plan-active.expected.md',
       'reloaded.expected.md', 'reloaded-expanded.expected.md',
     ])
   })

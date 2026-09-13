@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-hooks-codex` 在 agent（智能体）运行期间执行你现有 Codex 配置（`hooks.json`）中的钩子，让你已经写好的行为无需重写即可继续生效。Codex 的 5 个 hook 点会在对应时刻触发：会话开始时、提示词提交时、工具运行前后，以及运行即将停止时。钩子可以带一条模型可见的消息阻塞提示词或工具调用、向对话附加额外上下文，或强制运行继续。当你持有 Codex command 钩子、希望它们原样在 harness 中工作时选择它；没有 Codex 对应物的行为应放入原生插件。
+`dsh-hooks-codex` 在 agent（智能体）运行期间执行现有 Codex `hooks.json` 中的 command 钩子，让提示词与工具把关逻辑无需重写即可生效。它支持 5 个 Codex hook 点：会话开始、提示词提交、工具执行前后以及停止。钩子可以用模型可见的原因阻塞提示词或工具调用、添加对话上下文，或强制 agent 再执行一步。需要在 harness 中复用 Codex command 钩子时选择本包；超出这一受支持子集的行为应使用原生插件。
 
 ## 目录
 

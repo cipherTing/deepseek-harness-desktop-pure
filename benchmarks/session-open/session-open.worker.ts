@@ -159,10 +159,12 @@ class SessionBenchmarkHost {
 
   static async create(root: string, scenario: SessionOpenBenchmarkScenario): Promise<SessionBenchmarkHost> {
     const ctx = new Context()
-    await ctx.plugin(SessionProjectionRegistry)
     const agentScenario = scenario === 'agent-resume'
     if (agentScenario) await mountAgentLoopTestDependencies(ctx)
-    else await ctx.plugin(SessionStore)
+    else {
+      await ctx.plugin(SessionProjectionRegistry)
+      await ctx.plugin(SessionStore)
+    }
     await installProjectionSet(ctx, agentScenario)
     await ctx.plugin(JsonlSessionPersistence, { root, compression: 'zstd' })
     let history: SessionHistoryController | undefined

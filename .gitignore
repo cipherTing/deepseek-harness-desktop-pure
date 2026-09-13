@@ -27,6 +27,7 @@ tmp/
 .idea
 mise.toml
 dist-exe/
+/dist/
 python/sdk-runtime/src/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-*
 python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/
 python/**/__pycache__/
@@ -49,3 +50,4 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 desktop/runtime/src/bridge-script.generated.ts
+native/system/test/bin/

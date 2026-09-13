@@ -35,7 +35,7 @@ export class SubagentInbox {
    * @returns whether either Agent inbox destination is non-empty.
    */
   get hasPending(): boolean {
-    return this.agent.inbox.hasPending
+    return this.agent.inbox.nextTurn.length > 0 || this.agent.inbox.nextStep.length > 0
   }
 
   /**

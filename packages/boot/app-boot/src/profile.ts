@@ -762,6 +762,48 @@ export function resolveBundleDir(
 }
 
 /**
+ * Load an already initialized profile directory without resolving it through
+ * the shared Harness home. This is used by application-owned profiles whose
+ * package project and lifecycle belong to that application.
+ * @param binName - the diagnostic prefix on thrown errors.
+ * @param dir - absolute profile package directory.
+ * @param installAnchor - absolute path of the owning dsh app's package.json.
+ * @param options - `userLayer: false` skips reading `cordis.patch.yml`.
+ * @returns the resolved bundle layers and optional user patch layer.
+ */
+export function loadProfileDirectory(
+  binName: string,
+  dir: string,
+  installAnchor: string,
+  options: { userLayer?: boolean } = {},
+): Profile {
+  const manifest = readProfileManifest(binName, dir)
+  const bundles = manifest.dsh?.profile?.bundles ?? []
+  const rawPatchReload: unknown = manifest.dsh?.profile?.patchReload
+  if (rawPatchReload !== undefined && rawPatchReload !== 'live' && rawPatchReload !== 'startup') {
+    throw new Error(
+      `${binName}: profile manifest ${join(dir, 'package.json')} dsh.profile.patchReload must be "live" or "startup"`,
+    )
+  }
+  const patchReload = rawPatchReload ?? DEFAULT_PROFILE_PATCH_RELOAD
+  const layers = bundles.map((packageName): ProfileLayer => {
+    const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
+    const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
+    const declared = bundleManifest.dsh?.bundle?.patch
+    if (declared === undefined) {
+      throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
+    }
+    const patchPath = join(packageDir, declared)
+    return { packageName, packageDir, patchPath, patches: loadOverlayPatches(binName, patchPath) }
+  })
+  const patchPath = join(dir, PROFILE_PATCH_FILENAME)
+  const patches = options.userLayer !== false && existsSync(patchPath)
+    ? loadOverlayPatches(binName, patchPath)
+    : []
+  return { name: basename(dir), dir, layers, patchPath, patches, patchReload }
+}
+
+/**
  * Load a profile: resolve every `dsh.profile.bundles` entry to its patch
  * layer and parse the profile's own patch file. A listed bundle without a
  * `dsh.bundle` manifest fails loud — naming a bundle-less package as a layer
@@ -789,31 +831,8 @@ export function loadProfile(
     }
     initProfile(dir, template.bundles, template.patchReload)
   }
-  const manifest = normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
-  // A hand-written profile manifest may omit the dsh section entirely.
-  const bundles = manifest.dsh?.profile?.bundles ?? []
-  const rawPatchReload: unknown = manifest.dsh?.profile?.patchReload
-  if (rawPatchReload !== undefined && rawPatchReload !== 'live' && rawPatchReload !== 'startup') {
-    throw new Error(
-      `${binName}: profile manifest ${join(dir, 'package.json')} dsh.profile.patchReload must be "live" or "startup"`,
-    )
-  }
-  const patchReload = rawPatchReload ?? DEFAULT_PROFILE_PATCH_RELOAD
-  const layers = bundles.map((packageName): ProfileLayer => {
-    const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
-    const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
-    const declared = bundleManifest.dsh?.bundle?.patch
-    if (declared === undefined) {
-      throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
-    }
-    const patchPath = join(packageDir, declared)
-    return { packageName, packageDir, patchPath, patches: loadOverlayPatches(binName, patchPath) }
-  })
-  const patchPath = join(dir, PROFILE_PATCH_FILENAME)
-  const patches = options.userLayer !== false && existsSync(patchPath)
-    ? loadOverlayPatches(binName, patchPath)
-    : []
-  return { name, dir, layers, patchPath, patches, patchReload }
+  normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  return loadProfileDirectory(binName, dir, installAnchor, options)
 }
 
 /**

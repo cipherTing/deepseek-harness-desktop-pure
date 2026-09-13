@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-skill` 让用户通过在编辑器中键入 `/name` 来调用 skill：建议菜单从 `skills/list` Remote 提供用户可调用的 skill 候选，选择一项会落下字面文本 `/name `，宿主随后将其加载为 skill 的指令。加载是确定性的：宿主的 pre-step 边界（`dsh-tool-skill`）识别发出消息中以空白为界的 `/name` token，并为每个入口注入渲染后的 `<skill_content>`，因此菜单 pick、手动键入的 token 与 TUI/ACP 提示词都以同一种方式加载 skill。已结算的 skill 调用在对话中渲染为可展开的 `Instructions` 卡片，只从冻结的调用/结果切片派生。
+`dsh-client-ui-skill` 让用户通过 `/` 建议选择或直接键入 `/name` 来调用 skill。同一条字面命令可以从 Web 编辑器、TUI 和 ACP 一致地加载 skill；如果名称与宿主命令相同，它仍会解析为该命令。skill 调用在对话中显示为可展开的 `Instructions` 卡片；即使已安装的 skill 目录发生变化，卡片落定后的内容仍保持稳定。
 
 ## 目录
 

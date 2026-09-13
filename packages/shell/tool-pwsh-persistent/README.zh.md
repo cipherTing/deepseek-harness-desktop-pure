@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-tool-pwsh-persistent` 为 agent 提供 `pwsh` 工具，其 PowerShell 状态对拥有它的 agent 跨调用保留：cwd、`$env:` 变量、函数与后台任务都会在命令之间存活。它是 `dsh-tool-bash-persistent` 的 Windows 对应物——相同的持久状态契约，PowerShell 方言。每个 agent 都有自己由按所有者隔离、带 pwsh 方言后端的 PTY 会话支撑的 shell，同一 agent 的命令逐个串行执行。配置选择后端与单条命令的墙钟上限；超时或显式 `exit` 会关闭 shell，下一次调用从全新状态开始。请与 pwsh 方言 terminal 后端（Windows ConPTY 或 POSIX pwsh）以及 `ctx.terminals` 服务一起挂载。
+`dsh-tool-pwsh-persistent` 为每个 agent 提供 `pwsh` 工具，跨调用保留其当前目录、环境变量、函数与后台任务。同一 agent 的命令串行运行，不同 agent 维护相互隔离的 shell 状态。多步 PowerShell 工作应选择本包；若每条命令都应从干净状态开始，请使用 `dsh-tool-pwsh`，需要交互 stdin 时则使用 terminal 工具。请配置支持 pwsh 的后端和单条命令超时；超时或显式 `exit` 会丢弃 shell，因此下次调用从全新状态开始。
 
 ## 目录
 

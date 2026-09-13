@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-session-format-catalog` 为持久化提供一个确定性的 Session 格式读取器，且无需查询已挂载插件。它把冻结的 v0、v1 与 v2 编解码器和相邻的 v0 到 v1、v1 到 v2 迁移边装配起来，在模块初始化时校验完整且无缺口的迁移链，并通过 `sessionFormatCatalog` 暴露物理分派、仅 header 分类、单遍行还原和当前格式逐记录编码。
+`dsh-session-format-catalog` 为持久化提供一个确定性的 Session 格式读取器，且无需查询已挂载插件。它装配从最早受支持格式到[当前写入格式](../../../docs/session-format-status.zh.md)的编解码器与相邻迁移边，在模块初始化时校验完整且无缺口的迁移链，并通过 `sessionFormatCatalog` 暴露物理分派、仅 header 分类、单遍行还原和当前格式逐记录编码。
 
 ## 目录
 
@@ -66,6 +66,7 @@ Production 历史读取使用 `{ recovery: 'recoverable', validation: 'transform
 - [迁移机制](../session-format/README.zh.md)——目录构造与分派行为。
 - [已发布 v0 到 v1 迁移边](../session-format-v0-to-v1/README.zh.md)——编解码器与校验器所有权。
 - [已发布 v1 到 v2 迁移边](../session-format-v1-to-v2/README.zh.md)——Assistant stream 嵌入与基数变化引用重映射。
+- [已发布 V2 到 V3 规范](../session-format-v2-to-v3/README.zh.md#v2-to-v3-specification)——转换、保留与拒绝。
 - [JSONL 持久化](../session-persistence-jsonl/README.zh.md)——不可变 generation 命名与排他发布。
 
 -----

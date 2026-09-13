@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-subagent-claude-code` registers a Profile-named Claude Code subagent provider (default `claude-code`) that runs a real Claude Code CLI child in the delegating session's workspace through the official Agent SDK. Each accepted run submits one self-contained text task and returns the strict final answer — or a separate safe failure diagnostic — through the shared subagent result contract. The provider ships as an optional Profile Bundle: installing it brings the pinned Agent SDK and one compatible platform CLI payload, while the registered provider stays dormant until a bound tool calls it. Native Claude settings and authentication remain authoritative, and the Profile-selected `permissionMode` decides how the unattended query handles permission checks. Choose it when the child should be a genuine Claude Code product session, fully isolated from the parent harness.
+Install this Profile Bundle when a delegated task should run as a fresh, unattended Claude Code session in the parent workspace. Each run accepts one self-contained text task and returns the final answer or a safe failure diagnostic; reasoning, tool traffic, stderr, usage, and workspace diffs stay out of the parent Session. Native Claude settings and authentication remain authoritative, while Profile configuration selects the model, environment, and `permissionMode`. The platform-pinned runtime starts on demand and never falls back to the host `claude` executable. Choose it when isolation and genuine Claude Code behavior matter more than continuation or prompts.
 
 ## Table of Contents
 
@@ -190,7 +190,7 @@ These limits define when this provider is a poor fit or needs special operationa
 This Dev Note is working context for maintainers: open questions and undecided directions. It is explicitly non-authoritative — shipped behavior and limits live in the sections above and in the package code.
 
 - **Payload size disclosure** — the current darwin-arm64 platform payload packs to about 92 MB and unpacks to about 325 MB; these are disclosure numbers, not installation thresholds.
-- **Version-pinned protocol** — the runtime dependency is pinned to Agent SDK 0.3.241; upgrading pins a new SDK version and requires re-running the keyless real-product and loader-composition evidence.
+- **Version-pinned protocol** — the runtime dependency is pinned to Agent SDK 0.3.263; upgrading pins a new SDK version and requires re-running the keyless real-product and loader-composition evidence.
 
 </details>
 

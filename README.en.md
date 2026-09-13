@@ -26,6 +26,8 @@
 
 <p align="center"><a href="README.md">简体中文</a> · English</p>
 
+> **Integrated DSH kernel: `0.1.5-rc.2` (`dsh-v0.1.5-rc.2`)**
+
 > **Independent distribution**
 >
 > DeepDive was formerly named DeepSeek Harness Desktop. It is now independently published as DeepDive for brand and trademark clarity. This project is not affiliated with or endorsed by DeepSeek.

@@ -1,8 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Reference order target" [disabled]
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
+    - img
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -13,7 +14,7 @@
 - button "Session recall Research notes":
   - img
   - text: Session recall Research notes
-- textbox "Message or run a task... / commands, @ files or sessions"
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
   - img
 - button "Add attachment":

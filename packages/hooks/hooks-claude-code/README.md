@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-hooks-claude-code` runs the hooks from your existing Claude Code config — a `hooks.json` or a settings file's `hooks` key — during agent runs, so the behavior you already wrote keeps working without rewriting it. Your hooks fire at the matching moments: when a session starts, when a prompt is submitted, before and after a tool runs, when the run is about to stop, and when subagents start or end. A hook can block a prompt or tool call with a message the model sees, attach extra context to the conversation, or force the run to continue. Choose it when you have Claude Code command hooks and want them to work in the harness as-is; behavior with no Claude Code equivalent belongs in a native plugin.
+`dsh-hooks-claude-code` runs command hooks from your existing Claude Code `hooks.json` or settings file during agent runs, without requiring a rewrite. Supported hooks can run when sessions, prompts, tools, stops, or subagents reach matching moments. They can block prompts or tool calls with model-visible reasons, add conversation context, or force another model turn. Choose this package to reuse Claude Code command hooks in the harness; use a native plugin for behavior that has no Claude Code equivalent.
 
 ## Table of Contents
 

@@ -50,6 +50,11 @@ jobs:
       # does not keep burning enterprise runner time on the remaining gates.
       DSH_GATE_FAIL_FAST: '1'
     steps:
+      # Runner cleanup owns tool caches and fixtures, including cancelled runs.
+      - name: Use runner-owned temporary storage
+        run: |
+          echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"
+
       # Fetch complete history so the archive gate can read the trusted PR base from a reused shallow checkout.
       - uses: actions/checkout@v6
         with:
@@ -115,6 +120,11 @@ jobs:
       # multi-minute instrumented run.
       DSH_GATE_FAIL_FAST: '1'
     steps:
+      # Runner cleanup owns tool caches and fixtures, including cancelled runs.
+      - name: Use runner-owned temporary storage
+        run: |
+          echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
@@ -141,9 +151,8 @@ jobs:
           store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
           echo "path=$store_path" >> "$GITHUB_OUTPUT"
 
-      # Skipped under failover: the self-hosted VM's persistent pnpm store
-      # already serves warm installs, while restoring the hosted archive
-      # would spend ~52 s pulling ~180 MB into that populated store.
+      # Self-hosted runners reuse the shared persistent pnpm store.
+      # Hosted runners restore the remote cache into their ephemeral store.
       - uses: actions/cache/restore@v4
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
         with:
@@ -235,6 +244,12 @@ jobs:
       # Failover halves snapshot concurrency for the shared 64-core VM.
       DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '32' }}
     steps:
+      # Runner cleanup owns tool caches and fixtures, including cancelled runs.
+      - name: Use runner-owned temporary storage
+        run: |
+          echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP%/*}/ms-playwright" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
@@ -264,8 +279,8 @@ jobs:
       # Pull requests restore the pnpm store and Playwright caches without paying
       # compression and upload on the required path. No master job saves these
       # hosted cache keys, so each restore-keys fallback hits the matching archived
-      # entry until it evicts, after which the store is cold. Skipped under failover
-      # — the self-hosted VM's persistent store is already warm.
+      # entry until it evicts, after which the store is cold. Self-hosted runners
+      # reuse the shared persistent store instead of restoring the remote archive.
       - uses: actions/cache/restore@v4
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
         with:
@@ -274,11 +289,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
 
-      # Skipped under failover: the VM's persistent browser cache is already warm.
+      # Self-hosted runners retain their own browser cache between jobs.
       - uses: actions/cache/restore@v4
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
         with:
-          path: ~/.cache/ms-playwright
+          path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-playwright-
@@ -547,7 +562,7 @@ jobs:
         # Coverage flakes must not prevent the cache from building; the
         # measured durations remain useful even when a partition failed. The
         # per-run key keeps every save a fresh immutable cache entry.
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/cache/save@v4
         with:
           path: .coverage-times.json
@@ -651,10 +666,8 @@ jobs:
   # `needs`. Native Windows build and process checks are required; Wine and
   # the deferred Python runtime targets live in ci-master.yml and do not
   # participate in this PR verdict. `needs` cannot cross workflow files.
-  # `if: always()` is load-bearing: without it a failed dependency
-  # would SKIP this job, and GitHub counts a skipped required check as passing
-  # — so this job always runs and fails on any non-success result, including
-  # 'cancelled' and 'skipped'.
+  # An explicit status function runs the verdict after failed/skipped needs
+  # without keeping a cancelled workflow alive for an obsolete verdict.
   all-checks-passed:
     name: all checks passed
     # This bookkeeping-only verdict must not depend on custom-pool
@@ -669,7 +682,7 @@ jobs:
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
           || 'ubuntu-latest' }}
     needs: [node-24, node-24-coverage, node-24-bench, node-24-consumers, node-compat, python-sdk, python-runtime, windows-build, windows-native-tests]
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     steps:
       - name: Fail if any needed job did not succeed
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')

@@ -261,6 +261,7 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
       }
     }
 
+
     if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
       const name = propertyName(node.name)
       if (name !== undefined && (COPY_NAME.test(name) || COPY_SUFFIX.test(name))) {

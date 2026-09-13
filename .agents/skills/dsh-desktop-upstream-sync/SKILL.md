@@ -29,6 +29,10 @@ Never reset an existing fork line to the upstream target as a substitute for syn
 
 A conflict-free merge still needs review. A source diff or generated artifact check does not prove that the Desktop runtime and UI remain functional.
 
+## Product-layer divergence
+
+The upstream `apps/desktop` and `apps/desktop-host` directories implement the official Electron Desktop product. They are not shared Harness packages. DeepDive keeps its Tauri product under `desktop/`; exclude Electron-only shell, Host, packaging, release, UI, and Electron-specific governance files from the reviewed integration tree. Keep upstream packages and client seams that have independent Web or Harness consumers, then verify that the workspace contains only the DeepDive Desktop package.
+
 ## Build the upstream-rooted candidate
 
 After the manual tree is reviewed, materialize the candidate on the verified upstream commit. Carry only the reviewed fork delta above that target; do not replay obsolete synchronization commits or use an unreviewed path allowlist.

@@ -3,8 +3,9 @@
     - button "Reply with a one-sentence description" [disabled]
   - img
   - text: Standard mode
-  - button "Session log":
-    - text: Session log
+  - button "More actions":
+    - img
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -32,7 +33,7 @@
       - img
     - button "Steer queued message" [disabled]:
       - img
-- textbox "Message or run a task... / commands, @ files or sessions"
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
   - img
 - button "Add attachment":

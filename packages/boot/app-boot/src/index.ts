@@ -34,6 +34,7 @@ export {
   healProfilesModuleFallback,
   initProfile,
   loadProfile,
+  loadProfileDirectory,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   PROFILES_DIR,

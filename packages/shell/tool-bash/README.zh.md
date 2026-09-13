@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-tool-bash` 为 agent 提供 `bash` 工具，通过已挂载的 shell 执行器运行命令并返回 stdout、stderr 与退出标记。每次调用都运行在全新 shell 中——cwd、变量或函数都不会保留——而 `run_in_background` 把长时间运行的命令变成后台任务，agent 用 `job_output` 收集、用 `job_kill` 停止。每次调用都运行在来自 `dsh-shell-env` 的受管 `DSH_*` 环境中；在沙箱执行器下，被拒绝的命令可以携带更宽的 `sandbox_permissions` 模式和一句 `justification`，经用户审批后在同一轮次内重试一次。非零退出只会被报告、不会失败，因此由 agent 决定如何应对。请与 `dsh-bash-local` 或 `dsh-bash-sandbox` 等执行器提供方以及 `dsh-shell-env` 插件一起挂载。
+`dsh-tool-bash` 让 agent 运行一次性 `bash` 命令，并接收 stdout、stderr 与退出标记。每次调用都使用全新 shell，因此 cwd、变量和函数不会保留；`run_in_background` 可启动长时间运行的工作，agent 能用 `job_output` 检查、用 `job_kill` 停止。命令会收到受管 `DSH_*` 环境；沙箱拒绝可携带更宽的 `sandbox_permissions`、一句 `justification` 与用户批准重试一次。非零退出会作为结果报告，因此由 agent 决定如何响应；请使用 `dsh-bash-local` 或 `dsh-bash-sandbox` 等执行器，并加载 `dsh-shell-env`。
 
 ## 目录
 
