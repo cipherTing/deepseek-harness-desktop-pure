@@ -1,0 +1,37 @@
+# Desktop overlay: the sidecar boots the upstream `web` profile with
+# `--host 127.0.0.1 --port 0 --no-open`, and the WebView loads that loopback
+# host directly. This layer replaces only native system interactions and adds
+# Desktop surface/client glue; Connection remains the upstream authenticated
+# browser transport.
+
+- id: directory-picker
+  disabled: true
+
+- id: settings-controller
+  disabled: true
+
+# The Desktop prompt supersedes the Web-surface prompt. A patch replaces the
+# complete config, so every Web runtime field is restated here.
+- id: web-runtime
+  config:
+    openBrowser: !!js ctx.webStartup.openBrowser
+    printUrl: false
+    surfaceContext: false
+    trustedHosts: !!js ctx.webStartup.trustedHosts
+
+- insert:
+    - id: desktop-surface
+      name: '@deepseek-ai/dsh-desktop-runtime/surface'
+      inject: [webServer]
+
+    - id: desktop-directory-picker
+      name: '@deepseek-ai/dsh-desktop-runtime/directory-picker'
+
+    - id: desktop-directory-picker-ui
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-native'
+
+    - id: desktop-settings-controller
+      name: '@deepseek-ai/dsh-desktop-runtime/settings-controller'
+
+    - id: desktop-client-ui
+      name: '@deepseek-ai/dsh-desktop-client-ui'

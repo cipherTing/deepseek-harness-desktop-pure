@@ -48,9 +48,7 @@ Python SDK 遵循相同的应用架构。其运行时 wheel 把普通 `dsh` CLI 
 
 ## 桌面应用
 
-[Electron 桌面应用](../apps/desktop/README.zh.md)持有保留的 `$DSH_HOME/profiles/desktop` npm 项目。每个签名 Electron 发行版绑定一个确切 dsh 版本并携带第一方离线 seed；启动时通过内置 pnpm 把该版本安装进可写 profile，同时保留旧 profile 中桌面插件的确切版本。CLI profile 与 Desktop 共享 `$DSH_HOME` 下受支持的产品数据，但绝不共享可执行包、插件激活、lockfile 或 `node_modules`。
-
-Electron 通过内置的上游 Node.js 进程启动私有 Desktop Host 包；该包从保留 profile 加载已安装的 dsh 后端与匹配的客户端图。一元 RPC、Remote stream 与版本匹配的客户端资源经带版本的分帧字节管道传输，Node IPC 只保留生命周期控制，再通过安全的 `dsh-app://` 协议到达渲染进程；因此桌面组合不会开放 Web server 或 loopback 端口。只有壳自有 UI 能通过内置 pnpm 及其私有 `$DSH_HOME/desktop/pnpm/store` 执行插件事务。
+DeepDive 是本 fork 独立的 Tauri 桌面发行版。它把标准 `web` profile 与随包 Node.js sidecar 一起打包，在 Tauri WebView 中通过 loopback 地址加载，同时与原生 Web 共享 Harness 配置和用户数据。Desktop 的生命周期、打包和原生集成规则定义在仓库的 [AGENTS.md](../AGENTS.md) 中。
 
 ## 核心包
 

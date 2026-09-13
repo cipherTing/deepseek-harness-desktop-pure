@@ -13,6 +13,7 @@ describe('DropOverlay', () => {
     )
     const overlay = view.getByRole('status')
     expect(overlay.parentElement).toBe(document.body)
+    expect(overlay.dataset.dshDropAccepting).toBe('true')
     expect(overlay.textContent).toContain('图片拖动到此处即可添加')
     expect(overlay.textContent).toContain('最多 20 张，每张 5MB')
   })
@@ -32,6 +33,7 @@ describe('DropOverlay', () => {
       <DropOverlay disabled labels={{ title: '当前无法添加图片', desc: '限制' }} />,
     )
     const overlay = disabled.getByRole('status')
+    expect(overlay.dataset.dshDropAccepting).toBe('false')
     expect(overlay.textContent).toBe('当前无法添加图片')
     expect(overlay.querySelector('svg')!.innerHTML).not.toBe(enabledSvg)
   })

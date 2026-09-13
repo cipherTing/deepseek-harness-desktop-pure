@@ -65,6 +65,7 @@ function mount({
   const renderSlot = vi.fn(
     ((key: string, _owner: unknown, opts?: { only?: string }) => {
       if (key === 'settings.section') return <div data-testid={`section-${opts?.only ?? 'all'}`} />
+      if (key === 'settings.update') return <span data-testid="settings-update">Update available</span>
       return SEAT_CONTENT[key]
     }) as SettingsRootComponentProps['renderSlot'],
   )
@@ -146,6 +147,20 @@ describe('SettingsRoot trigger', () => {
     fireEvent.click(trigger, { detail: 0 })
     expect(screen.getByRole('dialog')).toBeTruthy()
     expect(screen.getByRole('button', { name, expanded: true })).toBeTruthy()
+  })
+
+  it('renders the optional update seat after the trigger', () => {
+    const { renderSlot } = mount()
+    const trigger = screen.getByRole('button', { name: 'Settings' })
+    const update = screen.getByTestId('settings-update')
+    expect(trigger.compareDocumentPosition(update) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(renderSlot).toHaveBeenCalledWith('settings.update', { wide: true })
+  })
+
+  it('hands the rail state to the trigger and update seats', () => {
+    const { renderSlot } = mount({ wide: false })
+    expect(renderSlot).toHaveBeenCalledWith('settings.trigger', { wide: false })
+    expect(renderSlot).toHaveBeenCalledWith('settings.update', { wide: false })
   })
 
   it('shows outage, retry progress, and a two-second recovery confirmation', () => {

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-session-log-export` 让 Web 界面可以下载会话的完整历史：Session Header 更多操作按钮下的 `下载 Session 日志` 菜单项与 `/export` 斜杠命令都会把会话树——会话本身、其子会话与附件——作为 ZIP 交给浏览器下载。本包拥有 Host 归档流、经过认证的 Fetch 路由以及浏览器控制和反馈。下载目标位置由浏览器选择。设置与用法在前，随后说明实现细节。
+`dsh-session-log-export` 让 Web 界面可以下载会话的完整历史：Session Header 更多操作按钮下的 `下载 Session 日志` 菜单项与 `/export` 斜杠命令都会把会话树——会话本身、其子会话与附件——交给 ZIP 保存载体。本包拥有 Host 归档流、经过认证的 Fetch 路由以及浏览器控制和反馈。默认载体由浏览器选择目标位置，嵌入表面也可以在客户端树启动前安装异步原生保存载体。设置与用法在前，随后说明实现细节。
 
 ## 目录
 
@@ -55,11 +55,11 @@ Web bundle 将本包与 Connection、`dsh-commands`、`dsh-client-ui-commands` �
 
 ### 预期行为
 
-弹窗报告三个阶段：准备中、开始下载或失败。关闭弹窗不会取消正在进行的下载，该操作随后完成时弹窗也不会重新打开。每个会话同时只允许一项下载，重复操作共用该任务。导出包含实时会话的最新事件：Host 端点在读取前会 flush 活动的根会话，因此斜杠命令触发的 ZIP 会包含启动下载的 `command/run` 与 `command/done` 事件对；冷持久化会话不需要 flush。每份逻辑日志在归档中使用当前 generation 的规范文件名（v0 为 `session.jsonl`，其他版本为 `session.vN.jsonl`），每个子会话目录下也遵循同一规则。图片使用 `media/<attachmentId>.<ext>`，通用文件使用 `files/<digest-prefix>/<digest>/<name>`。通用文件以有界分块读取并压缩，因此导出大文件时不会把它完整缓冲进内存。
+弹窗报告准备中、浏览器开始下载、原生文件保存完成或失败。取消原生保存会关闭弹窗，不报告成功。关闭弹窗不会取消正在进行的操作，该操作随后完成时弹窗也不会重新打开。每个 Session 同时只允许一项下载，重复操作共用该任务。导出包含活动 Session 的最新事件：Host 端点在读取前会 flush 活动的根 Session，因此斜杠命令触发的 ZIP 会包含启动下载的 `command/run` 与 `command/done` 事件对；冷持久化 Session 不需要 flush。每份逻辑日志在归档中使用当前 generation 的规范文件名（v0 为 `session.jsonl`，其他版本为 `session.vN.jsonl`），每个子会话目录下也遵循同一规则。图片使用 `media/<attachmentId>.<ext>`，通用文件使用 `files/<digest-prefix>/<digest>/<name>`。通用文件以有界分块读取并压缩，因此导出大文件时不会把它完整缓冲进内存。
 
 ### 失败
 
-当 ZIP 流式传输开始前的预检失败时——例如 Host 端点不可达或配置错误——弹窗显示准备阶段错误。浏览器接受 GET 后发生的子会话或附件读取失败由浏览器下载管理器报告，不通过弹窗报告。
+预检或当前保存载体失败时，弹窗会显示错误。取消原生保存不属于错误。保存载体接受 GET 后发生的子 Session 或附件读取失败由该载体报告，不通过弹窗报告。
 
 -----
 
@@ -73,11 +73,11 @@ Web bundle 将本包与 Connection、`dsh-commands`、`dsh-client-ui-commands` �
 
 ### 设计拆分
 
-本包有两个半包。Host 半包（[`src/index.ts`](src/index.ts)）注册 `/export` 命令，并向 Connection 贡献精确的 `GET`/`HEAD /api/session.export` Fetch 路由；[`src/archive.ts`](src/archive.ts) 构建有界 ZIP 流。浏览器半包（[`src/client/index.ts`](src/client/index.ts)）提供共享下载控制器和 UI，并观察 `command/executed`，因此只有提交命令的浏览器会启动下载。
+本包有两个半包。Host 半包（[`src/index.ts`](src/index.ts)）注册 `/export` 命令，并向 Connection 贡献精确的 `GET`/`HEAD /api/session.export` Fetch 路由；[`src/archive.ts`](src/archive.ts) 构建有界 ZIP 流。浏览器半包（[`src/client/index.ts`](src/client/index.ts)）提供共享下载控制器和 UI，解析可选的表面保存载体，并观察 `command/executed`，因此只有提交命令的浏览器会启动下载。
 
 ### 下载流程
 
-两条入口都会对 `GET /api/session.export?...` 发出 `HEAD` 预检，然后把 GET URL 交给浏览器下载管理器，JavaScript 不缓冲 ZIP。一个控制器按会话持有一项进行中的下载，把并发操作折叠进该任务，并在插件释放时取消预检。弹窗状态存放在按会话键控的快照存储中，因此按钮与命令按会话共享一个弹窗。
+两条入口都会对 `GET /api/session.export?...` 发出 `HEAD` 预检，然后把 GET URL 与安全文件名交给当前保存载体，JavaScript 不缓冲 ZIP。默认载体点击浏览器下载链接并立即返回；嵌入表面可以在客户端启动前安装 `globalThis.__DSH_DOWNLOAD_CARRIER__`，并以 `file-saved` 或 `cancelled` 结束。一个控制器按 Session 持有一项进行中的下载，把并发操作折叠进该任务，并在插件释放时取消预检。弹窗状态存放在按 Session 键控的快照存储中，因此按钮与命令按 Session 共享一个弹窗。
 
 Host 路由是业务拥有的精确 Fetch contribution。Connection 应用 Host/Origin 与浏览器会话检查并桥接流式 `Response`；本包拥有查询校验、活动会话 flush、基于句柄的日志读取与附件读取、ZIP 生成和 HTTP 状态语义。
 
@@ -121,7 +121,7 @@ Host 路由是业务拥有的精确 Fetch contribution。Connection 应用 Host/
 
 这些限制说明本包何时不合适，或何时需要特别的运维注意。它们是当前包约束，不是任务积压。
 
-- **浏览器下载，而非 Host 路径写入**——目标位置由浏览器选择；不会返回 Host 路径或原生文件夹操作。
+- **浏览器下载或嵌入式保存载体，而非 Host 路径写入**——默认载体由浏览器选择本地目标。嵌入表面可以安装原生保存载体，但页面不会获得通用文件系统访问能力或 Host 路径结果。
 - **预检只报告流式传输前的失败**——浏览器接受 GET 后发生的子会话或附件读取失败由浏览器下载管理器报告，不通过弹窗报告。
 
 <a id="dev-note"></a>
@@ -134,7 +134,7 @@ Host 路由是业务拥有的精确 Fetch contribution。Connection 应用 Host/
 
 #### 未来：浏览器之外的导出目标
 
-下载刻意限定在浏览器范围；Host 路径或原生文件夹导出需要新的端点约定，并决定 ZIP 的落盘位置。
+下载路由刻意返回字节，而不是 Host 路径。未来如需导出到 Host 路径，必须新增独立 API，并明确目标位置的所有权。
 
 </details>
 

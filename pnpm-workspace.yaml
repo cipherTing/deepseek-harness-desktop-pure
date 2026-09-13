@@ -7,6 +7,10 @@ packages:
   - native/system/packages/*
   # Product assemblies over the package tier; apps/cli owns the `dsh` bin.
   - apps/*
+  # Independent Tauri packaging workspace and its deployable Node sidecar closure.
+  - desktop
+  - desktop/runtime
+  - desktop/client-ui
   # Private package owning repository-level benchmark dependencies.
   - benchmarks
   - website
@@ -47,12 +51,6 @@ allowBuilds:
   # The Python runtime deploy includes the reviewed workspace postinstall that
   # restores the executable bit on node-pty's macOS spawn helper.
   '@deepseek-ai/dsh-subprocess-local@file:packages/subprocess/subprocess-local': true
-  # electron-builder pulls in the optional Squirrel.Windows helper, whose
-  # install script only selects its bundled 7-Zip executable. Desktop ships
-  # Windows through NSIS, so that mutation is not part of our build.
-  electron-winstaller: false
-  # Store-index rewriting only needs msgpackr's portable JavaScript codec.
-  msgpackr-extract: false
 
 minimumReleaseAgeExclude:
   # Fresh pi-ai releases carry the model catalog updates that are the whole
