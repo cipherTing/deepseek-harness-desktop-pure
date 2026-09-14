@@ -14,6 +14,8 @@ The upstream range adds substantial Harness package, client, session, native-sys
 
 The reviewed integration tree applies upstream `dsh-v0.1.5-rc.2` through a real no-commit merge and keeps the fork-owned Desktop delta. Shared Harness packages and the approved client seams are integrated; the upstream Electron product layer, its packaging and release machinery, and Electron-specific governance are excluded. DeepDive retains the single Tauri implementation under `desktop/`.
 
+The sync branch starts at the pre-sync `master` tip; its integration merge records the verified upstream tag as second parent. The final `master` landing records the reviewed sync branch as second parent.
+
 The Desktop client waits for its locale and slots services before registering the DeepDive brand, About section, update seat, and Desktop drag feedback. The macOS overlay brand group is painted 4px lower without changing the 60px logo-row layout; Windows keeps the upstream position.
 
 The root README identifies the integrated DSH kernel as `0.1.5-rc.2` (`dsh-v0.1.5-rc.2`). `desktop/UPSTREAM_COMMIT` records only `dsh-v0.1.5-rc.2`. The independent DeepDive Desktop version remains `0.1.12`.

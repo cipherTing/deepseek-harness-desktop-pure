@@ -4,17 +4,19 @@ Status: implemented
 
 [English](2026-08-22-desktop-upstream-ancestry.md) | 中文
 
+当前同步分支拓扑由[Desktop 同步分支拓扑](2026-09-14-desktop-sync-branch-topology.zh.md)定义。本记录继续保留祖先关系的决策理由。
+
 ## Problem
 
 按复杂度分批进行手工同步时，可以复现上游 release 的内容，却没有让精确的上游目标成为 fork 的祖先。GitHub 因此会把已经接入的提交显示为 behind，后续 merge 还会重新处理同一段历史。
 
 ## Decision
 
-每次完成 Desktop 同步前，都必须从上游远端确认目标最终指向的 commit SHA，并让这个已验证的 commit 成为基于上游的候选分支和最终 fork HEAD 的祖先。先通过按复杂度分批的手工集成 merge 审查内容，再把经过审查的 fork 增量物化在已验证目标之上；候选落到 `master` 时，通过正常 `--no-ff` merge 保留连续 `master` 线为第一父、已验证候选为第二父。不得为了修复祖先关系而 rebase 或 force-push 已发布的 `master` 历史和 release tag。
+每次完成 Desktop 同步前，都必须从上游远端确认目标最终指向的 commit SHA，并让这个已验证的 commit 成为经过审查的同步分支和最终 fork HEAD 的祖先。手工集成 merge 从当前 fork 的 `master` tip 出发并审查代码；同步分支把已验证目标记录为第二父提交，之后通过正常 `--no-ff` merge 落回 `master`，保留连续 `master` 线为第一父、同步分支为第二父。不得为了修复祖先关系而 rebase 或 force-push 已发布的 `master` 历史和 release tag。
 
 已经完成内容接入的 `dsh-v0.1.1-rc.2`，其 commit 为 `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`，允许一次保持代码树不变的 `-s ours` merge 作为具名例外。rc2 内容仍由既有的[同步决策与验证](../../archived/process/2026-08-21-desktop-sync-dsh-0.1.1-rc.2.md)负责；该例外只把目标补为第二父提交。它既不应用也不验证上游文件，后续目标不得复用。
 
-同步完成时必须验证目标的上游身份、确认目标已经成为祖先，并确认 `target...HEAD` 中没有只属于目标的提交。候选树必须等于经过审查的手工集成树，落到 `master` 的树必须等于已验证候选。祖先和数量检查都不能证明内容已经接入。rc2 修复还必须验证两个父提交，并确认相对第一父提交的代码树 diff 为空。
+同步完成时必须验证目标的上游身份、确认目标已经成为祖先，并确认 `target...HEAD` 中没有只属于目标的提交。同步分支的代码树必须等于经过审查的手工集成树，落到 `master` 的树必须等于经过审查的同步分支。祖先和数量检查都不能证明内容已经接入。rc2 修复还必须验证两个父提交，并确认相对第一父提交的代码树 diff 为空。
 
 ## Alternatives considered
 

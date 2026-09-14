@@ -14,6 +14,8 @@ DeepDive 需要接入官方 tag `dsh-v0.1.5-rc.2`，精确提交为 `fb2c4b9e698
 
 经过审查的集成树通过真实 no-commit merge 应用官方 `dsh-v0.1.5-rc.2`，并保留 fork 自有的 Desktop 增量。共享 Harness 包和已批准的 client seam 会被同步；上游 Electron 产品层、其打包与发版机制以及 Electron 专属治理文件被排除。DeepDive 继续只保留 `desktop/` 下的 Tauri 实现。
 
+本次同步分支从同步前的 `master` tip 出发；其集成 merge 将已验证的官方 tag 记录为第二父提交。最终落回 `master` 时，落地 merge 将经过审查的同步分支记录为第二父提交。
+
 Desktop client 会等待 locale 和 slots 服务，再注册 DeepDive 品牌、About 区块、更新 seat 和 Desktop 拖拽反馈。macOS overlay 下的品牌组只在绘制时下移 4px，不改变 60px 的 logo 行布局；Windows 保持上游位置。
 
 根 README 标明集成的 DSH 内核为 `0.1.5-rc.2`（`dsh-v0.1.5-rc.2`）。`desktop/UPSTREAM_COMMIT` 只记录 `dsh-v0.1.5-rc.2`。独立的 DeepDive Desktop 版本保持 `0.1.12`。
