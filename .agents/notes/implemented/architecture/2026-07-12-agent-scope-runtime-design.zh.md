@@ -42,6 +42,8 @@ Status: implemented
 
 `agent.ctx` 就是这样一个派生上下文。服务调用仍然到达共享实例，而注册操作可以检查其调用上下文并将贡献存储在最近的作用域键下。普通的插件上下文不携带作用域键，因此注册到全局。
 
+Agent 上下文就是 `createScope` 返回的上下文，不携带第二份指回 Agent 的关联。需要主体的 API 显式传递 Agent，因此注册所有权与路由只依赖一种正式的作用域机制。
+
 ### Fiber 与 effect 使清理成为结构性的
 
 Cordis fiber 是插件或子上下文被激活时创建的活跃实例。其状态记录该生命周期是 active、unloading、failed 还是 disposed。`ctx.effect()` 和 `ctx.on()` 返回 disposer，同时将这些 disposer 附加到注册所在的 fiber，因此卸载一个插件或 agent 作用域会移除通过该上下文注册的一切，无需单独的清单。
@@ -70,7 +72,7 @@ scope 包实现了 Cordis 路由所需的最小对象。其载体仅持有一个
 
 `createScope(parent, key)` 返回一个作用域，其 `ctx` 共享父级的服务，其 effect 被标记为该键。`scopeOf(ctx)` 读取最近的注册键。`scopeTarget(base, key)` 创建事件接收器，其过滤器保留 base receiver 的 Cordis 服务过滤器，然后接纳无作用域的监听器和具有该确切键的监听器。
 
-Receiver 是一个小型载体而非领域对象的透明代理。需要 agent 的代码接收显式的事件参数；需要注册所有权的代码接收 `agent.ctx`。
+Receiver 是一个小型载体而非领域对象的透明代理。需要 agent 的代码接收显式的 setup 参数或事件参数；需要注册所有权的代码接收 `agent.ctx`。
 
 ### 注册表读取叠加一个精确 layer
 
@@ -102,11 +104,11 @@ detach 闭包捕获其确切注册表条目。它仅在映射仍指向该注册�
 
 创建准备一个新 Session。恢复加载并验证持久化的 Session，然后准备相同的活跃会话标识。两条路径随后构建作用域、agent 和 driver，并调用相同的 setup/发布算法。
 
-工厂存储具体的 trace 目标，但通过调用方绑定的 Cordis trace 调用它们。这保留了依赖来源和调用方所有权，而不堆叠 trace 代理。
+工厂存储具体的 trace 目标，但通过调用方绑定的 Cordis trace 调用它们。运行时子 Agent 的创建方在 create 或 resume options 中设置 `parentAgent`，AgentRegistry 转交这些 options，不从调用方 Context 推导父级。这既保留了依赖来源和两种所有权事实，又不堆叠 trace 代理，也不把领域对象附着到 Context。作用域 Remote 事件适配器同样从 request 接收 Agent，校验它就是 carrier key，再直接投影其 Context 与 wire identity。系统不会通过作用域索引从 Context 重建 Agent。[显式运行时身份决策](2026-08-31-explicit-agent-runtime-identity.zh.md)拥有这项分离原则及由此确定的可续跑子级归属规则。
 
 ### Setup 是私有世界内的可信组合
 
-Setup 接收完整的子上下文，可以等待插件激活。它可以注册工具、提示词段、限制、监听器和其他 effect，但公开约定不支持通过强制转换或内部注册表调用来驱动或发布正在创建中的 agent。
+Setup 接收完整的子上下文和确切的未发布 Agent，可以等待插件激活。它可以注册工具、提示词段、限制、监听器和其他 effect；需要子 Session 的消费者从 Agent 参数读取它。公开约定不支持通过强制转换或内部注册表调用来驱动或发布正在创建中的 agent。
 
 事务将异步加载和 setup 与停用进行竞争，而非无限等待外部代码拥有的 promise。如果取消或所有者卸载获胜，即使外部 promise 永不结算，公开创建也会在事务拥有的清理之后拒绝。
 

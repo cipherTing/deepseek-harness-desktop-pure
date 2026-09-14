@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
-import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import type { Agent, Inbox, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createAssistantMessage, createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
@@ -13,6 +13,7 @@ import { subagentIdentityProjectionDefinition } from '@deepseek-ai/dsh-subagent/
 import { describe, expect, it, vi } from 'vitest'
 import { ApiSessionAgentController } from '../src/agent.ts'
 import { SessionCommandController } from '../src/commands.ts'
+import { createInboxStub } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
 async function commandHarness(
@@ -68,7 +69,7 @@ async function commandHarness(
       provider: 1,
     } as never)
   }
-  const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
+  const inbox = createInboxStub()
   const steer = vi.fn((message: UserMessage) => { inbox.append('next-step', message) })
   const cancel = vi.fn()
   const agent = {
@@ -132,6 +133,14 @@ describe('Session queue commands', () => {
         }],
       },
     })), 'session/attachment-invalid')
+    for (const content of [[], [{ type: 'text' as const, text: ' \t\n' }]]) {
+      await expectFailure(Promise.resolve().then(() => controller.updateQueue({
+        sessionId: agent.id,
+        itemId: queued.id,
+        action: { kind: 'edit', content },
+      })), 'gateway/bad-request')
+    }
+    expect(inbox.nextTurn[0]?.content).toEqual([{ type: 'text', text: 'queued' }])
     await expectFailure(Promise.resolve().then(() => controller.updateQueue({
       sessionId: SessionId('missing'), itemId: queued.id, action: { kind: 'remove' },
     })), 'session/queue-item-not-found')
@@ -316,21 +325,24 @@ describe('Session attachment authorization', () => {
     const message = imageRef('message')
     const inserted = imageRef('inserted')
     const streamed = imageRef('streamed')
-    const events = [
+    const events: SessionEvent[] = [
       { ...event('fixture/direct', SessionSeq(0), {
         content: [null, [], { type: 'tool-result', content: [{ type: 'text', text: 'none' }] }, {
           type: 'tool-result', content: [{ type: 'image', attachment: nested }],
         }],
       }), ignorable: true as const },
-      { ...event('assistant/message', SessionSeq(1), {
-        turn: 1,
-        step: 1,
-        stream: [],
-        message: createAssistantMessage({
-          content: [{ type: 'image', attachment: message }],
-          source: { provider: 'fixture', model: 'fixture' },
-        }),
-      }), surfaceOp: 'append' as const },
+      {
+        type: 'assistant/message', seq: SessionSeq(1), time: 2, surfaceOp: 'append',
+        data: {
+          turn: 1,
+          step: 1,
+          stream: [],
+          message: createAssistantMessage({
+            content: [{ type: 'image', attachment: message }],
+            source: { provider: 'fixture', model: 'fixture' },
+          }),
+        },
+      },
       event('agent/inbox/spliced', SessionSeq(2), {
         target: 'next-turn',
         start: 0,

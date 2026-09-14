@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-subagent` 是子 agent 委派背后的服务：agent（智能体）把任务交给具名子 agent，收集完成的结果，并且——对可继续子 agent 而言——跨轮次持续发送后续工作。多个提供方在同一约定下共存，因此单个组合可以并排提供进程内子 agent、进程外 ACP 或 SDK 子 agent，以及真实 Codex 或 Claude Code 子 agent。子 agent 有两种形态：一次性运行以单个结果结算，可继续子 agent 的持久会话则接受后续消息并可被中断。同一服务还回答发现类问题——存在哪些子级、它们的模式、活动状态与血缘——而不加载或恢复它们。把它与至少一个提供方后端和一个委派工具一起挂载；后端与面向模型的工具位于兄弟包中。
+使用 `dsh-subagent` 把工作委派给具名子 agent、收集结果，并跨轮次继续受支持的子级对话。一个组合可以并排提供进程内、ACP、SDK、Codex 或 Claude Code 子级。需要单个结果时选择一次性子级；需要后续消息与中断能力时选择可继续子级。你还可以检查可用子级及其模式、活动状态与血缘，而无需加载或恢复它们。启用时需要至少一个受支持的子级后端和一个委派工具。
 
 ## 目录
 
@@ -95,6 +95,8 @@ kind: "package-reference"
 ### 可继续流程
 
 管理器预留 child 身份、解析持久化描述符、创建（或冷恢复）child、把它安装进 Activation 并提交提示词。模型编写的消息通过固定 Steer 调度跨一条 parent/child 边；浏览器人类 prompt 通过内部适配器选择 Queue 或 best-effort Steer，其他 host 协议仍可保留 Queue 以创建独立轮次。Session queue command 仅根据 child 自身的 continuable descriptor 准入在线 subagent-owned Agent。Settlement 会等待 Agent 活动结束、Inbox 为空且没有所拥有子级，再在准入开放时 flush 最终 Session 状态。管理器随后在 child lock 内重新验证 wake generation、Session 序号、Inbox 与所拥有子级；`Agent.runMaintenance()` 的同步 task 入口会占用 idle 阶段，并在同一个 JavaScript turn 内关闭私有 subagent Inbox，然后才 dispose handle。直接 child 不存在 Activation 时会从持久化会话冷恢复。当驻留 Activation 结算时，管理器会在 parent 自身的轮次流中告知该 child 的直接 parent。
+
+本地子级创建成功时，父 Session 追加一条 `subagent/catalog` 事实。一次性创建在 provider 返回后记录；可继续创建在初始 inbox 准入后、返回子级 id 前记录。失败会释放子级，不发布补偿性目录事件。一次性目录追加失败时会处理 run 的结果拒绝，并保留目录错误；资源释放失败会单独记录。`subagentCatalog` projection 排除 fork 继承的事实，通过 Session 观察和客户端快照中的 `projections.values.subagentCatalog` 暴露直接子级列表。无效的自身 catalog payload（包括不支持的版本）会使 projection 恢复失败。其不可变存储和检查点校验使用 [`dsh-chunked-list`](../../util/chunked-list/README.zh.md)。其视图对 D 条事实以 O(D) 时间保留父目录事件顺序。[父目录决策](../../../.agents/notes/implemented/architecture/2026-09-01-parent-owned-subagent-catalog.zh.md) 说明排序、持久化成本和替代方案。
 
 ### 所有权与不变式
 

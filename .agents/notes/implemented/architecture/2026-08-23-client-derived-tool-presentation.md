@@ -248,7 +248,7 @@ Host presenter APIs describe top-level calls and results. Code Dispatch subcalls
 
 Code Dispatch start and result events already carry `parentCallId`. Conversation preserves that existing fact on each child `ToolCallBlock`; root Session calls omit it. The diff, read, search, and web models accept only blocks without `parentCallId`; the terminal model and existing renderers that intentionally support nested calls accept child blocks.
 
-The Details panel delegates the selected block unchanged. Shared card models apply the same terminal eligibility and nonterminal child restrictions in rows and Details, so the Details slot needs no placement field.
+Shared card models apply the same terminal eligibility and nonterminal child restrictions wherever a block renders, so no second presentation surface needs a placement field; the details panel that once delegated a selected block was removed with the right-hand details column ([decision](../feature/2026-09-04-right-sidebar-docking-infrastructure.md)).
 
 The keyed slot continues dispatching every subcall by its real tool name. `parentCallId` restricts only the diff, read, search, and web structured models covered by this decision. Existing specialized renderers such as Skill and Cordis, which already read raw blocks, remain unchanged.
 

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-acp` 让受信程序可以通过标准 [Agent Client Protocol（ACP）](https://agentclientprotocol.com) 驱动持久 DeepSeek Harness agent：创建或恢复会话、列出可恢复会话、挂载标准 MCP 服务器、选择模型与推理强度、发送或取消工作、接收语义执行更新，并关闭一个会话而不影响其他会话。它是为自动化而生的——进程外 subagent、测试运行器与脚本化控制器——而不是 DSH 用户界面：它发送标准 ACP 消息、thought、通用工具生命周期、配置与上下文用量，绝不发送 DSH 私有呈现数据或方法。会话持久化支持跨进程重启的列出、恢复与关闭，而删除、fork、转录回放、附加目录与交互式 UI 界面仍不支持。仓库自带的 ACP 客户端是 `dsh-subagent-acp`，`pnpm dsh --profile acp` 会启动一个开箱即用的服务器。设置与用法在前；实现细节放在下方可折叠的开发者章节中。
+`dsh-acp` 让受信程序通过标准 [Agent Client Protocol（ACP）](https://agentclientprotocol.com) 自动操作持久 DeepSeek Harness agent：创建或恢复会话、选择模型与推理强度、挂载 MCP 服务器、提交或取消工作、接收语义更新，并独立关闭会话。进程外 subagent、测试运行器与脚本化控制器适合选择它；它刻意不提供 DSH 专用呈现数据与交互式 UI 功能。持久化支持跨进程重启列出、恢复与关闭会话，但不支持删除、fork、转录回放与附加目录。运行 `pnpm dsh --profile acp` 可启动服务器；仓库客户端使用 `dsh-subagent-acp`。
 
 ## 目录
 

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The subagent group is the delegation family: it lets an agent hand a task to a child agent, wait for or continue the child's work, and keep every child discoverable. One contract (`ctx.subagents`) serves any number of named providers, so a single composition can mix in-process children (fresh, or forked from the parent's completed history) with out-of-process children — an ACP agent, a real Codex or Claude Code installation, or a complete Harness runtime over the SDK. The model-facing tools expose delegation, adjacent-Agent messaging, and listing to agents, and a parent can always see which children exist and whether they are live or stored. This page maps the group; each package README owns its package contract.
+The subagent package family lets an agent delegate a task to a child, continue the child's work, and discover every child it created. Choose a fresh in-process child for isolated work, a history-seeded in-process child when prior conversation matters, or an out-of-process child backed by ACP, Codex, Claude Code, or another Harness runtime. Model-facing tools also let agents message adjacent agents, interrupt work, and list child status. Each child remains visible to its parent whether it is running or stored; the package READMEs document provider-specific setup and limits.
 
 ## Table of Contents
 

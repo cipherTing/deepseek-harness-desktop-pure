@@ -315,7 +315,7 @@ Session binding 可用、缓存的 binding 成为 current 或 View roster 变化
 
 普通 prepend 与 append flush 只对 active target 调用 `apply({ upserts, timeline })`。完整 window replace 与 Registry rebuild 只对 active target 调用 `replace()`。取消订阅不会移除 target，因此返回已打开的 View 不会重建。
 
-[`ChatSnapshotBuilder`](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) 维护 `order`、带身份稳定 Node 与 Turn-process source 的 keyed `nodes` store、turn/step `locations` index、`timeline`，以及由 StatsLine 使用并镜像到顶层公共兼容字段的 `legacy` slice。
+[`ChatSnapshotBuilder`](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) 维护 `order`、带身份稳定 Node 与 Turn-process source 的 keyed `nodes` store、turn/step `locations` index、`timeline`，以及由 StatsPills 使用并镜像到顶层公共兼容字段的 `legacy` slice。
 
 Chat 结构变化只由新 key、`anchorSeq`、visibility 或 Location identity 变化触发。普通内容变化不重建 `order`；keyed Node store 只替换该 key 的 value 并发布其 source。Turn-process projector 仅为结构、规格或状态发生变化的 Turn 重算跨 Node 呈现，再只发布该 Turn 的 process source。
 
@@ -424,4 +424,4 @@ Inbox Context 的保留量随 splice 数和已 claim 消息数增长，不再随
 
 代价是 Runtime 新增 Registry、Assembler、Location data、依赖重放和 per-target Builder 契约，UI Slots 也新增 parent-owned common inject 与 per-occurrence `hookContext`。消费 Assistant delta 的 Definition 还需要维护等价的 scalar 与 packed update 分支。Definition 作者必须理解稳定 ID、唯一 scalar start、正序 replay、Step→Turn 发布顺序、只读 Reader 和 Node 不撤回规则。
 
-`useTurnData()` 不撤销 session-scoped renderer 的标准 `useSession`，因此该边界依靠 API 引导和测试，而不是能力隔离。Registry 变化仍是低频完整 rebuild；Chat Builder 继续为 StatsLine 和顶层公共字段维护 legacy slice，Trajectory 则在共享 Session 窗口上拥有 target 专属 Definition 与 Builder。内建 Definition 分别留在所属 UI package；这些兼容边界不把业务解释权交还给 Session。
+`useTurnData()` 不撤销 session-scoped renderer 的标准 `useSession`，因此该边界依靠 API 引导和测试，而不是能力隔离。Registry 变化仍是低频完整 rebuild；Chat Builder 继续为 StatsPills 和顶层公共字段维护 legacy slice，Trajectory 则在共享 Session 窗口上拥有 target 专属 Definition 与 Builder。内建 Definition 分别留在所属 UI package；这些兼容边界不把业务解释权交还给 Session。

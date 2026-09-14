@@ -218,9 +218,7 @@ export function retainIssueReferences(references, issues) {
 export function validateIssue(issue) {
   const errors = []
   const status = issue.status
-  const invalidLabels = issue.labels.filter(
-    (label) => label.startsWith('kind/') || LEGACY_LABELS.has(label),
-  )
+  const invalidLabels = issue.labels.filter(isInvalidIssueLabel)
 
   if (invalidLabels.length > 0) {
     errors.push(`Issue 不得使用 PR kind 或旧版标签：${invalidLabels.join(', ')}`)
@@ -243,6 +241,10 @@ export function validateIssue(issue) {
     errors.push(`${status} 必须对应开放 Issue`)
   }
   return errors
+}
+
+function isInvalidIssueLabel(label) {
+  return label.startsWith('kind/') || LEGACY_LABELS.has(label)
 }
 
 /**
@@ -312,8 +314,9 @@ function projectToken() {
 }
 
 async function api(path, options = {}) {
+  const { allow404 = false, ...requestOptions } = options
   const response = await fetch(`${process.env.GITHUB_API_URL ?? 'https://api.github.com'}${path}`, {
-    ...options,
+    ...requestOptions,
     headers: {
       Accept: 'application/vnd.github+json',
       Authorization: `Bearer ${token()}`,
@@ -322,10 +325,10 @@ async function api(path, options = {}) {
       ...options.headers,
     },
   })
-  if (options.allow404 && response.status === 404) return null
+  if (allow404 && response.status === 404) return null
   if (!response.ok) {
     const body = await response.text()
-    throw new Error(`${options.method ?? 'GET'} ${path}: ${response.status} ${body}`)
+    throw new Error(`${requestOptions.method ?? 'GET'} ${path}: ${response.status} ${body}`)
   }
   if (response.status === 204) return null
   return response.json()
@@ -573,6 +576,25 @@ async function setStatus(number, status) {
   await updateStatus(await ensureProjectItem(number), status)
 }
 
+/**
+ * Remove pull-request kinds and retired aliases from one Issue snapshot.
+ * @param {{number: number, labels: string[]}} issue Issue snapshot.
+ * @returns {Promise<object>} Snapshot containing only labels that remain on the Issue.
+ */
+export async function repairIssueLabels(issue) {
+  const invalidLabels = issue.labels.filter(isInvalidIssueLabel)
+  for (const label of invalidLabels) {
+    await api(
+      `/repos/${config.organization}/${config.repository}/issues/${issue.number}/labels/${encodeURIComponent(label)}`,
+      { method: 'DELETE', allow404: true },
+    )
+  }
+  return {
+    ...issue,
+    labels: issue.labels.filter((label) => !isInvalidIssueLabel(label)),
+  }
+}
+
 async function upsertAudit(number, errors) {
   const comments = await api(
     `/repos/${config.organization}/${config.repository}/issues/${number}/comments?per_page=100`,
@@ -605,10 +627,18 @@ async function upsertAudit(number, errors) {
   }
 }
 
-async function auditIssue(number, extraErrors = [], status = undefined) {
+/**
+ * Repair deterministic Issue metadata violations and publish the remaining audit result.
+ * @param {number} number Same-repository Issue number.
+ * @param {string[]} extraErrors Errors supplied by the triggering lifecycle operation.
+ * @param {string|null|undefined} status Optional known Project status.
+ * @returns {Promise<string[]>} Violations that remain after repair.
+ */
+export async function auditIssue(number, extraErrors = [], status = undefined) {
   const issue = await issueSnapshot(number, status)
   if (!issue) return []
-  const errors = [...extraErrors, ...validateIssue(issue)]
+  const repairedIssue = await repairIssueLabels(issue)
+  const errors = [...extraErrors, ...validateIssue(repairedIssue)]
   await upsertAudit(number, errors)
   return errors
 }

@@ -62,4 +62,5 @@ describe('Client UI i18n source check', () => {
       'export const en = { title: "Hard-coded by design" }',
     )).toEqual([])
   })
+
 })

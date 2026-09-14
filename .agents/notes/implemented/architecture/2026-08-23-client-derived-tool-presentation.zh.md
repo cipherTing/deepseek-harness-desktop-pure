@@ -248,7 +248,7 @@ Host presenter API 描述顶层 call/result。本决定覆盖的 diff、read、s
 
 Code Dispatch start 与 result event 已经携带 `parentCallId`。Conversation 在每个 child `ToolCallBlock` 上保留这项现有事实，root Session call 则不携带它。diff、read、search 和 web model 只接受没有 `parentCallId` 的 block；terminal model 与原本有意支持嵌套调用的 renderer 接受 child block。
 
-Details panel 原样委托选中的 block。共享 card model 在行与 Details 中应用相同的 terminal 适用规则和非 terminal 子调用限制，因此 Details slot 不需要 placement 字段。
+共享的 card model 在 block 渲染到哪里都施加同样的终端资格与非终端子调用限制，因此不需要第二个展示面带 placement 字段；曾经原样委托选中 block 的详情面板已随右侧详情列一并删除（[决策](../feature/2026-09-04-right-sidebar-docking-infrastructure.zh.md)）。
 
 keyed slot 仍按每个子调用的真实 tool name 分发；`parentCallId` 只限制本决定覆盖的 diff/read/search/web 结构化模型。Skill、Cordis 等已经直接读取 raw block 的专用 renderer 保持现状。
 

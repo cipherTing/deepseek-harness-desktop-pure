@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-tool-session-query` 给模型提供五个会话历史只读工具：`session_search`、`session_event_search`、`session_trace`、`session_event_trace` 与 `session_event_read`。工具经工作区授权——模型只能访问 `cwd` 与其自身调用方会话完全相同的会话——结果是无游标的纯文本，因此模型可以搜索既往工作，并顺着有用命中进入其血缘或精确事件数据。本包是 opt-in，已发布宿主组合默认不挂载：挂载后每次请求都会增加一个精简指引章节与五个 schema。配置与用法在前；实现内部细节放在下方可折叠的开发者章节中。
+使用 `dsh-tool-session-query` 可让模型搜索既往会话、检查事件匹配、追踪会话或事件关系，并读取精确事件数据。它的五个只读工具返回无游标文本；只有目标会话的 `cwd` 与调用方完全匹配时才允许跨会话访问，没有 `cwd` 的调用方只能检查自己。搜索会排除调用方会话，并在达到部署结果上限时要求模型缩小查询。本包是 opt-in；启用后，每次模型请求都会增加固定指引与五个工具 schema。
 
 ## 目录
 

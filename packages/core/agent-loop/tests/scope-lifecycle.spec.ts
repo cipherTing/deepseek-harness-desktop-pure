@@ -142,17 +142,14 @@ describe('agent scope lifecycle', () => {
     await ctx.fiber.dispose()
   })
 
-  it('wires agent.ctx: tagged with the agent, DX field set, ctx.agent safe elsewhere', async () => {
+  it('tags agent.ctx with the Agent scope key', async () => {
     const ctx = await harness()
     const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
     expect(scopeOf(agent.ctx)).toBe(agent)
-    expect(agent.ctx.agent).toBe(agent)
-    // The root accessor default: a plain context answers undefined, not a throw.
-    expect(ctx.agent).toBeUndefined()
     await agent.whenIdle()
   })
 
-  it('records agents created through an agent context as non-root runtime children', async () => {
+  it('records an explicitly owned Agent as a non-root runtime child', async () => {
     const ctx = await harness()
     const root = await ctx.agents.create({
       sessionId: SessionId('runtime-root'),
@@ -161,6 +158,7 @@ describe('agent scope lifecycle', () => {
     const child = await root.agent.ctx.agents.create({
       sessionId: SessionId('runtime-child'),
       agentOptions: { model: 'mock' },
+      parentAgent: root.agent,
     })
 
     expect(ctx.agents.list()).toEqual([root.agent, child.agent])
@@ -193,6 +191,33 @@ describe('agent scope lifecycle', () => {
     expect(ctx.tools.get('mine', agent)).toBeUndefined()
     const after = await ctx.systemPrompt.assemble(assembleContextFor(agent))
     expect(after.sections.find(s => s.name === 'deployment:persona-prefix')?.text).toBe('You are the deployment.')
+  })
+
+  it('keeps the inbox projection until the last owning agent fiber unloads', async () => {
+    const ctx = await harness()
+    let first!: Awaited<ReturnType<typeof ctx.agents.create>>
+    let second!: Awaited<ReturnType<typeof ctx.agents.create>>
+    const firstOwner = await ctx.plugin(Object.assign(async (inner: Context) => {
+      first = await inner.agents.create({
+        sessionId: SessionId('projection-owner-first'),
+        agentOptions: { provider: 'mock', model: 'mock' },
+      })
+    }, { inject: ['agents'] }))
+    const secondOwner = await ctx.plugin(Object.assign(async (inner: Context) => {
+      second = await inner.agents.create({
+        sessionId: SessionId('projection-owner-second'),
+        agentOptions: { provider: 'mock', model: 'mock' },
+      })
+    }, { inject: ['agents'] }))
+
+    expect(ctx.sessionProjections.stateOf(first.agent.session, 'inbox')).toBeDefined()
+    await firstOwner.dispose()
+    expect(ctx.sessionProjections.stateOf(second.agent.session, 'inbox')).toBeDefined()
+    await secondOwner.dispose()
+    expect(ctx.sessionProjections.stateOf(second.agent.session, 'inbox')).toBeUndefined()
+
+    await Promise.all([first.dispose(), second.dispose()])
+    await ctx.fiber.dispose()
   })
 
   it('agent.ctx listeners hear only their own agent (scoped dispatch end to end)', async () => {
@@ -258,8 +283,8 @@ describe('agent scope lifecycle', () => {
     const creating = ctx.agents.create({
       sessionId: SessionId('atomic'),
       agentOptions: acceptedOptions,
-      setup: async (agentCtx) => {
-        expect(agentCtx.agent?.id).toBe(SessionId('atomic'))
+      setup: async (agentCtx, agent) => {
+        expect(agent.id).toBe(SessionId('atomic'))
         agentCtx.on('session/created', () => void order.push('setup-listener:session/created'))
         agentCtx.on('agent/created', () => void order.push('setup-listener:agent/created'))
         order.push('setup:start')

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-hooks-claude-code` 在 agent（智能体）运行期间执行你现有 Claude Code 配置（`hooks.json` 或 settings 文件的 `hooks` key）中的钩子，让你已经写好的行为无需重写即可继续生效。你的钩子会在对应时刻触发：会话开始时、提示词提交时、工具运行前后、运行即将停止时，以及子 agent 启动或结束时。钩子可以带一条模型可见的消息阻塞提示词或工具调用、向对话附加额外上下文，或强制运行继续。当你持有 Claude Code command 钩子、希望它们原样在 harness 中工作时选择它；没有 Claude Code 对应物的行为应放入原生插件。
+`dsh-hooks-claude-code` 在 agent（智能体）运行期间执行你现有 Claude Code `hooks.json` 或 settings 文件中的 command 钩子，无需重写。受支持的钩子会在会话、提示词、工具、停止或子 agent 到达对应时刻时运行。它们可以带模型可见的原因阻塞提示词或工具调用、添加对话上下文，或强制模型再执行一轮。需要在 harness 中复用 Claude Code command 钩子时选择本包；没有 Claude Code 对应物的行为应使用原生插件。
 
 ## 目录
 

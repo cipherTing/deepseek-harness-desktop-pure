@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-spill-policy` 把过大的纯文本工具结果挡在模型上下文之外：当最终结果超过 `maxInlineBytes` 时，它通过 `ctx.spillStore` 保存完整文本，并把面向模型的结果替换为有界的首尾预览、后端定位信息与取回指引，模型可据此读取或搜索 spill 文件。它不注册任何服务，也不负责存储或预览机制——存储由已挂载的 `SpillStore` 后端负责，预览来自 `dsh-output-retention`；它只决定何时 spill 并组合通知。它是可选且尽力而为的：省略 `maxInlineBytes` 时完全禁用，spill 失败时原始结果仍然可见。第二条分支把同样的上限应用到 `run_code` 子调用结果的持久日志副本，因此回放与 UI 也不会无限增长。
+当过大的纯文本工具结果不应进入模型上下文时，挂载本包。超过 `maxInlineBytes` 的结果会变成有界的首尾预览，并附带定位信息与取回指引；完整文本仍可通过已配置的 spill 后端访问。spill 失败时原始结果仍然可见，省略 `maxInlineBytes` 则会禁用该策略。同一上限也约束 `run_code` 子调用的持久日志副本，但不会改变程序收到的值。
 
 ## 目录
 

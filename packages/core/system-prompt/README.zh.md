@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-system-prompt` 组装模型在每个步骤之前收到的系统提示词与工具 schema。插件贡献有序提示词段、动态 runtime 上下文、工具 schema 提供方与具名变量；循环每个步骤调用一次 `assemble()`，并把结果渲染为完整模型提示词。该包提供固定 harness 身份、全局部署 persona 前缀与后缀，而 agent 作用域的贡献会为单个 agent 遮蔽全局默认值。配置控制 harness 身份开场白、动态 runtime 上下文、部署 persona 前缀与后缀，以及显式的面向模型工具顺序。需要添加提示词段、提示词变量或工具 schema 来源时请选择本包——它是所有面向模型文案流经的组装点。
+`dsh-system-prompt` 让 agent 在每个模型步骤收到一份有序系统提示词与可用工具 schema。需要添加提示词段、动态 runtime 事实、可复用变量或工具 schema，或者控制固定 harness 身份、部署 persona、runtime 上下文和面向模型的工具顺序时，请使用本包。Agent 作用域的贡献会覆盖同名全局默认值，而不影响其他 agent。无效的完整提示词组合与未解析变量会使组装失败，不会向模型发送格式错误的提示词。
 
 ## 目录
 
@@ -132,7 +132,7 @@ ctx.systemPrompt.variable('cwd', ({ agent }) => agent?.session.header.cwd)
 
 #### 模型看到什么
 
-第一方段落依次渲染 harness 身份、部署 persona 前缀（含模型名称介绍）、可复用指令（包括生成的工具 SDK 和结构化输出指导），最后是携带环境信息的后缀：harness 源码（`10000`）、Web 表层（`10100`）和部署 persona 后缀（`10200`）。外部段落的顺序与组装监听器仍决定其最终结果。`includeHarnessIdentity: false` 仅省略这个固定开场白。空段会消失；带作用域的段与变量可以为一个 agent 遮蔽全局项。`system-prompt/assemble` waterfall 决定交付的提示词与工具 schema，除非一个有效段声明自身为 complete——此时该确切段会成为完整的系统提示词，而 waterfall 得到的上下文、工具与变量保持不变。有序动态上下文与段分离，只在存在时才会成为带来源的 user 角色快照；`includeRuntimeContext: false` 或带作用域的抑制器会移除全部这类上下文。
+第一方段落依次渲染 harness 身份、部署 persona 前缀（含模型名称介绍）、可复用指令（包括生成的工具 SDK 和结构化输出指导），最后是携带环境信息的后缀：harness 源码（`10000`）、Web 表层（`10100`）和部署 persona 后缀（`10200`）。外部段落的顺序与组装监听器仍决定其最终结果。`includeHarnessIdentity: false` 仅省略这个固定开场白。空段会消失；带作用域的段与变量可以为一个 agent 遮蔽全局项。`system-prompt/assemble` waterfall 决定交付的提示词与工具 schema，除非一个有效段声明自身为 complete——此时该确切段会成为完整的系统提示词，而 waterfall 得到的上下文、工具与变量保持不变。渲染后的提示词作为派生历史中的 system 角色消息——surface 第 0 号节点，或历史内更新之后最新的系统节点——到达模型；循环请求与 `request/header` 均不含单独的 `system` 字段。完整渲染结果为空时，循环通过有日志记录的空内容替换清除所有生效的系统节点，模型历史不再保留任何旧提示词。有序动态上下文与段分离，只在存在时才会成为带来源的 user 角色快照；`includeRuntimeContext: false` 或带作用域的抑制器会移除全部这类上下文。
 
 ##### harness 身份
 
@@ -146,13 +146,13 @@ You are an AI agent powered by DeepSeek Harness.
 
 #### KV Cache 影响
 
-模型、persona 前缀、工具与前置指令一致时，不同源码路径、本地 Web URL 或 persona 后缀值不会改变可复用的第一方前缀。Persona 前缀变化可能改变靠前的前缀。任何变更都可能从第一个变化的 token 起使复用失效；不保证提供方共享缓存或实际命中率。
+只要身份、persona、变量、段文本与顺序的渲染完全相同，前缀就保持稳定：渲染未变时系统节点保持不动，除非不具备能力的路由或新请求序列必须归并保留的历史内提示词。没有 `systemPromptUpdate` 时，非空提示词文本通过有日志记录的逐节点替换归并到首个系统节点，因此头节点重写会从首个变化的 token 起失去前缀复用；当已准备调用声明 `systemPromptUpdate: 'in-history'` 时，agent loop（智能体循环）会在同一请求序列延续期间把变化后的非空提示词追加到已缓存历史之后，因此直到该历史末尾的前缀仍可复用（[决策规则](../agent-loop/README.zh.md#understand-the-implementation)）。 模型、persona 前缀、工具与前置指令一致时，不同源码路径、本地 Web URL 或 persona 后缀值不会改变可复用的第一方前缀。Persona 前缀变化可能改变靠前的前缀。任何变更都可能从第一个变化的 token 起使复用失效；不保证提供方共享缓存或实际命中率。
 
 ### 工具 schema
 
 #### 模型看到什么
 
-对于已交付工具，模型会收到[生成工具 schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tools)中对每个 agent 可见的子集；限制与组装拦截完成后，按配置或字典序排列。扩展可以通过同一注册表贡献其他定义。段与 schema 提供方是独立的组装输入，因此工具限制不会移除独立注册的引导。
+对于已交付工具，模型会收到[生成工具 schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tools)中对每个 agent 可见的子集；限制与组装拦截完成后，按配置或字典序排列。扩展可以通过同一注册表贡献其他定义。段与 schema 提供方是独立的组装输入。限制不会移除段落注册：工具指导插件通过 `text({ scope })` 与 `ctx.tools.get(name, scope)` 返回空文本或选择适用片段。任意静态段落不会被自动改写。
 
 #### Token 影响
 

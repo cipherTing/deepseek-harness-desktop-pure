@@ -10,7 +10,6 @@ import { createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { assertBuiltBenchmarkRuntime } from '../support/built-worker.ts'
 import { PARENT_ID, response, resultText, syntheticHistory, TIME_ZERO, WORKLOAD } from './workload.ts'
@@ -82,7 +81,6 @@ async function measure(root: string, scenario: string): Promise<ContinuationRepo
   const adapter = new SyntheticAdapter(toolHeavy ? WORKLOAD.toolsPerLiveTurn : 0)
   let toolCalls = 0
   try {
-    await ctx.plugin(SessionProjectionRegistry)
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(JsonlSessionPersistence, { root, compression: 'zstd' })
     await ctx.plugin(AgentLoop, { agents: [] })

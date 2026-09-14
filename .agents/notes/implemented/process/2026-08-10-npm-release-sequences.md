@@ -8,7 +8,7 @@ English | [中文](2026-08-10-npm-release-sequences.zh.md)
 
 This repository held three unrelated groups of publishable packages and no channel that sent any of them to a registry.
 
-`packages/*/*` and `apps/*` form the runtime surface of `@deepseek-ai/dsh`; `vendor/*` holds nine rescoped Cordis framework packages, each carrying its upstream version; `native/landlock-run/packages/*` holds Linux platform packages with their own workflow. The three differ in version baseline, change rate, and build requirements: dsh moves with the product, vendor moves only when upstream is re-synced or a local modification changes, and native needs a musl toolchain and one build per architecture. Forcing them through one pipeline means every product release republishes the framework and the native binaries.
+`packages/*/*` and `apps/*` form the runtime surface of `@deepseek-ai/dsh`; `vendor/*` holds nine rescoped Cordis framework packages, each carrying its upstream version; `native/system/packages/*` holds Linux platform packages with their own workflow. The three differ in version baseline, change rate, and build requirements: dsh moves with the product, vendor moves only when upstream is re-synced or a local modification changes, and native needs a musl toolchain and one build per architecture. Forcing them through one pipeline means every product release republishes the framework and the native binaries.
 
 Two hard blockers sat in the way. All 217 workspace manifests set `private: true`, which npm refuses to publish. The subtler one was 933 hand-written `peerDependencies: "^0.0.1"` entries between sibling dsh packages: `pnpm pack` substitutes the `workspace:` protocol but leaves semver ranges alone, and `^0.0.1` means `>=0.0.1 <0.0.2` — it excludes `0.0.2`, and semver excludes prereleases from a range without a prerelease of its own, so it excluded `0.0.1-rc.1` too. Those entries never failed only because the version never left `0.0.1`.
 
@@ -24,7 +24,7 @@ Two hard blockers sat in the way. All 217 workspace manifests set `private: true
 |---|---|---|---|---|
 | dsh | Publish set: non-experimental `packages/*/*` + `apps/*`; private experimental packages join only the shared version bump | one version for the publish set, private dsh packages, and workspace root, `0.0.x` | `dsh-v<version>` | `release.yml` (pack) / `release-publish.yml` (publish) |
 | vendored framework | the nine `vendor/*` packages | each package on its own version line | `vendor-<package>-v<version>` (one per package) | `release-vendor.yml` (pack) / `release-vendor-publish.yml` (publish) |
-| native | `native/landlock-run/packages/*` | its own `0.0.x` | `landlock-run-v<version>` | `landlock-run-release.yml` |
+| native | `native/system/packages/*` | its own `0.0.x` | `node-addon-system-v<version>` | `node-addon-system-release.yml` |
 
 All three publish to the `@deepseek-ai` scope on npmjs.com, and access is per sequence rather than per scope: the vendored framework and the native packages are `public`, and the dsh family has been `public` since its own sequence went public on 2026-08-13 ([rationale](../../archived/process/2026-08-13-public-vendor-and-native-sequences.md)). No publish path passes `--access`, because one flag cannot serve sequences that disagree and would override the manifest that owns the level.
 
@@ -117,11 +117,13 @@ The dsh family applies the repository's publication payload policy, which reject
 
 The `pack` job walks the whole release set once, packing each member into one directory, writes the upload order, and uploads that directory as one artifact; it lives in `release.yml` / `release-vendor.yml`. The release set is one unit — half the packages can never reach the registry while the other half is still building.
 
-`pack` carries no credentials and runs on every pull request and master push, so a pull request proves the release set still packs. Publication lives in a separate `release-publish.yml` / `release-vendor-publish.yml` workflow that is `workflow_dispatch`-only (so it never appears as a PR check): it repacks the current tree and then publishes each entry in order, behind the `npm-publish` environment for human approval. Pack runs are grouped per ref so concurrent pull requests do not displace each other; the `publish` job carries the global `Release-publish` group, because dist-tags are shared registry state.
+`pack` carries no credentials and runs on every pull request and master push, so a pull request proves the release set still packs. Publication lives in a separate `release-publish.yml` / `release-vendor-publish.yml` workflow that is `workflow_dispatch`-only (so it never appears as a PR check): it repacks the current tree and then publishes each entry in order, behind the `npm-publish` environment for human approval. Pack runs are grouped per ref so concurrent pull requests do not displace each other; the `publish` job carries the global `Release-publish` group, because dist-tags are shared registry state. After a dsh publication succeeds, the release operator verifies its Session writer against the [release record](../../../../docs/session-format-status.md#updating-the-record) and updates that record when a higher Session format has shipped.
 
 A dsh verification installs the vendored family's pack output too. The harness packages declare the vendored framework as a peer, those packages live in another sequence, and the credential-free job cannot fetch them from a private registry — so the dsh `pack` job packs the vendored family for verification while publishing only the dsh set. The publish workflow (`release-publish.yml`) repacks the current tree and publishes only the dsh set.
 
 The verification also packs the Landlock entry, which `dsh-sandbox-local` declares as a plain dependency, and omits optional dependencies. The platform packages behind those optional entries need a musl toolchain and one build per architecture, so a job on one runner cannot produce them; a consumer that cannot install them must still start, which is what optional means here. The verification therefore reads a directory by its contents rather than a pack order, because a directory can hold tarballs packed only to satisfy a cross-sequence dependency.
+
+The installed-consumer probe captures npm's HTTP diagnostics and includes them when installation fails. Registry response codes and cache status remain visible even when npm reports a failed peer manifest fetch as `ERESOLVE` with an undefined version.
 
 ### Repository changes this carried
 

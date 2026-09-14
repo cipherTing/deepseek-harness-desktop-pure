@@ -46,6 +46,7 @@ import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
 import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
 import CordisHostRunner from '@deepseek-ai/dsh-cordis-host-runner'
 import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
+import * as ToolPresent from '@deepseek-ai/dsh-tool-present'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
@@ -205,7 +206,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     dir: 'tools',
     source: 'packages/core/tools/src/ptc.ts',
     requires: ['ctx.tools', 'ctx.codeRuntime (execution time)', 'ctx.systemPrompt'],
-    writes: ['tool/call', 'one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call', 'tool/result'],
+    writes: ['tool/call', 'one tool/ptc-dispatch-start + tool/ptc-dispatch pair per bridged sub-call', 'tool/result'],
     // The registry's OWN tool: run_code exists only under a non-native mode
     // (the registry registers it in its constructor; the code runtime is read
     // at assembly/execution time, so the schema harvest needs none mounted).
@@ -240,6 +241,18 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-present',
+    dir: 'tool-present',
+    source: 'packages/fs/tool-present/src/index.ts',
+    requires: ['ctx.tools', 'ctx.fs', 'ctx.sessionProjections'],
+    writes: ['tool/call', 'deliverables/presented after a successful final result', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(LocalFileSystem)
+      await ctx.plugin(ToolPresent)
+    },
+    note: 'Deliveries belong to the calling Session; Web ui-deliverables supplies source-file opening and cards.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-pwsh',

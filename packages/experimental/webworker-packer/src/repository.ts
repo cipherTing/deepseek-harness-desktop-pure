@@ -21,7 +21,7 @@ import type { ConfigTree, ImageTree, PackResult } from './pack.ts'
  * package family contributes its unchanged JavaScript entry from `native/`;
  * examples and python never occur on a roster's dependency chain.
  */
-const WORKSPACE_SCAN_ROOTS = ['vendor', 'packages', 'native/landlock-run/packages', 'apps']
+const WORKSPACE_SCAN_ROOTS = ['vendor', 'packages', 'native/system/packages', 'apps']
 
 /** Composition entry point package: the `dsh` CLI, run from source. */
 const CLI_PACKAGE = 'apps/cli'

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-experimental-code-runtime-python` provides the private source-checkout `PythonCodeRuntime`, a CPython-subprocess implementation of the [`dsh-code-runtime`](../../code-runtime/code-runtime/README.md) seam. It registers as `codeRuntime` with `language: 'python'` and `isolation: 'process'`, spawning a fresh CPython 3.10+ child per `run()` and executing the program as an async function body over a versionless JSON-lines protocol on the child's fd 3 (stdout/stderr stay free for the program's own output). The host side (`src/protocol.ts`) treats every inbound frame as hostile and rebuilds it before reading; the Python side (`py/protocol.py`) mirrors the message vocabulary. Containment — not a security boundary, model code has bash-equivalent trust — comes from a tempdir-only environment, `RLIMIT_CPU`/`RLIMIT_AS`, a wall-clock ceiling, and `SIGTERM`→grace→`SIGKILL` process-group teardown, with all caps validated at plugin load.
+This private experimental package lets source-checkout compositions run model-generated Python in a fresh CPython 3.10+ subprocess for each request. Programs can use top-level `await` and `return`, call configured bindings, and write normal stdout/stderr while receiving explicit completion or failure results. Resource budgets and process-group teardown contain runaway work, but the subprocess is not a security boundary: model code has bash-equivalent trust, no state persists across runs, and no shipped profile enables this runtime.
 
 ## Table of Contents
 

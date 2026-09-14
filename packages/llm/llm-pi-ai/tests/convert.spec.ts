@@ -333,7 +333,7 @@ describe('toPiContext', () => {
     })
   })
 
-  it('splits mixed user text + tool results and folds history system messages', () => {
+  it('splits mixed user text + tool results and lifts a leading system message into systemPrompt', () => {
     const context = toPiContext({
       provider: 'deepseek',
       model: 'm',
@@ -351,7 +351,8 @@ describe('toPiContext', () => {
         }),
       ],
     })
-    expect(context.messages.map(message => message.role)).toEqual(['user', 'user', 'toolResult'])
+    expect(context.systemPrompt).toBe('rule')
+    expect(context.messages.map(message => message.role)).toEqual(['user', 'toolResult'])
   })
 
   it('skips plugin-added (unknown) blocks in assistant content', () => {

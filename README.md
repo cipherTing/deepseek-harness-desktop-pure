@@ -26,6 +26,8 @@
 
 <p align="center">简体中文 · <a href="README.en.md">English</a></p>
 
+> **当前集成的 DSH 内核：`0.1.5-rc.2`（`dsh-v0.1.5-rc.2`）**
+
 > **独立发行说明**
 >
 > DeepDive 原名 DeepSeek Harness Desktop。为清晰区分本项目与 DeepSeek Harness 的名称和品牌，现以 DeepDive 独立发布；本项目不隶属于、也未获 DeepSeek 背书。

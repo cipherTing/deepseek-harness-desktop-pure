@@ -55,7 +55,7 @@ const eventRecords = current.events.map(catalog.encodeCurrentEvent)
 <details>
 <summary>实现细节——点击展开</summary>
 
-迁移链在构造时校验唯一且无缺口的顺序。Catalog 把一个行 decoder 与有状态的相邻事件 transformer 组合起来，只保留其有界状态与最终当前事件，并在 `finish()` 时执行目标校验；只有调用方决定是否发布该结果以及如何发布。
+迁移链在构造时校验唯一且无缺口的顺序。源切点可以在 EOF 前保持未知；依赖头部切点的 Stage 拒绝缺失值，而基于标记的 Stage 从已发出的事件推导切点。每个 Stage 在完成时返回精确的目标切点，且必须与预声明切点一致。Catalog 把一个行 decoder 与有状态的相邻事件 transformer 组合起来，只保留其有界状态与最终当前事件，并在 `finish()` 时执行目标校验；只有调用方决定是否发布该结果以及如何发布。
 
 | 文件 | 职责 |
 |---|---|

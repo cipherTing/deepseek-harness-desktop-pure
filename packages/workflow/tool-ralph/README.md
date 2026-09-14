@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-ralph` gives the model the `ralph` tool: a fixed foreground workflow that hands one immutable objective to a sequence of fresh child agents, each starting with no conversation seed and carrying only the previous bounded report. It is a specialized orchestration policy built on the workflow and subagent capabilities — no Ralph mode is added to the agent loop, and the same-session goal domain stays independent. The call returns when a worker reports completion or a concrete blocker, or at the round limit; completion and blockers are worker reports, not independent certification. Use it only when the direct human explicitly asks for a Ralph loop or fresh-agent iterative execution; ordinary long-running objectives belong to goal tools, and bounded delegation belongs to subagents or workflows.
+`ralph` runs a foreground sequence of fresh child agents against one immutable objective, with each round receiving only the previous bounded report and shared workspace state. It returns when a worker reports completion or a concrete blocker, or when the configured round limit is reached; those reports are not independently verified. Parent conversation and prior child sessions are never copied into a new round. Use it only when the direct human explicitly requests Ralph-style fresh-agent iteration; use goal tools for ordinary long-running work and subagents or workflows for bounded delegation.
 
 ## Table of Contents
 

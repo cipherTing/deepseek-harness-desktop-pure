@@ -3,6 +3,7 @@ import type { AssistantStreamRecord } from '@deepseek-ai/dsh-llm'
 import {
   SessionFormatUnsupportedMigrationError,
   defineSessionFormatMigration,
+  sessionFormatCount,
 } from '@deepseek-ai/dsh-session-format'
 import type {
   SessionFormatEvent,
@@ -62,7 +63,7 @@ class TransformedReleasedV1ToV2Stage implements SessionFormatMigrationStage {
     assertReleasedV1Header(input.sourceHeader)
     this.state = {
       sourceHeader: input.sourceHeader,
-      sourceCut: input.sourceInheritedEventCount,
+      sourceCut: sessionFormatCount(input.sourceInheritedEventCount, 'format v1 inherited event count'),
       mapping: new Map(),
       legacyTurns: legacyTurnState(),
       pending: undefined,

@@ -3,12 +3,14 @@ import { readFileSync, readdirSync } from 'node:fs'
 import test from 'node:test'
 
 import {
+  auditIssue,
   initializeIssueStartDate,
   initializePullRequestStartDates,
   issueSnapshot,
   nextResolvingIssueStatus,
   parseReferences,
   projectDate,
+  repairIssueLabels,
   retainIssueReferences,
   resolvingIssueStatusCommand,
   requiresPullRequestPolicy,
@@ -246,6 +248,101 @@ test('reserves PR kind and legacy labels for pull requests', () => {
     )
   }
   assert.deepEqual(validateIssue({ ...legalIssue, labels: ['area/web', 'source/member'] }), [])
+})
+
+test('removes reserved labels from Issues before validation', async (t) => {
+  const previousToken = process.env.GH_TOKEN
+  process.env.GH_TOKEN = 'test-token'
+  t.after(() => {
+    if (previousToken === undefined) delete process.env.GH_TOKEN
+    else process.env.GH_TOKEN = previousToken
+  })
+  const requests = []
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({ url, method: options.method })
+    assert.equal(options.headers.Authorization, 'Bearer test-token')
+    if (url.endsWith('/labels/bug-fix')) {
+      return Response.json({ message: 'Label does not exist' }, { status: 404 })
+    }
+    return Response.json([])
+  })
+
+  const issue = {
+    ...legalIssue,
+    number: 42,
+    labels: ['area/web', 'kind/bug-fix', 'bug-fix', 'source/member'],
+  }
+  const repaired = await repairIssueLabels(issue)
+
+  assert.deepEqual(repaired.labels, ['area/web', 'source/member'])
+  assert.deepEqual(issue.labels, ['area/web', 'kind/bug-fix', 'bug-fix', 'source/member'])
+  assert.deepEqual(validateIssue(repaired), [])
+  assert.deepEqual(requests, [
+    {
+      url: 'https://api.github.com/repos/deepseek-harness/deepseek-harness/issues/42/labels/kind%2Fbug-fix',
+      method: 'DELETE',
+    },
+    {
+      url: 'https://api.github.com/repos/deepseek-harness/deepseek-harness/issues/42/labels/bug-fix',
+      method: 'DELETE',
+    },
+  ])
+})
+
+test('deletes a stale audit comment after repairing its only violation', async (t) => {
+  const previousToken = process.env.GH_TOKEN
+  process.env.GH_TOKEN = 'test-token'
+  t.after(() => {
+    if (previousToken === undefined) delete process.env.GH_TOKEN
+    else process.env.GH_TOKEN = previousToken
+  })
+  const requests = []
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({ url, method: options.method ?? 'GET' })
+    if (url.endsWith('/issues/42')) {
+      return Response.json({
+        node_id: 'issue-id',
+        labels: [{ name: 'area/web' }, { name: 'kind/bug-fix' }],
+        type: { name: 'Bug' },
+        state: 'open',
+        state_reason: null,
+      })
+    }
+    if (url.endsWith('/graphql')) return Response.json({ data: projectGraphqlData() })
+    if (url.endsWith('/labels/kind%2Fbug-fix')) return Response.json([{ name: 'area/web' }])
+    if (url.endsWith('/issues/42/comments?per_page=100')) {
+      return Response.json([
+        {
+          id: 99,
+          user: { type: 'Bot' },
+          body: '<!-- dsh-issue-policy -->\nold audit',
+        },
+      ])
+    }
+    if (url.endsWith('/issues/comments/99')) return new Response(null, { status: 204 })
+    return Response.json({ message: 'unexpected request' }, { status: 500 })
+  })
+
+  assert.deepEqual(await auditIssue(42), [])
+  assert.deepEqual(
+    requests.map(({ url, method }) => ({ path: new URL(url).pathname + new URL(url).search, method })),
+    [
+      { path: '/repos/deepseek-harness/deepseek-harness/issues/42', method: 'GET' },
+      { path: '/graphql', method: 'POST' },
+      {
+        path: '/repos/deepseek-harness/deepseek-harness/issues/42/labels/kind%2Fbug-fix',
+        method: 'DELETE',
+      },
+      {
+        path: '/repos/deepseek-harness/deepseek-harness/issues/42/comments?per_page=100',
+        method: 'GET',
+      },
+      {
+        path: '/repos/deepseek-harness/deepseek-harness/issues/comments/99',
+        method: 'DELETE',
+      },
+    ],
+  )
 })
 
 test('keeps terminal Status aligned with the native close reason', () => {

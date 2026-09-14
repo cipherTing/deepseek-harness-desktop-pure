@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect } from 'react'
 import type {
   AssistantMessageNode, ChatNode, ChatNodeOwnerProps, ChatNodeViewProps, ChatSnapshot,
   ChatViewSlotProps, CommandNode, CompactionSummaryNode, ContextMessageNode, ConversationNode,
-  LegacyConversationSlice, ModelRetryNode, RunningToolCall, SelectionTarget, SteeringMessageNode,
+  LegacyConversationSlice, ModelRetryNode, RunningToolCall, SteeringMessageNode,
   ToolCallBlock, ToolResultNode, TurnErrorNode, TurnMaxTokensNode, UseChatNodeTurnData,
   TranscriptViewMode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -42,6 +43,9 @@ import { formatRunDuration } from '../src/client/chat/message-chrome.ts'
 import { ChatSnapshotBuilder } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
 import type { TurnProcessSpec } from '../src/client/contract/turn-process.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
+
+// Every session-scope fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
 
 afterEach(() => {
   cleanup()
@@ -245,7 +249,6 @@ function makeHarness(
   const useChatNodeProcess = bindKeyedSnapshotSelector(
     key => chatSource.source.getSnapshot().nodes.processSource(key),
   )
-  const openDetails = vi.fn<(t: SelectionTarget) => void>()
   const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
   const loadOlder = vi.fn()
   const loadThrough = vi.fn<(seq: number) => Promise<void>>().mockResolvedValue(undefined)
@@ -267,7 +270,6 @@ function makeHarness(
     callId: string
     toolName: string
     block: ToolCallBlock
-    selectedCallId: string | undefined
     openFile: ChatNodeOwnerProps['openFile']
     inspectCall: ChatNodeOwnerProps['inspectCall']
   }> = []
@@ -339,7 +341,6 @@ function makeHarness(
           callId: block.callId,
           toolName,
           block,
-          selectedCallId: nodeOwner.selectedCallId,
           openFile: nodeOwner.openFile,
           inspectCall: nodeOwner.inspectCall,
         }
@@ -363,6 +364,7 @@ function makeHarness(
   // ChatView never invokes it (pass-through stub).
   const SessionProviderStub: ChatViewSlotProps['SessionProvider'] = ({ children }) => <>{children}</>
   const props: ChatViewSlotProps = {
+    usePanelInfo: selector => selector({ activePanelId: null }),
     sessionId: SID,
     useSession: bindSnapshotSelector(session.source),
     useChat: bindSnapshotSelector(chatSource.source),
@@ -371,6 +373,7 @@ function makeHarness(
     useConversation: bindSnapshotSelector(createSnapshotStore(EMPTY_CONVERSATION_SNAPSHOT)),
     useTrajectory: (() => { throw new Error('unused') }),
     useSessions: emptySessions(),
+    useResource,
     useSessionPendingInteraction: bindSnapshotSelector(
       createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
     ),
@@ -392,7 +395,6 @@ function makeHarness(
     viewRequest: null,
     openView,
     completeViewRequest: () => {},
-    openDetails,
     openFile,
     loadOlder,
     loadThrough,
@@ -421,12 +423,11 @@ function makeHarness(
     }
     session.set(sessionUpdate)
   }
-  const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, setSession: session.set, setChat: chatSource.set, ChatView, props,
-    openDetails, openFile, loadOlder, loadThrough, openView,
+    openFile, loadOlder, loadThrough, openView,
     setOutline: (value: unknown) => { outlineValue = value },
-    chatScroll, forkAt, setSelection, toolOwners,
+    chatScroll, forkAt, toolOwners,
     setTranscriptView: (mode: TranscriptViewMode) => { transcriptView.set(mode) },
     setNodeRenderer: (renderer: React.ComponentProps<typeof ChatNodeSeat>['renderSlot']) => {
       nodeSlotOverride = renderer
@@ -564,7 +565,7 @@ describe('ChatView', () => {
     const afterMount = railRenders
     expect(afterMount).toBeGreaterThan(0)
 
-    act(() => { h.setSelection({ turnSeq: 3, callId: 'a', toolName: 'bash' }) })
+    act(() => { h.setTranscriptView('compact') })
 
     expect(railRenders).toBe(afterMount)
   })
@@ -2083,14 +2084,6 @@ describe('ChatView', () => {
     expect(rowRenders).toBe(afterMount)
   })
 
-  it('updates the selected call id handed to the Tool seat', () => {
-    const h = makeHarness({ nodes: [toolResult(3, 'a')] })
-    render(<h.ChatView {...h.props} />)
-    expect(h.toolOwners.at(-1)?.selectedCallId).toBeUndefined()
-    act(() => { h.setSelection({ turnSeq: 3, callId: 'a', toolName: 'bash' }) })
-    expect(h.toolOwners.at(-1)?.selectedCallId).toBe('a')
-  })
-
   it('hands running calls to a live Tool group', () => {
     const h = makeHarness({ runningCalls: [runningCall('r1')] }, { running: true })
     const view = render(<h.ChatView {...h.props} />)
@@ -2183,7 +2176,7 @@ describe('ChatView', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
       key: 'conversation.chat.node',
-      owner: { node: { kind: 'tool-call' }, selectedCallId: undefined },
+      owner: { node: { kind: 'tool-call' } },
       entryKey: 'tool-call',
     })
     const owner = calls[0]?.owner as RoutedChatNodeOwner
@@ -2240,18 +2233,6 @@ describe('ChatView', () => {
     await act(async () => { h.toolOwners[0]!.openFile('empty.ts') })
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('无法打开此文件')
-    })
-  })
-
-  it('names a workspace-folder Host refusal as a folder', async () => {
-    const openFile = vi.fn<(path: string) => Promise<void>>()
-      .mockRejectedValueOnce(new Error(''))
-    const h = makeHarness({ nodes: [toolResult(3, 'a')] })
-    h.props.openFile = openFile
-    render(<h.ChatView {...h.props} />)
-    await act(async () => { h.toolOwners[0]!.openFile('.') })
-    await waitFor(() => {
-      expect(screen.getByRole('dialog', { name: '无法打开文件夹' }).textContent).toContain('无法打开此文件夹')
     })
   })
 

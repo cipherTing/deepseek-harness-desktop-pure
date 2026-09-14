@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-A tool call can hang for a long time — a slow web fetch, a search that never returns — and without a limit the model waits indefinitely, stalling the whole session. `dsh-tool-call-timeout-policy` arms a cooperative deadline for calls that declare a limit: it asks the tool to stop through `exec.signal`, then maps a settled cancellation to a clear `Error: tool call timed out after <ms>ms` result. A tool that ignores or slowly handles cancellation keeps the caller waiting until it settles; the plugin never hard-stops downstream work. The limit comes from each tool's own configuration, so the plugin itself is zero-config, and it ships enabled in the `dsh` base bundle.
+Use this package to give tool calls their configured cooperative time limits and return a clear timeout error to the model after cancellation settles. Calls that finish in time are unchanged. A tool that ignores or slowly handles cancellation can keep the caller waiting because the package cannot hard-stop downstream work. Each tool supplies its own limit; the package has no configuration and is enabled in the `dsh` base bundle.
 
 ## Table of Contents
 

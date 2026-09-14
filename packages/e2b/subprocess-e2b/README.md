@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-subprocess-e2b` runs the agent's shell commands and terminals inside the remote sandbox: the agent can execute Bash, open interactive terminals, and read their output exactly as with local execution, while nothing runs on the host machine. Existing command, terminal, and language-server features keep working unchanged — no E2B-specific tools are needed. Secrets and host environment variables never leak into the sandbox: only environment entries the agent explicitly requests are passed along. Use it together with `dsh-e2b` and `dsh-fs-e2b` so commands, terminals, and files share one remote world. The main cost is remote latency — each command starts with a short asynchronous setup instead of launching instantly.
+`dsh-subprocess-e2b` runs the agent's shell commands and interactive terminals inside an E2B remote sandbox instead of the host. Existing command, terminal, and language-server workflows continue without E2B-specific tools. Host environment variables and secrets are excluded; only explicitly requested environment entries enter the sandbox. Use it with `dsh-e2b` and `dsh-fs-e2b` so commands, terminals, and files share one sandbox. Remote execution adds latency because each command requires asynchronous setup.
 
 ## Table of Contents
 

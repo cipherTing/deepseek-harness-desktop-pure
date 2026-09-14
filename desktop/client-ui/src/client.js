@@ -14,6 +14,13 @@ window.__ModuleLoader__.load({
       Modal,
     } = require("@deepseek-ai/dsh-client-ui-primitives");
 
+    // The macOS overlay leaves the custom brand group a little high. Relative
+    // positioning moves both slot occupants' paint, so the logo row keeps its
+    // 60px layout and Windows keeps the upstream position.
+    const macOSBrandTitleAdjustment = navigator.userAgent.includes("Macintosh")
+      ? "[data-slot=\"sidebar.brand.mark\"]>*,[data-slot=\"sidebar.brand.name\"]>*{position:relative;top:4px}"
+      : "";
+
     // ── styles ─────────────────────────────────────────────────────────────
     const css = [
       ".dab-section{padding:8px 0;display:flex;flex-direction:column;gap:8px}",
@@ -32,6 +39,7 @@ window.__ModuleLoader__.load({
       ".dab-badgeRail{align-self:center;width:10px;height:10px;margin:0 0 4px;padding:0;border:2px solid var(--dsw-alias-bg-layer-1);border-radius:50%;font-size:0;line-height:0}",
       ".dab-brandLabel{font-size:17px;font-weight:600;letter-spacing:0;white-space:nowrap}",
       ".dab-brandVersion{display:inline-flex;align-items:center;height:16px;padding:0 4px;border-radius:3px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-label-primary);font-family:var(--ds-font-family-code);font-size:8px;font-weight:500;line-height:16px}",
+      macOSBrandTitleAdjustment,
       ".dab-updateDialog{width:min(560px,100%);max-height:calc(100vh - 48px);min-height:0}",
       ".dab-updateDialogContent{display:flex;min-height:0;flex:1 1 auto;overflow:hidden}",
       ".dab-updateDialogContent>div:last-child{min-height:0;flex:1 1 auto;overflow:hidden}",

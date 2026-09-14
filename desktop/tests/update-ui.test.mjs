@@ -230,6 +230,20 @@ test('update badge opens release details only after the user clicks it', async (
   assert.ok(view.getByTestId('modal-footer').contains(start))
 })
 
+test('macOS brand title moves down without changing the row layout', () => {
+  loadClientUi()
+  const style = document.querySelector('style[data-plugin-css="@deepseek-ai/dsh-desktop-client-ui/about.module.css"]')
+  assert.ok(style)
+  assert.match(style.textContent, /\[data-slot=\"sidebar\.brand\.mark\"\]>\*,\[data-slot=\"sidebar\.brand\.name\"\]>\*\{position:relative;top:4px\}/)
+})
+
+test('Windows keeps the upstream brand position', () => {
+  loadClientUi({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' })
+  const style = document.querySelector('style[data-plugin-css="@deepseek-ai/dsh-desktop-client-ui/about.module.css"]')
+  assert.ok(style)
+  assert.doesNotMatch(style.textContent, /sidebar\.brand\.(?:mark|name)/)
+})
+
 test('manual update check reports the release without opening the dialog', async () => {
   const { components, t } = loadClientUi()
   const AboutSection = components.get('settings.section')

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-jobs` lets tools run long work as background jobs: the work gets a stable `<kind>-N` id, keeps running while the agent moves on, and the owning agent can read its output, wait for it with a timeout, or request cancellation at any time. Jobs belong to the agent session that started them, so one agent's work is never visible to another, and completion reaches the owner as an in-session notice rather than by polling. This package ships the contract only: the process-local registry lives in `dsh-jobs-local`, and the model-facing controls and completion notices live in `dsh-tool-jobs`. Load an implementation to get background jobs; without one, `ctx.jobs` does not exist and `start()` cannot run.
+`dsh-jobs` lets tools keep long-running work active while an agent continues. Each job receives a stable `<kind>-N` id, and its owning agent can read output, wait with a timeout, or request cancellation. Ownership is scoped to the agent session, so other agents cannot inspect or stop the job; completion arrives as an in-session notice without polling. Background jobs can start only when the deployment supplies job execution.
 
 ## Table of Contents
 
