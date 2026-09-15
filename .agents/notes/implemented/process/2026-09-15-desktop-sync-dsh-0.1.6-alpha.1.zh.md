@@ -22,7 +22,7 @@ DeepDive 需要接入官方 tag `dsh-v0.1.6-alpha.1`，精确提交为 `0a15e36e
 
 上游新增的 `verify-repository-references` gate 禁止维护文件中出现 commit hash，而 fork 的治理规则要求记录精确的同步上游提交。该 gate 排除 `AGENTS.md`、`desktop/UPSTREAM_COMMIT` 以及 `desktop-sync` 与 `desktop-upstream-ancestry` 笔记，其余位置仍然拒绝 commit hash。
 
-根 README 标明集成的 DSH 内核为 `0.1.6-alpha.1`（`dsh-v0.1.6-alpha.1`）。`desktop/UPSTREAM_COMMIT` 只记录 `dsh-v0.1.6-alpha.1`。独立的 DeepDive Desktop 版本保持 `0.1.13`。
+根 README 标明集成的 DSH 内核为 `0.1.6-alpha.1`（`dsh-v0.1.6-alpha.1`）。`desktop/UPSTREAM_COMMIT` 只记录 `dsh-v0.1.6-alpha.1`。独立的 DeepDive Desktop 版本在本次集成中升到 `0.1.14`。
 
 ## Alternatives considered
 
@@ -38,7 +38,7 @@ DeepDive 需要接入官方 tag `dsh-v0.1.6-alpha.1`，精确提交为 `0a15e36e
 
 同步后的树以已验证的 0.1.6-alpha.1 提交为祖先，相对该 tag 只保留 fork 增量，并保留经过审查的 Tauri Desktop 改动。官方 Electron 产品仍不进入本 fork 的 Desktop workspace。
 
-Desktop 包继续以 `0.1.13` 独立编号；上游内核的可追溯信息分别记录在 README 和 `desktop/UPSTREAM_COMMIT` 中。
+Desktop 包继续以 `0.1.14` 独立编号；上游内核的可追溯信息分别记录在 README 和 `desktop/UPSTREAM_COMMIT` 中。
 
 所有被吸收的 Harness 包与 client seam 现在都描述重命名后的 PTC 运行时，部署的 Desktop 运行时按当前包名解析该 seam。
 

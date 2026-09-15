@@ -22,7 +22,7 @@ The `settings.update` seat and the asynchronous Session export carrier stay in p
 
 The new upstream `verify-repository-references` gate rejects commit hashes in maintained files, while fork policy requires the exact synchronized upstream commit in its own governance. The gate excludes `AGENTS.md`, `desktop/UPSTREAM_COMMIT`, and the `desktop-sync` and `desktop-upstream-ancestry` notes, and still rejects hashes everywhere else.
 
-The root README identifies the integrated DSH kernel as `0.1.6-alpha.1` (`dsh-v0.1.6-alpha.1`). `desktop/UPSTREAM_COMMIT` records only `dsh-v0.1.6-alpha.1`. The independent DeepDive Desktop version remains `0.1.13`.
+The root README identifies the integrated DSH kernel as `0.1.6-alpha.1` (`dsh-v0.1.6-alpha.1`). `desktop/UPSTREAM_COMMIT` records only `dsh-v0.1.6-alpha.1`. The independent DeepDive Desktop version advances to `0.1.14` in this integration.
 
 ## Alternatives considered
 
@@ -38,7 +38,7 @@ The root README identifies the integrated DSH kernel as `0.1.6-alpha.1` (`dsh-v0
 
 The synchronized tree has the verified 0.1.6-alpha.1 commit as an ancestor, is ahead-only relative to that tag, and keeps the reviewed Tauri Desktop delta. The official Electron product stays outside this fork's Desktop workspace.
 
-The Desktop package stays independently versioned at `0.1.13`; upstream kernel traceability is recorded separately in the README and `desktop/UPSTREAM_COMMIT`.
+The Desktop package stays independently versioned at `0.1.14`; upstream kernel traceability is recorded separately in the README and `desktop/UPSTREAM_COMMIT`.
 
 Every absorbed Harness package and client seam now describes the renamed PTC runtime, and the deployed Desktop runtime resolves that seam by its current package name.
 
