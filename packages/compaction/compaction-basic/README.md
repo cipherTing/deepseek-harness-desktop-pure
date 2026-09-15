@@ -119,6 +119,8 @@ A direct `ctx.llm.stream()` call uses the configured provider/model pair and cap
 
 ### The region transaction
 
+Failed summary requests dispatch synchronous `compaction/summary-error` after checking cancellation and selection stability. A recovery listener must record a durable input change before requesting retry. The backend re-derives the selected messages and refreshes their token prices and shrink baseline. The image-offload plugin owns image selection; its recorded omissions remain effective if the summary later fails or is cancelled.
+
 The transaction validates the surface span and the durable lock, appends `compaction/start`, summarizes through the hook, revalidates stability (whole-surface for automatic calls, selected-span for manual calls), rejects a summary that does not shrink its source, appends `compaction/summary` plus the replacement `user/message`, and makes exactly one `compaction/end` attempt. A live unmatched start is the durable lock: an unmatched marker before a newer `session/end-seed` is stale evidence from a prior lifecycle and does not block; one after that boundary reports `busy`. A failed close deliberately leaves a blocking orphan. Cancellation remains authoritative after cleanup and durability.
 
 ### Config resolution
@@ -134,7 +136,7 @@ The transaction validates the surface span and the durable lock, appends `compac
 | [`src/summarizer.ts`](src/summarizer.ts) | Default `ctx.llm.stream()` summarization, checkpoint framing, safe-summary projection |
 | [`src/config.ts`](src/config.ts) | Load-time validation and routed-model policy resolution |
 | [`src/types.ts`](src/types.ts) | `BasicCompactionConfig` and resolved policy vocabulary |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
+| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. The durable bracket remains observable in the session log. |
 
 </details>
 
@@ -252,7 +254,7 @@ These limits define when automatic condensation is a poor fit or needs special c
 This Dev Note is working context for maintainers and is explicitly non-authoritative; shipped behavior lives in the sections above, the package code, and the linked Agent Notes.
 
 - **Default ratios, undecided** — `thresholdRatio: 0.8` and `retainRatio: 0.16` are fixed defaults; per-model tuning via `modelPolicies` exists, but no corpus-backed guidance on ideal values is recorded.
-- **Tokenizer-accurate measurement, deferred** — the token meter's four-characters-per-token heuristic underprices CJK text and JSON schemas; exact tokenization remains an open direction for the measurement service.
+- **Tokenizer-accurate measurement, deferred** — the token meter's four-characters-per-token heuristic underprices CJK text and JSON Schema documents; exact tokenization remains an open direction for the measurement service.
 - **Overflow recovery beyond canonical errors, undecided** — recovery triggers on `CONTEXT_WINDOW_EXCEEDED` only; other provider-side context failures are not classified.
 
 </details>

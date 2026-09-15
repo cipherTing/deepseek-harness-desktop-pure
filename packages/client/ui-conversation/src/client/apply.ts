@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import { IconPaperclipOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { createSnapshotStore, type BoundActions } from '@deepseek-ai/dsh-client-store'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -90,6 +91,17 @@ interface WorkspaceNavigation {
     workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
     beforeOpen: (sessionId: SessionId) => void,
   ): Promise<void>
+}
+
+/** Action registration used by the composer without importing its command-UI consumer. */
+interface FileCommandRegistry {
+  register(contribution: {
+    name: string
+    label(): string
+    icon: typeof IconPaperclipOutline16
+    available(session: { sessionId: SessionId }): boolean
+    ui: { kind: 'action'; run(session: { sessionId: SessionId }): void }
+  }): () => void
 }
 
 /** Resolve the session-scoped Conversation action face, failing loud. */
@@ -197,6 +209,17 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const inputHub = new InputHub(ctx, t)
   const composerBlocks = new ComposerBlockRegistry()
 
+  ctx.inject(['commandUi'], (scope) => {
+    const commands = scope.get('commandUi') as FileCommandRegistry
+    scope.effect(() => commands.register({
+      name: 'file',
+      label: () => t('input.file'),
+      icon: IconPaperclipOutline16,
+      available: session => inputHub.canPickFiles(session.sessionId),
+      ui: { kind: 'action', run: (session) => { inputHub.pickFiles(session.sessionId) } },
+    }), 'ui-conversation: File action')
+  })
+
   // Conversation assembly and input share the Session binding lifecycle. The
   // source roster is installed before any consuming Slot entry.
   ctx.uiSession.provide({
@@ -299,6 +322,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     children: {
       'conversation.input.attachments': { kind: 'single', scope: 'session-maybe' },
       'conversation.input.overlay': { kind: 'list', scope: 'session' },
+      'conversation.input.permission': { kind: 'single', scope: 'session' },
       'conversation.input.left': { kind: 'list', scope: 'session' },
       'conversation.input.plan': { kind: 'single', scope: 'session' },
       'conversation.input.right': { kind: 'list', scope: 'session' },
@@ -315,7 +339,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           retryFileUpload: undefined,
           toggleCommandMenu: undefined,
           stop: undefined,
-          command: undefined,
           hooks: {
             busyEnter: submissionPolicy.busyEnter,
             fileUploads: ABSENT_FILE_UPLOADS,
@@ -367,12 +390,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           scopedConversation(sessions, sessionId).cancel().catch(() => {
             // Stop failure is published through Session promptError.
           })
-        },
-        command: async (line) => {
-          const session = sessions.binding(sessionId)?.session
-          if (session === undefined) return false
-          const result = await session.command(line)
-          return result.ok && result.value.matched
         },
         hooks: {
           busyEnter: submissionPolicy.busyEnter,

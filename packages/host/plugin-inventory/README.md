@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Clients can call `pluginInventory/list` to display the host’s current plugins in load order, including each entry’s identifier, module specifier, effective enablement, and live phase. Deployments with an agent-preset roster also report each preset’s metadata, health, and flattened plugin composition; without a roster, preset data is absent. Each response is a point-in-time, read-only snapshot for display and diagnostics: it cannot mutate plugins and provides no history, provenance, or change subscription.
+Clients can call `pluginInventory/list` to display the host’s current plugins in load order, including each entry’s identifier, module specifier, effective enablement, and live phase. Deployments with an agent-preset roster also report each preset’s metadata, health, and flattened plugin composition; without a roster, preset data is absent. Each response is a point-in-time, read-only snapshot for display and diagnostics: it cannot mutate plugins and provides no history, introduction source, or change subscription.
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ The inventory is a snapshot for display and diagnostics: a client can render the
 
 ### Design concept
 
-The gateway is a direct projection with no second lifecycle truth: every `list()` call reads `ctx.loader.entries()` and maps each non-group entry to its public row. Cordis's internal plugin/status events already maintain `Entry.fiber` and `Fiber.state`, so a cache would only add another lifecycle truth to keep synchronized. The agent-preset roster is an optional peer resolved per call through `ctx.get('agentPresets')`: its `compositionInventory()` owns every preset read, and this package only maps root-fiber states onto the public phase vocabulary.
+The gateway is a direct projection with no second lifecycle truth: every `list()` call reads `ctx.loader.entries()` and maps each non-group entry to its public row. Cordis's internal `plugin/status` events already maintain `Entry.fiber` and `Fiber.state`, so a cache would only add another lifecycle truth to keep synchronized. The agent-preset roster is an optional peer resolved per call through `ctx.get('agentPresets')`: its `compositionInventory()` owns every preset read, and this package only maps root-fiber states onto the public phase vocabulary.
 
 ### The phase mapping
 
@@ -97,7 +97,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define what a point-in-time inventory cannot tell a client. They are current package constraints, not a task backlog.
 
 - **Point-in-time state only** — the result contains no durable failure history or subscription; a missing root Fiber is reported as `null`, regardless of why no live root exists.
-- **No provenance or mutation** — the service does not identify which bundle, profile, or override introduced an entry, and it cannot enable, disable, add, or remove plugins in either plane.
+- **No introduction source or mutation** — the service does not identify which bundle, profile, or override introduced an entry, and it cannot enable, disable, add, or remove plugins in either plane.
 - **Presets appear only with a roster** — a deployment without `dsh-agent-presets` serves Loader entries alone; the `agentPresets` field is absent rather than empty.
 
 <a id="dev-note"></a>

@@ -123,6 +123,21 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
       await row.waitFor()
       expect(await row.getByRole('button', { name: /More file actions/ }).count()).toBe(2)
       expect(await row.getByText('report.txt', { exact: true }).innerText()).toBe('report.txt')
+      const beforePreview = (await opened()).length
+      const column = page.locator('[data-rightbar-col]')
+      for (const [name, content] of [['report.txt', 'EDITED_REPORT'], ['说明.txt', 'EDITED_NOTE']] as const) {
+        const mention = page.locator('code').getByRole('button', { name: `Open ${name} in sidebar`, exact: true })
+        await mention.click()
+        const preview = column.locator('[data-document-preview]')
+        await expect.poll(() => preview.getAttribute('data-textpreview-url'))
+          .toBe(`dsh-resource://file/session/${sessionId}/${encodeURIComponent(name)}`)
+        await preview.getByText(content, { exact: true }).waitFor()
+        await mention.click()
+        expect(await column.locator('[data-dockkit-tab]').filter({ hasText: name }).count()).toBe(1)
+      }
+      expect(await opened()).toHaveLength(beforePreview)
+      expect(downloads).toEqual([])
+      await page.getByRole('button', { name: 'Collapse right sidebar', exact: true }).click()
       const beforeReveal = (await opened()).length
       await row.getByRole('button', { name: 'More file actions for report.txt', exact: true }).click()
       const revealResponse = page.waitForResponse(response => response.url().includes('action=reveal') && response.request().method() === 'POST')
@@ -143,13 +158,6 @@ fs.appendFileSync(${JSON.stringify(openLog)}, JSON.stringify({ path, action, con
         expect((await opened()).at(-1)).toEqual({ action: 'open', path: await realpath(join(cwd, name)), content: bytes })
       }
     }
-    const count = (await opened()).length
-    const openedResponse = page.waitForResponse(response => response.url().includes('/api/present.open?') && response.request().method() === 'POST')
-    await page.locator('code').getByRole('button', { name: 'Open report.txt in default app', exact: true }).click()
-    await page.waitForFunction(() => document.querySelector('[data-presented-files-row] button:disabled') === null)
-    expect((await openedResponse).status()).toBe(204)
-    expect(await opened()).toHaveLength(count + 1)
-    expect((await opened()).at(-1)).toEqual({ action: 'open', path: await realpath(join(cwd, 'report.txt')), content: 'EDITED_REPORT\n' })
     expect(downloads).toEqual([])
     const response = await page.request.get(new URL(`/api/session.export?sessionId=${sessionId}`, scaffold.authenticatedUrl).href)
     expect(response.status()).toBe(200)

@@ -16,8 +16,8 @@ import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SessionId, SessionSeedEventState, SurfaceIntent, SurfaceEventType } from './types.ts'
-import { deriveEventMessage, SurfaceManager, validateSessionEventData, validateSurfaceMetadata } from './surface.ts'
-import type { SessionSurface } from './surface.ts'
+import { SurfaceManager, validateSessionEventData, validateSurfaceMetadata } from './surface.ts'
+import type { SessionSurface, SessionMessageProjection } from './surface.ts'
 import { foldRequestHeader } from './request-header.ts'
 
 export * from './types.ts'
@@ -25,7 +25,7 @@ export { SessionPreparation } from './preparation.ts'
 export type { SessionPreparationOptions } from './preparation.ts'
 export type { AssistantMessage, SystemMessage, ToolResultMessage, UserMessage } from '@deepseek-ai/dsh-llm'
 export { interruptedTurnClosers, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from './repair.ts'
-export type { SessionSurface, SurfaceFoldReplacement, SurfaceFoldResult } from './surface.ts'
+export type { SessionSurface, SurfaceFoldReplacement, SurfaceFoldResult, SessionMessageProjection, SessionMessageProjectionContext } from './surface.ts'
 export { deriveEventMessage, foldSurface, isAppendSurfaceEvent, isReplacementSurfaceEvent, isSurfaceEvent, isSurfaceEligibleType } from './surface.ts'
 export { canonicalHeader, foldRequestHeader, headerEquals } from './request-header.ts'
 export { KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
@@ -446,7 +446,7 @@ const attachments = new WeakMap<Session, SessionEntry>()
 export class Session {
   private log: SessionEvent[] = []
   /** Single incremental owner of surface acceptance and projection state. */
-  private readonly surfaceManager = new SurfaceManager(this.log)
+  private readonly surfaceManager: SurfaceManager
 
   /** The ordered surface over this session's event log. */
   get surface(): SessionSurface {
@@ -503,15 +503,18 @@ export class Session {
    * @param seed - optional borrowed replay or fork events.
    * @param header - optional borrowed storage metadata.
    * @param inheritedEventCount - exact fork-inherited prefix length for a seeded header.
+   * @param projections - pure interpreters for plugin-owned message changes.
    * @returns a detached session.
+   * @throws when a seed event requires a missing message interpreter or fails validation.
    */
   static create(
     id: SessionId,
     seed?: readonly SessionEvent[],
     header?: SessionHeader,
     inheritedEventCount?: SessionLogOffset,
+    projections?: readonly SessionMessageProjection[],
   ): Session {
-    return new Session(id, seed, header, 'snapshot', inheritedEventCount)
+    return new Session(id, seed, header, 'snapshot', inheritedEventCount, projections)
   }
 
   /**
@@ -525,7 +528,9 @@ export class Session {
    * @param header - independently owned storage metadata.
    * @param inheritedEventCount - exact fork-inherited prefix length decoded from storage.
    * @param eventState - aliasing state carried from the operation that produced the seed.
+   * @param projections - pure interpreters for plugin-owned message changes.
    * @returns a restored detached session.
+   * @throws when a seed event requires a missing message interpreter or fails validation.
    */
   static fromRestore(
     id: SessionId,
@@ -533,6 +538,7 @@ export class Session {
     header: SessionHeader,
     inheritedEventCount: SessionLogOffset,
     eventState: SessionSeedEventState,
+    projections?: readonly SessionMessageProjection[],
   ): Session {
     return new Session(
       id,
@@ -540,6 +546,7 @@ export class Session {
       header,
       eventState,
       inheritedEventCount,
+      projections,
     )
   }
 
@@ -549,7 +556,9 @@ export class Session {
     header?: SessionHeader,
     mode: 'snapshot' | SessionSeedEventState = 'snapshot',
     suppliedInheritedEventCount?: SessionLogOffset,
+    projections: readonly SessionMessageProjection[] = [],
   ) {
+    this.surfaceManager = new SurfaceManager(this.log, SessionLogOffset(0), projections)
     const restoredHeader = mode === 'snapshot' ? undefined : validateRestoredSessionHeader(id, header)
     if (seed !== undefined) {
       // Validate the seed to the SAME invariants `append` enforces, so a
@@ -615,6 +624,8 @@ export class Session {
 
   /**
    * Return the immutable event stored at one exact sequence number.
+   * @deprecated Existing logic may remain unmigrated for now, but new calls are prohibited.
+   * See the [Agent Note](../../../../.agents/notes/implemented/architecture/2026-09-09-deprecate-synchronous-session-event-reads.md).
    * @param seq - event sequence number.
    * @returns the accepted event, or undefined when the log does not contain it.
    */
@@ -626,6 +637,8 @@ export class Session {
    * Materialize an immutable snapshot of a half-open event sequence range.
    * A full current snapshot is reused until the next append; every previously
    * returned snapshot remains stable after later appends.
+   * @deprecated Existing logic may remain unmigrated for now, but new calls are prohibited.
+   * See the [Agent Note](../../../../.agents/notes/implemented/architecture/2026-09-09-deprecate-synchronous-session-event-reads.md).
    * @param fromSeq - non-negative inclusive sequence number; defaults to the log start.
    * @param toSeqExclusive - non-negative exclusive sequence number; defaults to the current end.
    * @returns a frozen array of the selected deeply frozen events.
@@ -643,9 +656,12 @@ export class Session {
 
   /**
    * Return this Session's events after its fork-inherited prefix.
+   * @deprecated Existing logic may remain unmigrated for now, but new calls are prohibited.
+   * See the [Agent Note](../../../../.agents/notes/implemented/architecture/2026-09-09-deprecate-synchronous-session-event-reads.md).
    * @returns a fresh array containing child-owned events in log order.
    */
   ownEvents(): readonly SessionEvent[] {
+    // oxlint-disable-next-line typescript/no-deprecated -- Deprecated reader delegates to the deprecated range read.
     return this.snapshotEvents(this.inheritedEventCount)
   }
 
@@ -801,7 +817,7 @@ export class Session {
   private derived: Message[] = []
   /** Surface position (nodes projected) the cache has reached. */
   private derivedNodes = 0
-  /** {@link SurfaceManager.replaceGeneration} the cache was built under. */
+  /** {@link SurfaceManager.contentGeneration} the cache was built under. */
   private derivedGeneration = 0
 
   /**
@@ -811,21 +827,21 @@ export class Session {
    * append records its `surfaceOp`, so a raw event with no marker (a chunk, a
    * turn boundary) is correctly absent, and a compaction `replace` deletes the
    * shadowed nodes from the derivation. The projection rules are
-   * {@link deriveEventMessage}, folded per node.
+   * {@link deriveEventMessage}, with logged message projections applied
+   * without changing node membership or message identity.
    *
-   * CACHED: each surface node is projected exactly once, when first seen — a
-   * call costs O(new nodes), and a surface rewrite (a `replace`;
-   * {@link SessionSurface.replaceGeneration}) rebuilds. The returned array is
+   * CACHED: pure tail growth costs O(new nodes); a replacement or message projection
+   * ({@link SessionSurface.contentGeneration}) rebuilds. The returned array is
    * a fresh snapshot per call (later appends never grow an array a caller
    * already holds); the `Message` objects in it are SHARED and **deep-frozen**.
-   * Their content reuses the already frozen durable event data, so the cache
-   * needs no second deep clone and consumers still cannot mutate the log.
+   * Unchanged content reuses frozen event data; projected blocks are frozen
+   * derived copies. Consumers cannot mutate the log through either form.
    * @returns a fresh array of the shared, frozen derived history.
    */
   deriveMessages(): Message[] {
     const surface = this.surface
     const nodes = surface.nodes
-    const generation = surface.replaceGeneration
+    const generation = surface.contentGeneration
     if (generation !== this.derivedGeneration) {
       this.derived = []
       this.derivedNodes = 0
@@ -846,13 +862,13 @@ export class Session {
   }
 
   /**
-   * Instance face of the pure per-node `deriveEventMessage` export from
-   * `surface.ts`.
+   * Project one event with all committed message projections applied.
+   * The original durable event remains unchanged.
    * @param event - the event to project.
    * @returns the derived message, or null when the event produces none.
    */
   deriveEventMessage(event: SessionEvent): Message | null {
-    return deriveEventMessage(event)
+    return this.surfaceManager.deriveEventMessage(event)
   }
 }
 
@@ -892,6 +908,29 @@ export class SessionForkError extends Error {
 export class SessionStore extends Service {
   private store = new Map<SessionId, SessionEntry>()
   private counter = 0
+  private readonly projections: SessionMessageProjection[] = []
+
+  /** Borrowed definitions for detached replay; contributions live until their registering fibers unload. */
+  get messageProjections(): readonly SessionMessageProjection[] {
+    return this.projections
+  }
+
+  /**
+   * Register one event interpreter for live creation, restore, and fork.
+   * Disposing the contribution makes sessions that used it refuse further derivation.
+   * @param projection - pure definition owned by the event's plugin.
+   * @returns the fiber-owned disposer.
+   * @throws when another definition already owns this event type.
+   */
+  registerMessageProjection(projection: SessionMessageProjection): () => Promise<void> {
+    if (this.projections.some(item => item.type === projection.type)) {
+      throw new Error(`session message projection "${projection.type}" is already registered`)
+    }
+    return this.ctx.effect(() => {
+      this.projections.push(projection)
+      return () => { this.projections.splice(this.projections.indexOf(projection), 1) }
+    }, 'sessions.registerMessageProjection()')
+  }
 
   constructor(ctx: Context) {
     super(ctx, 'sessions')
@@ -979,6 +1018,7 @@ export class SessionStore extends Service {
             options.meta,
             options.inheritedEventCount,
             eventState,
+            this.projections,
           )
         case undefined:
           break
@@ -1000,7 +1040,7 @@ export class SessionStore extends Service {
       ...meta?.delegationDepth === undefined ? {} : { delegationDepth: meta.delegationDepth },
       ...meta?.agentPreset === undefined ? {} : { agentPreset: meta.agentPreset },
     }
-    return Session.create(sessionId, seed, header, options?.inheritedEventCount)
+    return Session.create(sessionId, seed, header, options?.inheritedEventCount, this.projections)
   }
 
   /**
@@ -1211,6 +1251,7 @@ export class SessionStore extends Service {
   }
 
   private _forkSeed(session: Session, requestedBoundary: SessionSeq | undefined): readonly SessionEvent[] {
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const lastEvent = session.snapshotEvents().at(-1)
     let boundary: SessionSeq
     if (requestedBoundary !== undefined) {
@@ -1233,6 +1274,7 @@ export class SessionStore extends Service {
       )
     }
 
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const boundaryEvent = session.eventAt(boundary)
     if (boundaryEvent === undefined || boundaryEvent.seq !== boundary) {
       throw new SessionForkError(
@@ -1240,6 +1282,7 @@ export class SessionStore extends Service {
         'INVALID_BOUNDARY',
       )
     }
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const events = session.snapshotEvents(SessionLogOffset(0), SessionLogOffset(boundary + 1))
     const lastTurnBoundary = events
       .findLast(event => event.type === 'turn/start' || event.type === 'turn/end')

@@ -64,7 +64,9 @@ function MessageItem({ node, t: translate, referenceLabels, skillNames }: Messag
         }
         : node,
   }
-  const props = { node: viewNode, t: translate, renderMessageImages, useChat: useDetachedChat } as ChatNodeViewProps
+  const props = {
+    node: viewNode, t: translate, renderMessageImages, openFile: vi.fn(), openSkill: vi.fn(), useChat: useDetachedChat,
+  } as unknown as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
     case 'steering':
@@ -330,7 +332,7 @@ describe('MessageItem arms', () => {
         seq: 3,
         content: [{ type: 'text', text: 'line one\n\nline two' }],
         source: { kind: 'plugin', plugin: 'fixture', empty: {}, list: [] },
-        provenance: { role: 'inject', label: 'fixture' },
+        producer: { role: 'inject', label: 'fixture' },
         form: null,
       } as never}
       />,
@@ -371,7 +373,7 @@ describe('MessageItem arms', () => {
             { action: 'replace', scope: '.\u0000AGENTS.md', path: 'AGENTS.md' },
           ],
         },
-        provenance: { role: 'inject', label: 'AGENTS.md, sub/AGENTS.md' },
+        producer: { role: 'inject', label: 'AGENTS.md, sub/AGENTS.md' },
         form: 'instructions',
       } as never}
       />,
@@ -399,7 +401,7 @@ describe('MessageItem arms', () => {
             { action: 'replace', scope: 'b', path: 'old/AGENTS.md' },
           ],
         },
-        provenance: { role: 'inject', label: 'new/AGENTS.md, old/AGENTS.md' },
+        producer: { role: 'inject', label: 'new/AGENTS.md, old/AGENTS.md' },
         form: 'instructions',
       } as never}
       />,
@@ -420,7 +422,7 @@ describe('MessageItem arms', () => {
           { type: 'text', text: 'after' },
         ],
         source: null,
-        provenance: { role: 'inject', label: null },
+        producer: { role: 'inject', label: null },
         form: null,
       } as never}
       />,
@@ -442,7 +444,7 @@ describe('MessageItem arms', () => {
           form: 'catalog',
           entries: [{ name: 'a-skill', description: 'Does A' }, { name: 'b-skill', description: 'Does B' }],
         },
-        provenance: { role: 'inject', label: 'skill-catalog' },
+        producer: { role: 'inject', label: 'skill-catalog' },
         form: 'catalog',
       } as never}
       />,
@@ -466,7 +468,7 @@ describe('MessageItem arms', () => {
           update: true,
           entries: [{ name: 'a-skill', description: 'Does A' }],
         },
-        provenance: { role: 'inject', label: 'skill-catalog' },
+        producer: { role: 'inject', label: 'skill-catalog' },
         form: 'catalog',
       } as never}
       />,
@@ -488,7 +490,7 @@ describe('MessageItem arms', () => {
           form: 'catalog',
           entries: [{ name: 'a-skill', description: 'Does A' }, { name: 'b-skill' }],
         },
-        provenance: { role: 'inject', label: 'skill-catalog' },
+        producer: { role: 'inject', label: 'skill-catalog' },
         form: 'catalog',
       } as never}
       />,
@@ -508,7 +510,7 @@ describe('MessageItem arms', () => {
         seq: 3,
         content: [{ type: 'text', text: 'instruction prose' }],
         source: { kind: 'agent-instructions', form: 'instructions', changes: [{ action: 'set' }] },
-        provenance: { role: 'inject', label: 'agent-instructions' },
+        producer: { role: 'inject', label: 'agent-instructions' },
         form: 'instructions',
       } as never}
       />,
@@ -528,7 +530,7 @@ describe('MessageItem arms', () => {
         seq: 3,
         content: [{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }],
         source: null,
-        provenance: { role: 'inject', label: null },
+        producer: { role: 'inject', label: null },
         form: null,
       } as never}
       />,
@@ -544,7 +546,7 @@ describe('MessageItem arms', () => {
         seq: 3,
         content: [{ type: 'text', text: 'short' }],
         source: { kind: 'plugin', note: 'y'.repeat(21_000) },
-        provenance: { role: 'inject', label: 'plugin' },
+        producer: { role: 'inject', label: 'plugin' },
         form: null,
       } as never}
       />,
@@ -563,7 +565,7 @@ describe('MessageItem arms', () => {
         seq: 3,
         content: [{ type: 'text', text: 'catalog prose' }],
         source: { kind: 'skill-catalog', form: 'catalog', update: true, entries: [] },
-        provenance: { role: 'inject', label: 'skill-catalog' },
+        producer: { role: 'inject', label: 'skill-catalog' },
         form: 'catalog',
       } as never}
       />,
@@ -582,7 +584,7 @@ describe('MessageItem arms', () => {
         seq: 3,
         content: [{ type: 'text', text: 'catalog prose' }],
         source: { kind: 'skill-catalog', form: 'catalog', entries: 'not-a-list' },
-        provenance: { role: 'inject', label: 'skill-catalog' },
+        producer: { role: 'inject', label: 'skill-catalog' },
         form: 'catalog',
       } as never}
       />,
@@ -598,7 +600,7 @@ describe('MessageItem arms', () => {
       <MessageItem t={t} node={{
         kind: 'context', seq: 3, content: [{ type: 'text', text: 'catalog prose' }],
         source: { kind: 'skill-catalog', form: 'catalog', entries },
-        provenance: { role: 'inject', label: 'skill-catalog' },
+        producer: { role: 'inject', label: 'skill-catalog' },
         form: 'catalog',
       } as never}
       />,
@@ -615,7 +617,7 @@ describe('MessageItem arms', () => {
         seq: 3,
         content: [{ type: 'text', text: 'prose' }, { type: 'future-block', payload: 1 }],
         source: { kind: 'skill-catalog', form: 'catalog', entries: [{ name: 'a', description: 'b' }] },
-        provenance: { role: 'inject', label: 'skill-catalog' },
+        producer: { role: 'inject', label: 'skill-catalog' },
         form: 'catalog',
       } as never}
       />,
@@ -633,7 +635,7 @@ describe('MessageItem arms', () => {
         seq: 3,
         content: [{ type: 'text', text: 'instruction prose' }],
         source: { kind: 'agent-instructions', form: 'instructions', changes: [{ action: 'merge', path: 'A.md' }] },
-        provenance: { role: 'inject', label: 'agent-instructions' },
+        producer: { role: 'inject', label: 'agent-instructions' },
         form: 'instructions',
       } as never}
       />,
@@ -649,7 +651,7 @@ describe('MessageItem arms', () => {
       <MessageItem t={t} node={{
         kind: 'context', seq: 3, content: [{ type: 'text', text: 'x' }],
         source: { kind: 'plugin', plugin: 'later', form: 'a-later-form' },
-        provenance: { role: 'inject', label: 'later' },
+        producer: { role: 'inject', label: 'later' },
         form: null,
       } as never}
       />,
@@ -671,7 +673,7 @@ describe('MessageItem arms', () => {
           form: 'snapshot',
           sections: [{ name: 'sandbox:policy', text: 'workspace-write' }, { name: 'workspace', text: '/repo' }],
         },
-        provenance: { role: 'inject', label: '@deepseek-ai/dsh-system-prompt' },
+        producer: { role: 'inject', label: '@deepseek-ai/dsh-system-prompt' },
         form: 'snapshot',
       } as never}
       />,
@@ -689,7 +691,7 @@ describe('MessageItem arms', () => {
         seq: 3,
         content: [{ type: 'text', text: 'background job bash-1 finished.' }],
         source: { kind: 'plugin', plugin: 'tool-jobs', form: 'notice', summary: 'bash pnpm test [status: completed]' },
-        provenance: { role: 'inject', label: 'tool-jobs' },
+        producer: { role: 'inject', label: 'tool-jobs' },
         form: 'notice',
       } as never}
       />,
@@ -704,7 +706,7 @@ describe('MessageItem arms', () => {
       <MessageItem t={t} node={{
         kind: 'context', seq: 3, content: [{ type: 'text', text: 'notice prose' }],
         source: { kind: 'plugin', plugin: 'tool-jobs', form: 'notice' },
-        provenance: { role: 'inject', label: 'tool-jobs' },
+        producer: { role: 'inject', label: 'tool-jobs' },
         form: 'notice',
       } as never}
       />,
@@ -727,7 +729,7 @@ describe('MessageItem arms', () => {
       const view = render(
         <MessageItem t={t} node={{
           kind: 'context', seq: 3, content: [{ type: 'text', text: `${form} prose` }],
-          source, provenance: { role: 'inject', label }, form,
+          source, producer: { role: 'inject', label }, form,
         } as never}
         />,
       )
@@ -743,7 +745,7 @@ describe('MessageItem arms', () => {
       <MessageItem t={t} node={{
         kind: 'context', seq: 3, content: [{ type: 'text', text: 'Current runtime context.' }],
         source: { kind: 'plugin', form: 'snapshot', sections: [{ name: 'sandbox', text: 'w' }] },
-        provenance: { role: 'inject', label: 'plugin' },
+        producer: { role: 'inject', label: 'plugin' },
         form: 'snapshot',
       } as never}
       />,
@@ -760,7 +762,7 @@ describe('MessageItem arms', () => {
         seq: 3,
         content: [{ type: 'text', text: 'child report body' }],
         source: { kind: 'agent-message', form: 'relay', senderSessionId: 'child-7' },
-        provenance: { role: 'inject', label: 'agent-message' },
+        producer: { role: 'inject', label: 'agent-message' },
         form: 'relay',
       } as never}
       />,
@@ -787,7 +789,7 @@ describe('MessageItem arms', () => {
             { label: '修 CI', retainedMessages: 3, omittedMessages: 0, truncated: false },
           ],
         },
-        provenance: { role: 'recall', label: '重构 loader, 修 CI' },
+        producer: { role: 'recall', label: '重构 loader, 修 CI' },
         form: 'recall',
       } as never}
       />,
@@ -826,6 +828,24 @@ describe('MessageItem arms', () => {
     expect(view.getByRole('heading', { name: '摘要标题' })).toBeTruthy()
     fireEvent.click(row)
     expect(row.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('anchors the sticky-header selector: the compaction body sits under compactionRow only while open', () => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'compaction', seq: 5, time: 1_000,
+        summary: '## 摘要标题\n\n保留的事实。',
+        summaryEventSeq: 4,
+        shadowedItemCount: 16,
+        shadowedTokenCount: 11_309,
+      }}
+      />,
+    )
+    // Collapsed there is no body sibling, so the rule's `:has(.compactionBody)`
+    // gate never matches.
+    expect(view.container.querySelector('[class*="compactionRow"] [class*="compactionBody"]')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: /上下文已压缩/ }))
+    expect(view.container.querySelector('[class*="compactionRow"] [class*="compactionBody"]')).not.toBeNull()
   })
 
   it('a marker whose cited summary event fell outside the window is not expandable', () => {
