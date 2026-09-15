@@ -15,9 +15,10 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { queueReadFaceOf } from './queue-store.ts'
 import type {
-  ComposerKeyboard, DraftAttachmentId, DraftAttachmentSerializationResult, InputTriggerController,
+  DraftAttachmentId, DraftAttachmentSerializationResult, InputTriggerController,
   SessionInputResolver, SessionInput, SubmitOutcome,
 } from '../contract/input.ts'
+import type { ComposerKeyboard } from '../contract/draft-editor.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import type { PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'
@@ -156,6 +157,23 @@ export class InputHub implements SessionInputResolver {
    */
   keyboard(id: SessionId): ComposerKeyboard {
     return this.shell(id)
+  }
+
+  /**
+   * Query file intake without creating a Session input.
+   * @param id - target Session.
+   * @returns whether its mounted composer currently accepts files.
+   */
+  canPickFiles(id: SessionId): boolean {
+    return this.shells.get(id)?.canPickFiles() === true
+  }
+
+  /**
+   * Open the target composer's file dialog under its live intake policy.
+   * @param id - target Session.
+   */
+  pickFiles(id: SessionId): void {
+    this.shells.get(id)?.pickFiles()
   }
 
   /**

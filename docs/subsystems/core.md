@@ -336,7 +336,7 @@ type RequestErrorAction = { kind: 'retry' } | undefined
 
 `agent/pre-step` is the only waterfall listener chain before request derivation. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.
 
-`agent/session-start` carries a `SessionStartSource` (why the session lifecycle began; a bridge keys its SessionStart matcher on it):
+`agent/created` carries a `SessionStartSource` (why the session lifecycle began; a bridge keys its SessionStart matcher on it):
 
 ```ts type-equiv
 /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
@@ -498,11 +498,12 @@ async list(): Promise<AgentPreset[]>
 
 /**
  * The roster off the Host: {@link list} projected to path-free rows, with
- * the default marked and this deployment's authoring capability beside it.
+ * the policy-effective default marked, this deployment's authoring
+ * capability, and its mode-selection policy beside it.
  *
  * Whether a client can open a preset's directory is the Host's own opener
  * capability, not a roster property — a caller needing both joins them.
- * @returns the rows and the authoring capability.
+ * @returns the rows, authoring capability, and effective selection policy.
  */
 @Remote('list') async remoteExportList(): Promise<AgentPresetRoster>
 
@@ -817,16 +818,16 @@ async create(options: CreateAgentOptions): Promise<AgentHandle>
 async resume(options: ResumeAgentOptions): Promise<AgentHandle>
 
 /**
- * Register a live agent. Throws if an agent with the same id is already
- * registered. Emits `agent/created` on registration and `agent/disposed`
+ * Register a live agent with source `startup`. Rejects if the id is already registered or a
+ * serial `agent/created` listener fails. Emits `agent/disposed`
  * when the calling fiber is disposed — both with the agent's scope carrier
  * (`scopeTarget(agent, agent)`): the subject is the agent in hand, so the
  * emits are scope-filtered regardless of which context invoked `register`
  * (calling through `agent.ctx` scopes EFFECTS; dispatch scoping always
  * requires passing the carrier). The entry is a runtime root; factory-backed
- * creation uses `options.parentAgent` for child ownership. Returns the disposer.
+ * creation uses `options.parentAgent` for child ownership. Await the registration before using the agent.
  * @param agent - the already-constructed agent to record in the store.
- * @returns the EXACT Cordis effect disposer (single-shot; a repeat call
+ * @returns the awaitable Cordis effect disposer (single-shot; a repeat call
  *   returns undefined without awaiting an in-flight teardown). Exact
  *   identity is load-bearing: a composite (generator) effect that owns a
  *   teardown ORDER — the agent factory's lifecycle chain — must yield THIS
@@ -835,7 +836,7 @@ async resume(options: ResumeAgentOptions): Promise<AgentHandle>
  *   owner unload, unregistering the agent (and emitting `agent/disposed`)
  *   while its final turn is still draining.
  */
-register(agent: Agent): () => void
+register(agent: Agent): ReturnType<Context['effect']>
 
 /**
  * Insert an already-constructed agent without announcing it. This is the
@@ -849,19 +850,22 @@ register(agent: Agent): () => void
  *   the resumed session's durable parent lineage.
  * @returns an idempotent closure that removes this exact entry and emits
  *   `agent/disposed` with listener failures contained. When called from a
- *   synchronous `agent/created` listener, removal and disposal wait until
- *   that creation dispatch unwinds.
+ *   `agent/created` listener, removal and disposal wait until the serial
+ *   creation dispatch settles.
  */
 enter(agent: Agent, owner: Agent | undefined): () => void
 
 /**
  * Announce an agent previously inserted with {@link enter}.
  * @param agent - the live inserted agent to announce.
+ * @param source - fresh creation, resume, clear, or compaction source.
+ * @param signal - optional factory initialization cancellation signal passed to listeners.
+ * @returns completion of the serial creation listeners; a listener failure rejects.
  * @throws if `agent` is not the exact live registry entry for its id, or its
  *   creation announcement already began (including a reentrant call from a
  *   creation listener).
  */
-announce(agent: Agent): void
+async announce(agent: Agent, source: SessionStartSource, signal?: AbortSignal): Promise<void>
 
 /**
  * Look up a live agent.
@@ -924,24 +928,27 @@ Types: [Scoped](scope.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 
-<a id="agentcreated--emit"></a>
+<a id="agentcreated--serial"></a>
 
-#### `agent/created` — emit
+#### `agent/created` — serial
 
-A fully configured agent and live session were published. Setup is composition-only; `agent/session-start` is the first startup-driving extension point. Synchronous listener failure vetoes publication, while returned-promise rejection is reported. Detach requested during dispatch waits until every creation listener has observed the stable entry.
+An entered agent is ready for per-agent initialization after factory setup. Listeners run in order and are awaited before creation resolves. AgentLoop holds queued input until all listeners finish. A throw or rejection fails creation and skips later listeners. Disposal retains the scope and session until dispatch settles; listeners must not await agent.whenIdle() or their own owner's disposal.
 
 ```ts cordis-catalog
 /**
- * A fully configured agent and live session were published. Setup is
- * composition-only; `agent/session-start` is the first startup-driving extension point.
- * Synchronous listener failure vetoes publication, while returned-promise
- * rejection is reported. Detach requested during dispatch waits until every
- * creation listener has observed the stable entry.
+ * An entered agent is ready for per-agent initialization after factory setup.
+ * Listeners run in order and are awaited before creation resolves. AgentLoop
+ * holds queued input until all listeners finish. A throw or rejection fails
+ * creation and skips later listeners. Disposal retains the scope and session
+ * until dispatch settles; listeners must not await agent.whenIdle() or their
+ * own owner's disposal.
  * @param payload.agent - the newly registered agent with its live session and completed setup.
+ * @param payload.source - fresh creation, resume, clear, or compaction source.
+ * @param payload.signal - factory initialization cancellation signal, when provided.
  * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
- * @mode emit
+ * @mode serial
  */
-'agent/created'(this: Scoped<Agent>, payload: { agent: Agent }): void
+'agent/created'(this: Scoped<Agent>, payload: { agent: Agent; source: SessionStartSource; signal?: AbortSignal }): undefined | Promise<undefined>
 ```
 
 Types: [Scoped](scope.md)
@@ -1141,30 +1148,6 @@ Handle one failed model-request attempt before the loop retries or closes its st
 ```
 
 Types: [LlmFailure](llm-streaming.md) · [ResolvedRetryPolicy](llm-streaming.md) · [Scoped](scope.md)
-
-Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
-
-<a id="agentsession-start--emit"></a>
-
-#### `agent/session-start` — emit
-
-The session lifecycle began, once before the first turn. Use `agent.inject()` to seed model-facing context. This is a notification, not a veto; disposal requested by a lifecycle owner is rechecked before the driver starts.
-
-```ts cordis-catalog
-/**
- * The session lifecycle began, once before the first turn. Use
- * `agent.inject()` to seed model-facing context. This is a notification, not
- * a veto; disposal requested by a lifecycle owner is rechecked before the
- * driver starts.
- * @param payload.agent - the agent whose session lifecycle began.
- * @param payload.source - why the session started (fresh startup, resume, …).
- * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
- * @mode emit
- */
-'agent/session-start'(this: Scoped<Agent>, payload: { agent: Agent; source: SessionStartSource }): void
-```
-
-Types: [Scoped](scope.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 

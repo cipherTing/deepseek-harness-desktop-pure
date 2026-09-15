@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 何时选择
 
-为需要带可见下载弹窗的用户级会话导出的 Web 部署选择它。需要程序化或 Host 侧导出时避免使用：本包产生的是浏览器下载，而非 Host 路径写入。日志从持久化读句柄序列化而来，因此任何已挂载后端都受支持。
+为需要带可见下载弹窗的面向用户的会话导出的 Web 部署选择它。需要程序化或 Host 侧导出时避免使用：本包产生的是浏览器下载，而非 Host 路径写入。日志从持久化读句柄序列化而来，因此任何已挂载后端都受支持。
 
 ### 组合
 
@@ -50,7 +50,7 @@ Web bundle 将本包与 Connection、`dsh-commands`、`dsh-client-ui-commands` �
 
 | 输入 | 结果 |
 |---|---|
-| `/export` | 记录一组用户命令生命周期；提交命令的浏览器下载 `GET /api/session.export?sessionId=<id>&includeDescendants=true` |
+| `/export` | 记录用户命令的生命周期；提交命令的浏览器下载 `GET /api/session.export?sessionId=<id>&includeDescendants=true` |
 | `/export <path>` | 错误；浏览器下载通过浏览器的普通下载行为选择目标位置 |
 
 ### 预期行为
@@ -69,7 +69,7 @@ Web bundle 将本包与 Connection、`dsh-commands`、`dsh-client-ui-commands` �
 <details>
 <summary>实现细节——点击展开</summary>
 
-本节解释本包如何接线导出控制，并指出实现它的代码位置；可观察行为已在[使用本包](#use-this-package)中完整说明。
+本节解释本包如何接入导出控件，并指出实现它的代码位置；可观察行为已在[使用本包](#use-this-package)中完整说明。
 
 ### 设计拆分
 
@@ -77,9 +77,9 @@ Web bundle 将本包与 Connection、`dsh-commands`、`dsh-client-ui-commands` �
 
 ### 下载流程
 
-两条入口都会对 `GET /api/session.export?...` 发出 `HEAD` 预检，然后把 GET URL 与安全文件名交给当前保存载体，JavaScript 不缓冲 ZIP。默认载体点击浏览器下载链接并立即返回；嵌入表面可以在客户端启动前安装 `globalThis.__DSH_DOWNLOAD_CARRIER__`，并以 `file-saved` 或 `cancelled` 结束。一个控制器按 Session 持有一项进行中的下载，把并发操作折叠进该任务，并在插件释放时取消预检。弹窗状态存放在按 Session 键控的快照存储中，因此按钮与命令按 Session 共享一个弹窗。
+两条入口都会向 `/api/session.export?...` 发出 `HEAD` 预检，然后把 GET URL 与安全文件名交给当前保存载体，JavaScript 不缓冲 ZIP。默认载体点击浏览器下载链接并立即返回；嵌入表面可以在客户端启动前安装 `globalThis.__DSH_DOWNLOAD_CARRIER__`，并以 `file-saved` 或 `cancelled` 结束。一个控制器按 Session 持有一项进行中的下载，把并发操作折叠进该任务，并在插件释放时取消预检。弹窗状态存放在按 Session 键控的快照存储中，因此按钮与命令按 Session 共享一个弹窗。
 
-Host 路由是业务拥有的精确 Fetch contribution。Connection 应用 Host/Origin 与浏览器会话检查并桥接流式 `Response`；本包拥有查询校验、活动会话 flush、基于句柄的日志读取与附件读取、ZIP 生成和 HTTP 状态语义。
+Host 路由是由该功能拥有的精确 Fetch 路由贡献。Connection 应用 Host/Origin 与浏览器会话检查并桥接流式 `Response`；本包拥有查询校验、活动会话 flush、基于句柄的日志读取与附件读取、ZIP 生成和 HTTP 状态语义。
 
 </details>
 
@@ -88,12 +88,12 @@ Host 路由是业务拥有的精确 Fetch contribution。Connection 应用 Host/
 <a id="further-exploration"></a>
 ## 进一步探索
 
-当包级约定不够用时阅读以下页面。它们从 Web 控制逐步进入 Host 端点与周围的命令和会话表面。
+当包级约定不够用时阅读以下页面。它们从 Web 控件逐步进入 Host 端点及相关的命令与会话接口。
 
 - [dsh-client-connection](../../client/connection/README.zh.md)——Host 端点使用的认证 Fetch 路由载体。
 - [命令子系统参考](../../../docs/subsystems/commands.zh.md)——`/export` 命令注册的用户命令注册表。
-- [dsh-client-ui-commands](../../client/ui-commands/README.zh.md)——渲染并确认 `/export` 的浏览器命令表面。
-- [会话查询包映射](../README.zh.md)——本包所属的检索能力家族。
+- [dsh-client-ui-commands](../../client/ui-commands/README.zh.md)——渲染并确认 `/export` 的浏览器命令界面。
+- [会话查询包映射](../README.zh.md)——本包所属的检索包族。
 
 -----
 
@@ -138,4 +138,4 @@ Host 路由是业务拥有的精确 Fetch contribution。Connection 应用 Host/
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。Connection 与 command registry 持有两个注册，每次 export 直接读取权威 Session service。
+**运行时不变式：** 不发布伴生入口。Connection 与命令注册表持有两个注册，每次导出均读取权威的 Session 服务。

@@ -26,7 +26,7 @@
 
 <p align="center"><a href="README.md">简体中文</a> · English</p>
 
-> **Integrated DSH kernel: `0.1.5-rc.2` (`dsh-v0.1.5-rc.2`)**
+> **Integrated DSH kernel: `0.1.6-alpha.1` (`dsh-v0.1.6-alpha.1`)**
 
 > **Independent distribution**
 >

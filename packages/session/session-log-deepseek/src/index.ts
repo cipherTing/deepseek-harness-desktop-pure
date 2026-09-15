@@ -36,13 +36,13 @@ export const inject = ['deepseekLlmApiExtensions', 'sessions']
 
 /** Session-log request contribution configuration. */
 export interface Config {
-  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `false`. */
+  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `true`. */
   enabled?: boolean
 }
 
 /** Validated Session-log request contribution configuration. */
 export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(false),
+  enabled: z.boolean().default(true),
 })
 
 interface AcceptanceFold {
@@ -120,6 +120,7 @@ export function acceptedThrough(session: Session): SessionSeqCursor {
   const length = session.seq
   const start = previous?.scannedEvents ?? SessionLogOffset(0)
   for (let index = start; index < length; index++) {
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const event = session.eventAt(SessionSeq(index))
     if (event === undefined) {
       throw new Error(`session-log-deepseek: missing event ${String(index)} below captured length ${String(length)}`)
@@ -152,7 +153,7 @@ export function acceptedThrough(session: Session): SessionSeqCursor {
 /**
  * Register the incremental `dsh_session_log` request contribution when enabled.
  * @param ctx - plugin context carrying Sessions and the DeepSeek request-extension registry.
- * @param config - validated opt-in configuration.
+ * @param config - validated configuration.
  */
 export function apply(ctx: Context, config: Config): void {
   if (config.enabled !== true) return
@@ -164,9 +165,11 @@ export function apply(ctx: Context, config: Config): void {
       if (session === undefined) return undefined
 
       const afterSeq = acceptedThrough(session)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const snapshot = session.snapshotEvents()
       const throughSeq = snapshot.at(-1)?.seq
       if (throughSeq === undefined) return undefined
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const suffix = session.snapshotEvents(SessionLogOffset(afterSeq + 1))
       const value: DeepSeekSessionLogExtension = {
         version: 1,

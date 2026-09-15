@@ -547,13 +547,23 @@ describe('plugin registration', () => {
     )
     const service = (ctx as unknown as { get(name: string): ChatFileMentions | undefined }).get('chatFileMentions')
     const mentions = service?.forClosing(owner, SessionId('viewed-session'))
+    expect(mentions?.resolve('report.html')?.label).toBe('Open site/report.html in sidebar')
     mentions?.resolve('report.html')?.open()
     expect(opened).toEqual(['site/report.html'])
     const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetcher)
-    const delivered = tailOwner({ produced: [], presented: [{ path: 'report.docx', seq: 2, index: 0 }] }, 3)
-    service?.forClosing(delivered, SessionId('child-session'))?.resolve('report.docx')?.open()
-    expect(fetcher).toHaveBeenCalledWith('/api/present.open?sessionId=child-session&seq=2&index=0', { method: 'POST', signal: expect.any(AbortSignal) as AbortSignal })
+    const preview = vi.fn<(path: string) => void>()
+    for (const produced of [[], [{ path: 'out/report.docx', seq: 1 }]]) {
+      const delivered = tailOwner({ produced, presented: [{ path: 'out/report.docx', seq: 2, index: 0 }] }, 3, preview)
+      const mentions = service?.forClosing(delivered, SessionId('child-session'))
+      for (const text of ['report.docx', 'out/report.docx']) {
+        const mention = mentions?.resolve(text)
+        expect(mention?.label).toBe('Open out/report.docx in sidebar')
+        mention?.open()
+      }
+    }
+    expect(preview.mock.calls).toEqual(Array.from({ length: 4 }, () => ['out/report.docx']))
+    expect(fetcher).not.toHaveBeenCalled()
     const face = entry!.inject!(SessionId('child-session') as never) as unknown as DeliverablesInjected
     fetcher.mockResolvedValueOnce(Response.json({ name: 'desktop', available: true, fileManager: 'finder' }))
     await face.reloadPresentedHost()
