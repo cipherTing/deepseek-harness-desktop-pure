@@ -20,9 +20,10 @@ import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
 import { deriveEventMessage, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
+import type {} from '@deepseek-ai/dsh-api-terminal-controller'
 import { join } from 'node:path'
 import {
-  assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
+  acknowledgeReloadConnectionLoss, assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
   compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, parseSeedFixture, realizeSeedFixture, recordFixture, renderSeedFixture, seedSession, watchConsole,
   webSnapshotMode, type WebScaffold,
@@ -35,6 +36,7 @@ const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history
 const UI_EXPANDED_EXPECTED = fileURLToPath(
   new URL('../../../snapshots/web/seeded-history/ui-expanded.expected.md', import.meta.url),
 )
+const THINKING_EXPECTED = join(SNAPSHOT_DIR, 'thinking-expanded.expected.md')
 // Command-row goldens over the same conversation after direct host commands.
 const COMMAND_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/command-row.expected.md', import.meta.url))
 const FEEDBACK_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/feedback-row.expected.md', import.meta.url))
@@ -205,7 +207,9 @@ describe('web e2e: seeded history renders through cold resume', () => {
   let seededThroughSeq = -1
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    scaffold = await launchWebScaffold(process.platform === 'win32' ? {} : {
+      extraOverlayPath: fileURLToPath(new URL('./fixtures/sidebar-terminal.patch.yml', import.meta.url)),
+    })
     // Composer recording uses a child workspace; seedSession owns the scaffold root.
     const sessionCwd = MODE === 'record' ? join(scaffold.workspaceCwd, 'workspace') : scaffold.workspaceCwd
     await mkdir(sessionCwd, { recursive: true })
@@ -364,6 +368,40 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await compareOrRefreshGolden(UI_EXPANDED_EXPECTED, expanded, MODE)
   })
 
+  it.skipIf(MODE === 'record')('renders recorded reasoning as secondary Markdown when expanded', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-thinking'))
+    const turnProcess = page.locator('[data-turn-process]').first()
+    const wasExpanded = await turnProcess.getAttribute('aria-expanded') === 'true'
+    if (!wasExpanded) await turnProcess.click()
+    const thinking = page.locator('[data-variant="think"]').first()
+    const toggle = thinking.getByRole('button').first()
+    const secondarySize = await thinking.locator('[class*="summaryText"]').evaluate(element => getComputedStyle(element).fontSize)
+    await toggle.click()
+    try {
+      await thinking.locator('p').waitFor({ timeout: 10_000 })
+      const snapshot = await captureStableAria(page, '[data-variant="think"][data-expanded]', scaffold.workspaceCwd)
+      const typography = await thinking.locator('p').evaluate((paragraph, expectedSize) => {
+        const style = getComputedStyle(paragraph)
+        return {
+          secondarySize: style.fontSize === expectedSize,
+          wraps: style.whiteSpace === 'normal',
+          contained: paragraph.scrollWidth <= paragraph.clientWidth + 1,
+        }
+      }, secondarySize)
+      expect(typography).toEqual({ secondarySize: true, wraps: true, contained: true })
+      await compareOrRefreshGolden(THINKING_EXPECTED, [
+        snapshot,
+        '',
+        `- Secondary font size: ${String(typography.secondarySize)}`,
+        `- Markdown paragraph wrapping: ${String(typography.wraps)}`,
+        `- Content stays within the reasoning column: ${String(typography.contained)}`,
+      ].join('\n'), MODE)
+    } finally {
+      await toggle.click()
+      if (!wasExpanded) await turnProcess.click()
+    }
+  })
+
   it.skipIf(MODE === 'record')('matches the Figma context disclosure geometry', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-context-injection'))
     const disclosure = page.getByRole('button', { name: 'Context injection AGENTS.md', exact: true })
@@ -433,24 +471,29 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await fileLink.waitFor({ timeout: 10_000 })
     const frame = page.locator('[style*="grid-template-columns"]').first()
     expect(await frame.getAttribute('data-rightbar-collapsed')).toBe('true')
-    await fileLink.click()
-    await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe(null)
     const column = page.locator('[data-rightbar-col]')
-    await expect.poll(() => column.locator('[data-dockkit-tab-title]').allTextContents(), { timeout: 5_000 }).toEqual(['a.txt'])
-    // Path label survives from the recorded args (a.txt).
-    await expect.poll(() => page.getByText('a.txt', { exact: false }).count(), { timeout: 5_000 }).toBeGreaterThan(0)
-    const path = column.locator('[data-textpreview-path]')
-    const absolutePath = join(scaffold.workspaceCwd, 'a.txt')
-    await expect.poll(() => path.textContent()).toBe(absolutePath)
-    expect(await path.getAttribute('title')).toBe(absolutePath)
-    await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
-    const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(FILE_PREVIEW_EXPECTED, preview, MODE)
-    // Put the column back so the later goldens see the default frame.
-    await column.locator('[data-sidebar-right-toggle]').click()
-    await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe('true')
-    await page.getByRole('button', { name: 'Open right sidebar', exact: true }).waitFor({ state: 'visible' })
-    await page.getByRole('navigation', { name: 'Turn navigation', exact: true }).waitFor({ state: 'visible' })
+    try {
+      await fileLink.click()
+      await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe(null)
+      await expect.poll(() => column.locator('[data-dockkit-tab-title]').allTextContents(), { timeout: 5_000 }).toEqual(['a.txt'])
+      // Path label survives from the recorded args (a.txt).
+      await expect.poll(() => page.getByText('a.txt', { exact: false }).count(), { timeout: 5_000 }).toBeGreaterThan(0)
+      const path = column.locator('[data-textpreview-path]')
+      const absolutePath = join(scaffold.workspaceCwd, 'a.txt')
+      await expect.poll(() => path.textContent()).toBe(absolutePath)
+      expect(await path.getAttribute('title')).toBe(absolutePath)
+      await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
+      const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
+      await compareOrRefreshGolden(FILE_PREVIEW_EXPECTED, preview, MODE)
+    } finally {
+      // Later cases share this page and require the sidebar closed even after a failed assertion.
+      if (await frame.getAttribute('data-rightbar-collapsed') !== 'true') {
+        await column.locator('[data-sidebar-right-toggle]').click()
+        await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe('true')
+      }
+      await page.getByRole('button', { name: 'Open right sidebar', exact: true }).waitFor({ state: 'visible' })
+      await page.getByRole('navigation', { name: 'Turn navigation', exact: true }).waitFor({ state: 'visible' })
+    }
   })
 
   it.skipIf(MODE === 'record')('expands the cold-resumed compact summary and pins its header while scrolling', async () => {
@@ -728,6 +771,48 @@ describe('web e2e: seeded history renders through cold resume', () => {
     expect(await body.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(false)
   })
 
+  it.skipIf(MODE === 'record')('restores the recorded file preview in its original tab after page reload', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-sidebar-reload'))
+    await page.getByRole('button', { name: 'Open right sidebar', exact: true }).click()
+    const column = page.locator('[data-rightbar-col]')
+    await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
+    const tabId = await column.locator('[data-dockkit-tab]').getAttribute('data-dockkit-tab')
+    const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
+    expect(await column.locator('[data-dockkit-tab]').getAttribute('data-dockkit-tab')).toBe(tabId)
+    const restoredPreview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
+    expect(restoredPreview).toBe(preview)
+  })
+
+  it.skipIf(MODE === 'record' || process.platform === 'win32')('offers explicit terminal replacement after restoring the recorded Session', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-terminal-unavailable'))
+    await page.locator('[data-dockkit-add-tab]').click()
+    await page.locator('[data-sidebar-right-guide-entry="terminal"]').getByRole('button', { name: /^New terminal/u }).click()
+    const sessionId = SessionId(SEED_ID)
+    const terminals = () => scaffold.ctx.terminalController.list(sessionId)
+    await expect.poll(() => terminals().length).toBe(1)
+    const previous = terminals()[0]!.id
+    const agent = scaffold.ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('Recorded Session did not attach an Agent for its terminal')
+    await scaffold.ctx.terminalController.close(agent, previous)
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    const terminal = page.locator('[data-sidebar-terminal]')
+    await expect.poll(() => terminal.getByRole('alert').innerText()).toContain('no longer exists')
+    expect(terminals()).toEqual([])
+    const expected = fileURLToPath(new URL('./expected/sidebar-terminal/unavailable.expected.md', import.meta.url))
+    await compareOrRefreshGolden(expected, await terminal.ariaSnapshot(), MODE)
+    await terminal.getByRole('button', { name: 'New terminal', exact: true }).click()
+    await expect.poll(() => terminals().length).toBe(1)
+    expect(terminals()[0]!.id).not.toBe(previous)
+    await terminal.getByRole('status').waitFor({ state: 'hidden' })
+    await terminal.getByRole('textbox', { name: 'Terminal', exact: true }).waitFor()
+  })
+
   it.skipIf(MODE === 'record')('issued zero model calls and stayed clean', async () => {
     // No replay fixture was installed and the llm seam is open — any stray
     // stream would have failed the turn loudly. Cleanliness pins the wire.
@@ -735,7 +820,8 @@ describe('web e2e: seeded history renders through cold resume', () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'command-row.expected.md', 'feedback-row.expected.md', 'file-preview.expected.md',
-      'session.v3.jsonl', 'sticky-geometry.expected.md', 'ui.expected.md', 'ui-expanded.expected.md',
+      'session.v3.jsonl', 'sticky-geometry.expected.md', 'thinking-expanded.expected.md',
+      'ui.expected.md', 'ui-expanded.expected.md',
     ])
   })
 })

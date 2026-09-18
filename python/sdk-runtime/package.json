@@ -132,6 +132,8 @@
     "@deepseek-ai/dsh-web-search-perplexity": "workspace:^",
     "@deepseek-ai/dsh-workflow": "workspace:^",
     "@deepseek-ai/dsh-workflow-ptc": "workspace:^",
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:^",
+    "@deepseek-ai/dsh-plugin-manager": "workspace:^",
+    "@deepseek-ai/dsh-host-plugin-inventory": "workspace:^"
   }
 }

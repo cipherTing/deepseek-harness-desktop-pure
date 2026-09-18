@@ -160,7 +160,6 @@ function fixture(name = 'resolution-lib'): {
       layers: [],
       patchPath: join(profileDir, 'cordis.patch.yml'),
       patches: [],
-      patchReload: 'startup',
     },
   }
 }

@@ -24,7 +24,7 @@ import type { Browser, ConsoleMessage, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
+import { acknowledgeReloadConnectionLoss, launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
 import {
   connectFreshWorkspace, newEnglishPage, saveFailureShot, ZH_BROWSER_LOCALE,
 } from './support.ts'
@@ -126,8 +126,13 @@ async function ensureExpanded(page: Page, column: Locator): Promise<void> {
   await column.locator('[data-sidebar-right-open]').waitFor({ timeout: 10_000 })
 }
 
-/** Reload the session's transient sidebar state before an independent gesture case. */
+/** Clear only this fixture's saved layouts before an independent gesture case. */
 async function resetSidebar(page: Page): Promise<Locator> {
+  await page.evaluate(() => {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('dsh.sidebar-right.v1.')) localStorage.removeItem(key)
+    }
+  })
   await page.reload({ waitUntil: 'load' })
   const column = page.locator('[data-rightbar-col]')
   await expandOf(page).waitFor({ timeout: 15_000 })
@@ -181,6 +186,15 @@ async function setPanelWidth(page: Page, target: number): Promise<void> {
 }
 
 /** Tab titles inside one container, in strip order. */
+/**
+ * The closing prose's inline-code mention of the seeded file. The changed-files
+ * card below the prose offers the same open under the same accessible name, so
+ * the first match in document order is the prose's.
+ */
+function proseChip(root: Page): Locator {
+  return root.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).first()
+}
+
 async function tabTitles(root: Locator): Promise<string[]> {
   return await root.locator('[data-dockkit-tab-title]').allInnerTexts()
 }
@@ -261,9 +275,10 @@ describe('web e2e: shipped right Sidebar', () => {
         source: { kind: 'user' },
       }), { surfaceOp: 'append' })
       agent.session.append('step/start', { turn: 1, step: 1 })
-      // A successful mutation is what makes the turn tail offer a produced-file
-      // chip — the product's own way into the Sidebar. The file is written for
-      // real because the preview reads it through the workspace endpoint.
+      // A successful mutation is what lets the closing prose link the file's
+      // inline-code mention — the product's own way into the Sidebar. The file
+      // is written for real because the preview reads it through the workspace
+      // endpoint.
       //
       // It goes in the SESSION's cwd, not the scaffold's: the endpoint resolves
       // relative paths against the header-derived workspace root. Writing
@@ -293,7 +308,7 @@ describe('web e2e: shipped right Sidebar', () => {
         step: 1,
         message: createMessage({
           role: 'assistant',
-          content: [{ type: 'text', text: 'Ready.' }],
+          content: [{ type: 'text', text: `Ready. Wrote \`${SAMPLE_NAME}\`.` }],
           source: { kind: 'model', provider: 'fixture', model: 'fixture' },
         }),
       }, { surfaceOp: 'append' })
@@ -392,7 +407,7 @@ describe('web e2e: shipped right Sidebar', () => {
       }
 
       await expect.poll(async () => await tabTitles(column)).toEqual(['Start'])
-      await expect.poll(async () => await column.locator('[data-sidebar-right-guide-entry]').count()).toBe(2)
+      await expect.poll(async () => await column.locator('[data-sidebar-right-guide-entry]').count()).toBe(3)
       await column.locator('[data-sidebar-right-guide-entry="files"]').click()
 
       // A manual guide is closable beside Files and suppresses another add
@@ -725,10 +740,10 @@ describe('web e2e: shipped right Sidebar', () => {
         if (request.url().includes('workspaceFiles')) wire.sent += 1
       })
 
-      // The product's own entry point: the turn tail's produced-file chip. It
+      // The product's own entry point: the closing prose's file mention. It
       // reaches the Sidebar through openFile → ctx.sidebarRight.openResource, and the
       // text type claims the address.
-      const chip = page.getByRole('button', { name: `Open ${SAMPLE_NAME}` })
+      const chip = proseChip(page)
       await chip.click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Files', SAMPLE_NAME])
 
@@ -744,17 +759,18 @@ describe('web e2e: shipped right Sidebar', () => {
         .waitFor({ timeout: 15_000 })
         .catch(() => { throw new Error(`preview never settled; wire=${JSON.stringify(wire)}`) })
       expect(await column.locator('pre').first().innerText()).toContain('produced by the seeded turn')
-      // The whole batch-E chain in one frame: a produced-file chip in the
+      // The whole batch-E chain in one frame: a file mention in the
       // conversation, the tab it opened, and the file's real content read over
       // the workspace endpoint.
       await shot(page, '06-produced-chip-to-preview')
 
       // The directory scenario's V1 behaviour, asserted in the shipped product:
-      // there is no folder affordance at all. `openFile('.')` would name a
-      // directory, which a text preview correctly refuses, and the native opener
-      // it used to reach is gone — so the row offers nothing rather than a
-      // button that always fails.
-      expect(await page.getByRole('button', { name: /folder/i }).count()).toBe(0)
+      // the prose mention offers no folder affordance. `openFile('.')` would
+      // name a directory, which a text preview correctly refuses. The only
+      // folder action on the page is the changed-files card's header, and only
+      // when the Host has a desktop.
+      const folders = page.getByRole('button', { name: /folder/i })
+      expect(await folders.count()).toBe(await page.locator('[data-changed-files]').getByRole('button', { name: /folder/i }).count())
 
       // Split, then dock-drag: the kit's gestures drive the store's actions.
       await panes.first().locator('[data-dockkit-split-button]').click()
@@ -800,7 +816,7 @@ describe('web e2e: shipped right Sidebar', () => {
     // panel by product decision, and copy has no service method yet:
     // `duplicateTab` is a store/kit intent only, which service.client.spec.ts covers.
 
-    it('keeps each session\'s surface to itself, and restores it on return', async () => {
+    it('keeps each session\'s surface to itself across switching and page reload', async () => {
       const fx = await newEnglishPage(browser)
       const fxTripwire = watchConsole(fx)
       onTestFailed(() => saveFailureShot(fx, 'web-e2e-sidebar-right-sessions'))
@@ -813,7 +829,7 @@ describe('web e2e: shipped right Sidebar', () => {
         const column = fx.locator('[data-rightbar-col]')
         await ensureExpanded(fx, column)
         await width(column)
-        await fx.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+        await proseChip(fx).click()
         await column.locator('[data-textpreview-state="text"]').waitFor({ timeout: 15_000 })
         const wrap = column.locator('[data-textpreview-tool="wrap"]')
         expect(await wrap.getAttribute('aria-pressed')).toBe('true')
@@ -841,8 +857,26 @@ describe('web e2e: shipped right Sidebar', () => {
         await expect.poll(async () => await settled.getAttribute('aria-selected')).toBe('true')
         await expect.poll(records, { timeout: 15_000 }).toEqual(before)
         expect(await column.locator('[data-sidebar-right-open]').count()).toBe(1)
-        expect(await wrap.getAttribute('aria-pressed')).toBe('false')
+        expect(await wrap.getAttribute('aria-pressed')).toBe('true')
         expect(await column.locator('pre').first().innerText()).toContain('produced by the seeded turn')
+        let warningStart = fxTripwire.warnings.length
+        await fx.reload({ waitUntil: 'load' })
+        acknowledgeReloadConnectionLoss(fxTripwire, warningStart)
+        await expect.poll(records, { timeout: 15_000 }).toEqual(before)
+        await expect.poll(async () => await column.locator('pre').first().innerText()).toContain('produced by the seeded turn')
+        await column.locator('[data-sidebar-right-toggle]').click()
+        warningStart = fxTripwire.warnings.length
+        await fx.reload({ waitUntil: 'load' })
+        acknowledgeReloadConnectionLoss(fxTripwire, warningStart)
+        await fx.locator('[data-sidebar-right-expand]').waitFor()
+        expect(await column.locator('[data-sidebar-right-open]').count()).toBe(0)
+        await fx.locator('[data-sidebar-right-expand]').click()
+        await expect.poll(records, { timeout: 15_000 }).toEqual(before)
+        expect(await width(column)).toBeGreaterThan(0)
+        await column.locator('[data-sidebar-right-panel]').evaluate(async (node) => {
+          await Promise.allSettled(node.getAnimations().map(animation => animation.finished))
+        })
+        await shot(fx, 'session-layout-restored')
         expect(fxTripwire.pageErrors).toEqual([])
         expect(fxTripwire.warnings).toEqual([])
       } finally {
@@ -864,7 +898,7 @@ describe('web e2e: shipped right Sidebar', () => {
       //    leave it standing, since a pane emptied by a move is dropped.
       const first = panes.first()
       const strip = first.locator('[data-dockkit-strip]')
-      await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+      await proseChip(page).click()
       await expect.poll(async () => await tabTitles(first)).toEqual(['Files', SAMPLE_NAME])
       const order = await tabTitles(first)
       // The insertion index is measured against chip midpoints, not strip width.
@@ -938,7 +972,7 @@ describe('web e2e: shipped right Sidebar', () => {
       const column = await resetSidebar(page)
       const panes = column.locator('[data-dockkit-pane]')
       expect(await column.locator('[data-dockkit-tab-close]').count()).toBe(1)
-      await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+      await proseChip(page).click()
       await expect.poll(async () => await tabTitles(panes.first())).toEqual(['Files', SAMPLE_NAME])
       await panes.first().locator('[data-dockkit-split-button]').click()
       await expect.poll(async () => await panes.count()).toBe(2)
@@ -974,7 +1008,7 @@ describe('web e2e: shipped right Sidebar', () => {
       // sample file, close the guide (an ordinary close with two tabs), then
       // close the file: the column collapses in the same gesture, and the
       // settle rule reseeds the current default, so reopening shows Start.
-      await page.getByRole('button', { name: `Open ${SAMPLE_NAME}` }).click()
+      await proseChip(page).click()
       await expect.poll(async () => await tabTitles(column)).toEqual(['Start', SAMPLE_NAME])
       await column.locator('[data-dockkit-tab]').first().hover()
       await column.locator('[data-dockkit-tab-close]').first().click()
@@ -990,18 +1024,19 @@ describe('web e2e: shipped right Sidebar', () => {
       expect(tripwire.warnings).toEqual([])
     }, 90_000)
 
-    it('§9.7 returns to the default surface after a reload', async () => {
+    it('preserves the open surface after a reload', async () => {
       onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-right-reload'))
-      await page.reload({ waitUntil: 'load' })
-      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       const frame = page.locator('[class*="frame"]').first()
       const column = page.locator('[data-rightbar-col]')
+      await ensureExpanded(page, column)
+      const titles = await tabTitles(column)
+      await page.reload({ waitUntil: 'load' })
+      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await column.waitFor({ state: 'attached', timeout: 15_000 })
-      // The surface is view state, not durable session data: a reload zeroes it
-      // back to the collapsed default. Expected behaviour, not a defect.
-      await expect.poll(async () => await frame.getAttribute('data-rightbar-collapsed')).toBe('true')
-      await expect.poll(async () => await expandOf(page).count()).toBe(1)
-      expect(await column.locator('[data-sidebar-right-open]').count()).toBe(0)
+      await expect.poll(async () => await tabTitles(column)).toEqual(titles)
+      await expect.poll(async () => await frame.getAttribute('data-rightbar-collapsed')).toBe(null)
+      expect(await expandOf(page).count()).toBe(0)
+      expect(await column.locator('[data-sidebar-right-open]').count()).toBe(1)
     })
 
     it('opens a context menu on right-click that the strip cannot clip', async () => {

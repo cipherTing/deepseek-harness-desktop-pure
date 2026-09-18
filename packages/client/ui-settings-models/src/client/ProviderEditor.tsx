@@ -341,6 +341,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     const models = modelDrafts(modelsOverridden ? customModels : inheritedModels())
     const defaultContextWindow = schema.getPath(fallback, ['defaultContextWindow'])
     const defaultMaxTokens = schema.getPath(fallback, ['maxTokens'])
+    const defaultInput = schema.getPath(fallback, ['defaultInput'])
     const keyPlaceholder = keyLocked
       ? t('keyEnvLocked')
       : keyState?.configured === true && props.credentialRequired !== true
@@ -465,6 +466,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               : (
                 <ModelListEditor
                   {...catalogProps}
+                  catalogProvider={props.declared === true ? undefined : props.provider}
+                  defaultInput={Array.isArray(defaultInput) ? defaultInput : undefined}
                   probe={probe}
                   probeBlocked={keyFailure}
                   operations={operations}

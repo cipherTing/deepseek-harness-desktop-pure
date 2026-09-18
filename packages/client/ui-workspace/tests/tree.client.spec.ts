@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type { SessionPendingInteractionBase } from '@deepseek-ai/dsh-client-ui-session/client'
+import type {
+  SessionPendingInteraction, SessionStatus, SessionStatusSnapshot,
+} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { ScheduleId, ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey,
+  deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
   pinCurrentBlank, reconcileManualOrder, visibleSessionIds, workspaceLabel, UNGROUPED_KEY,
 } from '../src/client/tree.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
@@ -14,13 +16,19 @@ const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
 const summary = (id: string, updatedAt: number, cwd?: string): SessionSummary => ({
   id: sid(id), displayTitle: id, running: false, blank: false,
-  updatedAt, ...(cwd === undefined ? {} : { cwd }),
+  updatedAt, ...(cwd === undefined ? {} : { cwd }), retainedBy: {},
 })
 const list = (...items: SessionSummary[]): SessionListState => ({
   ids: items.map(item => item.id),
   byId: Object.fromEntries(items.map(item => [item.id, item])),
-  current: undefined,
-  phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+  phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+})
+const withMain = (state: SessionListState, id: SessionId): SessionListState => ({
+  ...state,
+  byId: {
+    ...state.byId,
+    [id]: { ...state.byId[id]!, retainedBy: { ...state.byId[id]!.retainedBy, mainView: 1 } },
+  },
 })
 const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView => ({
   workspaceId: wid(id), path: `/projects/${id}`, title,
@@ -31,7 +39,11 @@ const view = (expandedGroups: readonly string[] = [], ungroupedOrder?: readonly 
   ...(ungroupedOrder === undefined ? {} : { ungroupedOrder }),
 })
 const noArchive: readonly SessionId[] = []
-const noAttention: ReadonlyMap<SessionId, SessionPendingInteractionBase> = new Map()
+const noAttention: SessionStatusSnapshot = new Map()
+const status = (
+  pendingInteraction: SessionPendingInteraction | undefined,
+  overrides: Partial<SessionStatus> = {},
+): SessionStatus => ({ running: undefined, pendingInteraction, completionUnread: false, ...overrides })
 const archived = (...ids: string[]): readonly SessionId[] => ids.map(sid)
 const schedule = (id: string, scheduledAt: string): ScheduleRecord => ({
   id: id as ScheduleId,
@@ -88,9 +100,9 @@ describe('deriveGroups', () => {
   it('projects pending-interaction state into grouped and flat rows', () => {
     const awaiting = { ...summary('awaiting', 10), running: true }
     const sessions = list(awaiting)
-    const attention: ReadonlyMap<SessionId, SessionPendingInteractionBase> = new Map([[
+    const attention: SessionStatusSnapshot = new Map([[
       awaiting.id,
-      { key: 'question:1', kind: 'plan-review', sessionId: awaiting.id },
+      status({ key: 'question:1', kind: 'plan-review', sessionId: awaiting.id } as SessionPendingInteraction, { running: true }),
     ]])
     const grouped = deriveGroups(
       sessions, [workspace('project', ['awaiting'])], noArchive, attention, view(['project']),
@@ -104,9 +116,9 @@ describe('deriveGroups', () => {
     'projects the %s pending-interaction kind',
     (kind) => {
       const awaiting = summary(kind, 10)
-      const attention: ReadonlyMap<SessionId, SessionPendingInteractionBase> = new Map([[
+      const attention: SessionStatusSnapshot = new Map([[
         awaiting.id,
-        { key: `${kind}:1`, kind, sessionId: awaiting.id },
+        status({ key: `${kind}:1`, kind, sessionId: awaiting.id } as SessionPendingInteraction),
       ]])
 
       expect(deriveFlat(list(awaiting), [awaiting.id], attention)[0]?.pendingInteraction).toBe(kind)
@@ -137,13 +149,10 @@ describe('deriveGroups', () => {
   })
 
   it('shows only the current blank session in its Workspace count and tree', () => {
-    const currentBlank = { ...summary('current-blank', 5), blank: true }
+    const currentBlank = { ...summary('current-blank', 5), blank: true, retainedBy: { mainView: 1 } }
     const staleBlank = { ...summary('stale-blank', 4), blank: true }
     const real = summary('shown', 3)
-    const sessions = {
-      ...list(real, currentBlank, staleBlank),
-      current: currentBlank.id,
-    }
+    const sessions = list(real, currentBlank, staleBlank)
     const groups = deriveGroups(
       sessions, [workspace('first', ['shown', 'current-blank', 'stale-blank'])],
       noArchive, noAttention, view(['first']),
@@ -165,21 +174,22 @@ describe('deriveGroups', () => {
   })
 
   it('projects the completion reminder into session and search rows (absent = false)', () => {
-    const done = { ...summary('done', 3), completed: true }
+    const done = summary('done', 3)
     const plain = summary('plain', 2)
     const sessions = list(done, plain)
+    const statuses: SessionStatusSnapshot = new Map([[done.id, status(undefined, { completionUnread: true })]])
     const groups = deriveGroups(
-      sessions, [workspace('first', ['done', 'plain'])], noArchive, noAttention, view(['first']),
+      sessions, [workspace('first', ['done', 'plain'])], noArchive, statuses, view(['first']),
     )
     const doneNode = groups[0]!.sessions.find(session => session.id === done.id)!
     const plainNode = groups[0]!.sessions.find(session => session.id === plain.id)!
     expect(doneNode.completed).toBe(true)
     expect(plainNode.completed).toBe(false)
-    expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive), noAttention)
+    expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive), statuses)
       .find(node => node.id === done.id)!.completed).toBe(true)
     const search = deriveSearchResults(
       sessions, [workspace('first', ['done', 'plain'])], 'done', noArchive,
-      noAttention, { items: [], hasMore: false }, 10,
+      statuses, { items: [], hasMore: false }, 10,
     )
     expect(search.items[0]?.completed).toBe(true)
   })
@@ -313,11 +323,11 @@ describe('deriveGroups', () => {
     const loose = summary('loose', 2)
     const ws = workspace('project', ['owned'])
     const ownedGroups = deriveGroups(
-      { ...list(owned, loose), current: owned.id }, [ws], noArchive, noAttention, view(),
+      withMain(list(owned, loose), owned.id), [ws], noArchive, noAttention, view(),
     )
     expect(ownedGroups.find(group => group.key === 'project')!.containsCurrent).toBe(true)
     const looseGroups = deriveGroups(
-      { ...list(owned, loose), current: loose.id }, [ws], noArchive, noAttention, view(),
+      withMain(list(owned, loose), loose.id), [ws], noArchive, noAttention, view(),
     )
     expect(looseGroups.find(group => group.key === UNGROUPED_KEY)!.containsCurrent).toBe(true)
   })
@@ -337,7 +347,7 @@ describe('deriveFlat', () => {
     const parent = summary('parent', 1)
     const fork = { ...summary('fork', 2), parentId: parent.id }
     const subagent = { ...summary('subagent', 3), parentId: parent.id, origin: 'subagent' as const }
-    const ids = visibleSessionIds({ ...list(parent, fork, subagent), current: subagent.id }, noArchive)
+    const ids = visibleSessionIds(withMain(list(parent, fork, subagent), subagent.id), noArchive)
     expect(ids).toEqual([parent.id, fork.id])
   })
 
@@ -347,12 +357,9 @@ describe('deriveFlat', () => {
   })
 
   it('shows only the current blank session and excludes blanks from search', () => {
-    const currentBlank = { ...summary('current-blank', 9), blank: true }
+    const currentBlank = { ...summary('current-blank', 9), blank: true, retainedBy: { mainView: 1 } }
     const staleBlank = { ...summary('stale-blank', 8), blank: true }
-    const sessions = {
-      ...list(currentBlank, summary('real', 1), staleBlank),
-      current: currentBlank.id,
-    }
+    const sessions = list(currentBlank, summary('real', 1), staleBlank)
     const rows = deriveFlat(sessions, visibleSessionIds(sessions, noArchive), noAttention)
     expect(rows.map(row => row.id)).toEqual([currentBlank.id, sid('real')])
     expect(rows.map(row => row.title)).toEqual(['', 'real'])
@@ -402,9 +409,9 @@ describe('deriveSearchResults', () => {
       ],
       ' NEEDLE ',
       noArchive,
-      new Map([[titleHit.id, {
+      new Map([[titleHit.id, status({
         key: 'question:1', kind: 'plan-review', sessionId: titleHit.id,
-      }]]),
+      } as SessionPendingInteraction)]]),
       {
         items: [
           { sessionId: contentHit.id, snippet: 'body needle excerpt' },
@@ -457,10 +464,7 @@ describe('deriveSearchResults', () => {
   it('excludes blank sessions from search regardless of query or content hits', () => {
     const currentBlank = { ...summary('opaque-current', 5), blank: true }
     const staleBlank = { ...summary('new session stale', 4), blank: true }
-    const sessions = {
-      ...list(currentBlank, staleBlank),
-      current: currentBlank.id,
-    }
+    const sessions = list(currentBlank, staleBlank)
     // Blank placeholders never match — not their localized-display title, not
     // their id, and not even a backend content hit naming them.
     const result = deriveSearchResults(
@@ -584,5 +588,23 @@ describe('workspaceLabel', () => {
     expect(workspaceLabel('/projects/demo/')).toBe('demo')
     expect(workspaceLabel('C:\\projects\\demo\\')).toBe('demo')
     expect(workspaceLabel('/')).toBe('/')
+  })
+})
+
+describe('parent folder membership', () => {
+  it.each([
+    ['/git/app', ['/git'], '/git'],
+    ['/git', ['/git/'], undefined],
+    ['/git-other/app', ['/git'], undefined],
+    ['/git/team/app', ['/git', '/git/team'], '/git/team'],
+    ['/git/team/app', ['/git/team', '/git'], '/git/team'],
+    ['/git/app', ['/'], '/'],
+    ['/git/app', [], undefined],
+    [String.raw`C:\git\app`, ['C:/git/'], 'C:/git/'],
+    [String.raw`\\server\share\app`, [String.raw`\\server\share`], String.raw`\\server\share`],
+    [String.raw`/git/a\b`, ['/git/a'], undefined],
+    ['/Git/app', ['/git'], undefined],
+  ])('groups %s under its nearest registered ancestor', (path, parents, expected) => {
+    expect(owningParentFolder(path, parents)).toBe(expected)
   })
 })

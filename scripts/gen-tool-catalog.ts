@@ -64,6 +64,9 @@ import * as StagehandBrowserTools from '@deepseek-ai/dsh-experimental-browser-us
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
+import type PluginManager from '@deepseek-ai/dsh-plugin-manager'
+import * as PluginManagerTools from '@deepseek-ai/dsh-plugin-manager/tools'
+import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import McpResources from '@deepseek-ai/dsh-mcp-resources'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import { registerListSubagentModels } from '../packages/subagent/tool-subagent/src/list-models.ts'
@@ -200,6 +203,19 @@ export interface ToolPackage {
  */
 const TOOL_PACKAGES: ToolPackage[] = [
   {
+    pkg: '@deepseek-ai/dsh-plugin-manager',
+    dir: 'plugin-manager',
+    source: 'packages/boot/plugin-manager/src/tools.ts',
+    requires: ['ctx.tools', 'ctx.pluginManager', 'ctx.sandboxPolicy'],
+    writes: ['tool/call', 'tool/result', 'user/message'],
+    async mount(ctx) {
+      // Schema harvest never executes a management method or opens a profile.
+      ctx.provide('pluginManager', {} as PluginManager)
+      await ctx.plugin(SandboxPolicy)
+      await ctx.plugin(PluginManagerTools)
+    },
+  },
+  {
     pkg: '@deepseek-ai/dsh-mcp-resources',
     dir: 'mcp-resources',
     source: 'packages/mcp/mcp-resources/src/tools.ts',
@@ -283,7 +299,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   {
     pkg: '@deepseek-ai/dsh-tool-present',
     dir: 'tool-present',
-    source: 'packages/fs/tool-present/src/index.ts',
+    source: 'packages/deliverables/tool-present/src/index.ts',
     requires: ['ctx.tools', 'ctx.fs', 'ctx.sessionProjections'],
     writes: ['tool/call', 'deliverables/presented after a successful final result', 'tool/result'],
     async mount(ctx) {
@@ -314,14 +330,14 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-tool-cordis',
     dir: 'tool-cordis',
     source: 'packages/extensions/tool-cordis/src/index.ts',
-    requires: ['ctx.tools', 'ctx.dynamicCordisRunner'],
-    writes: ['tool/call', 'tool/result', 'process-local dynamic package lifecycle'],
+    requires: ['ctx.tools', 'ctx.cordisInspect'],
+    writes: ['tool/call', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(CordisHostRunner)
       await ctx.plugin(ToolCordis)
     },
     note:
-      'Not in any shipped tree (a deliberate opt-in — dynamic package code reaches the real runtime, see .agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md). The toolset injects `ctx.dynamicCordisRunner` from `@deepseek-ai/dsh-cordis-host-runner`, which owns the definition registry and the vm sandbox; a composition missing it never activates the tools. A running package may register ADDITIONAL model-visible tools until it is stopped, undefined, or DSH restarts; a full changed request header logs those tool-set changes.',
+      'Creator mode provides two read-only runtime inspection tools. The Cordis host runner supplies the inspection registry; Client queries require a connected page. Author persistent changes as bundles and install them with plugin_manager.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-bash-persistent',

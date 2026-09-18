@@ -1714,19 +1714,11 @@ describe('plugin registration and config', () => {
       { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'] },
       {
         provider: 'deepseek-official',
-        id: 'deepseek-v4-flash',
-        name: 'DeepSeek-V4-Flash',
-        description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
-        inputModalities: ['text'],
-      },
-      {
-        provider: 'deepseek-official',
         id: 'deepseek-v4-pro',
         name: 'DeepSeek-V4-Pro',
         description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
         inputModalities: ['text'],
       },
-      { provider: 'deepseek-official', id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'] },
     ])
     await expect(ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-flash'))
       .resolves.toMatchObject({
@@ -1749,18 +1741,14 @@ describe('plugin registration and config', () => {
       })
   })
 
-  it.each([
-    { model: 'deepseek-v4-flash', inputModalities: ['text'] },
-    { model: 'deepseek-v4-pro', inputModalities: ['text'] },
-    { model: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] },
-  ])('keeps $model available with its V4 capabilities', async ({ model, inputModalities }) => {
+  it('keeps deepseek-v4-pro available with its V4 capabilities', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1' })
-    const info = await ctx.llm.resolveModelInfo('deepseek-official', model)
+    const info = await ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-v4-pro')
     expect(info).toMatchObject({
-      id: model,
-      inputModalities,
+      id: 'deepseek-v4-pro',
+      inputModalities: ['text'],
       context: { contextWindow: 1_000_000 },
       defaultMaxTokens: 256_000,
     })
@@ -1856,19 +1844,11 @@ describe('plugin registration and config', () => {
       { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'] },
       {
         provider: 'deepseek-official',
-        id: 'deepseek-v4-flash',
-        name: 'DeepSeek-V4-Flash',
-        description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
-        inputModalities: ['text'],
-      },
-      {
-        provider: 'deepseek-official',
         id: 'deepseek-v4-pro',
         name: 'DeepSeek-V4-Pro',
         description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
         inputModalities: ['text'],
       },
-      { provider: 'deepseek-official', id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'] },
     ])
   })
 
@@ -2193,11 +2173,11 @@ describe('plugin registration and config', () => {
     // First-boot onboarding: the route registers so models stay discoverable;
     // only the request itself needs a key.
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
-    await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(4)
-    const first = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(2)
+    const first = await assemble(ctx, { model: 'deepseek-flash', messages: [] })
     expect(first.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
     // The guidance leads with the managed credential store.
-    const second = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    const second = await assemble(ctx, { model: 'deepseek-flash', messages: [] })
     expect(second.finish.kind).toBe('error')
     if (second.finish.kind !== 'error') throw new Error('expected an error finish')
     // The guidance names both places a credential can come from, and nothing
@@ -2281,7 +2261,7 @@ describe('plugin registration and config', () => {
     expect(adapter).toBeInstanceOf(DeepSeekAdapter)
     // Direct embedding shares the plugin's one resolve step, so it advertises
     // the same default catalog instead of a divergent empty one.
-    await expect(adapter.listModels('deepseek-official')).resolves.toHaveLength(4)
+    await expect(adapter.listModels('deepseek-official')).resolves.toHaveLength(2)
   })
 
   it('resolves connection facts and the credential exactly once per stream call', async () => {

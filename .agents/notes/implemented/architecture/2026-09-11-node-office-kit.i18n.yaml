@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-11-node-office-kit.md
+2026-09-11-node-office-kit.md: f7e248b1bfb6bf094dc2ef291642ec9c51ce94d9
+2026-09-11-node-office-kit.zh.md: 0fd1acfe970805212aa5d587c1a123e18e2d5bf8

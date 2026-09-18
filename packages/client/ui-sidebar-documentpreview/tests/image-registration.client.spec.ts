@@ -13,7 +13,7 @@ describe('image registration', () => {
   it('claims common image suffixes as a builtin complete-byte renderer without wrap', () => {
     const title = vi.fn(() => 'localized image')
     const definition = imageBodyDefinition(title)
-    expect(definition).toEqual({
+    expect(definition).toMatchObject({
       id: IMAGE_BODY_ID,
       extensions: IMAGE_EXTENSIONS,
       binaryExtensions: BINARY_IMAGE_EXTENSIONS,

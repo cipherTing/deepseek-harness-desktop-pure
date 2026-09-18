@@ -82,13 +82,31 @@ describe('direct Messages HTTP', () => {
     }, body: { thinking: { type: 'enabled' }, output_config: { effort: 'high' } } })
     expect(llm.providerInfo('deepseek-official')).toEqual({ id: 'deepseek-official', name: 'DeepSeek' })
     expect((await llm.listModels('deepseek-official')).map(model => model.id)).toEqual([
-      'deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp',
+      'deepseek-flash', 'deepseek-v4-pro',
     ])
     expect(await llm.resolveModel('deepseek-official', 'deepseek-flash')).toMatchObject({
       name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
     })
     expect(await llm.resolveModel('deepseek-official', MODEL)).toMatchObject({ id: MODEL })
     expect(llm.imageRequestPricing('deepseek-official', MODEL)).toBeDefined()
+  })
+
+  it.each([
+    ['https://provider.example', 'https://provider.example/v1/messages'],
+    ['https://provider.example/v1/', 'https://provider.example/v1/messages'],
+    ['https://provider.example/v1beta', 'https://provider.example/v1beta/v1/messages'],
+    ['https://provider.example/v2', 'https://provider.example/v2/v1/messages'],
+    ['https://provider.example/anthropic', 'https://provider.example/anthropic/v1/messages'],
+    ['https://v1.provider.example', 'https://v1.provider.example/v1/messages'],
+  ])('resolves the Messages endpoint from %s', async (baseURL, expected) => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(sse(textEvents), {
+      headers: { 'content-type': 'text/event-stream' },
+    }))
+    vi.stubGlobal('fetch', fetchImpl)
+
+    await chunks(adapter({ baseURL }).stream(options()))
+
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(expected)
   })
 
   it.each([true, false])('maps non-2xx responses (JSON=%s)', async (json) => {
@@ -170,7 +188,7 @@ describe('Cordis provider composition', () => {
     vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(Messages, { baseURL: http.url })
-    const model = 'deepseek-v4-flash-vision-exp'
+    const model = 'deepseek-flash'
     const price = () => ctx.llm.imageRequestPricing('deepseek-official', model)!
     const dummy = { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), width: 1, height: 1, bytes: 3, mediaType: 'image/png' as const }
     expect(price().priceImages([{ type: 'image', attachment: dummy }])[0]?.text).toBeDefined()

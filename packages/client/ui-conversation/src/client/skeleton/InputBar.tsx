@@ -99,11 +99,15 @@ export const InputBar = memo(function InputBar({
   // an unresolved promptError deliberately re-announces it once — the failure
   // is still pending, and a transient banner is its only surface. Attachment
   // rejections show product copy keyed by the wire reason — whichever domain
-  // refused them; other codes are developer-facing and keep the raw message
-  // plus code.
+  // refused them. Writer contention has localized recovery guidance; other
+  // failures retain the diagnostic message and code.
   useEffect(() => {
     if (promptError === null) return
     const { error } = promptError
+    if (error.code === 'session/writer-held') {
+      showToast(t('error.sessionInUse'))
+      return
+    }
     showToast(error.code === 'session/attachment-invalid' || error.code === 'subagent/attachment-invalid'
       ? attachmentErrorText(t, error.details.reason, imageLimits)
       : `${error.message} (${error.code})`)
@@ -139,7 +143,7 @@ export const InputBar = memo(function InputBar({
   const editable = live && !locked && !machineBusy
   const steeringAvailable = subagent === null || subagent.address.mode === 'continuable'
   const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && steeringAvailable
-    && input.queue.some(row => row.placement === 'queued')
+    && input.queue.length > 0
 
   useEffect(() => {
     if (input === undefined || inputActions === undefined) return
@@ -167,7 +171,7 @@ export const InputBar = memo(function InputBar({
     focusDraftEditor(editor, revealSelection)
   }, [locked, sessionId, editor])
 
-  // A persisted draft arrives AFTER the unlock effect: ConversationSession
+  // A persisted draft arrives AFTER the unlock effect: DefaultConversationViews
   // adopts it in its own mount effect, and a parent's mount effect runs after
   // its children's. Reveal when the draft becomes non-empty so a restored long
   // draft does not stay at its head with the caret at its end. This effect does
@@ -258,7 +262,13 @@ export const InputBar = memo(function InputBar({
   }
 
   const onToggleCommandMenu = (): void => {
-    if (keyboard !== undefined) toggleCommandMenu?.(keyboard.caretSpan())
+    if (keyboard === undefined) return
+    // The menu is a combobox over the editor, so the keyboard has to be there
+    // before the launcher opens it: activating the button from the keyboard
+    // leaves focus on the button, and restoring it afterwards would re-track an
+    // empty draft and close the menu again.
+    if (editor !== null) focusDraftEditor(editor, revealSelection)
+    toggleCommandMenu?.(keyboard.caretSpan())
   }
 
   // The no-session Workspace trigger: the resident editable div acts as the
@@ -432,7 +442,6 @@ export const InputBar = memo(function InputBar({
               ? null
               : renderSlot('conversation.input.right', {})}
             {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
-            <ContextMeter useProjection={useProjection} t={t} />
             {interruptible && (
               <Tooltip label={t('input.stop')} side="top" delayMs={500} disabled={stop === undefined}>
                 <button
@@ -472,9 +481,12 @@ export const InputBar = memo(function InputBar({
           </div>
         </div>
       </div>
-      {variant === 'composer' && input !== undefined && sessionId !== undefined
-        ? renderSlot('conversation.composer.dock', {})
-        : null}
+      <div className={css.dock}>
+        {variant === 'composer' && input !== undefined && sessionId !== undefined
+          ? renderSlot('conversation.composer.dock', {})
+          : null}
+        <ContextMeter useProjection={useProjection} t={t} />
+      </div>
     </div>
   )
 })

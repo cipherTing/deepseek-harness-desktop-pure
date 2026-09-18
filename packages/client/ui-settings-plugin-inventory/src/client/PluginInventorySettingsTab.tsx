@@ -1,4 +1,6 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import type { ClientEntryState } from '@deepseek-ai/dsh-client-modules/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PluginInventorySnapshot } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconChevronDownOutline14,
@@ -18,6 +20,10 @@ type AgentPresetRow = AgentPresetGroup['rows'][number]
 
 /** Registration-side Remote face used by the section. */
 export interface PluginInventorySettingsTabInjected {
+  /** Page-local module synchronization, independent from the Host inventory. */
+  hooks: { clientSync: ObservableSnapshot<ClientEntryState> }
+  /** Retry the latest client graph without changing the Host composition. */
+  retryClient: () => void
   /** Read a current Host inventory snapshot. */
   list: () => Promise<PluginInventorySnapshot>
   /**
@@ -158,19 +164,27 @@ function CardFacts({ moduleName, moduleLabel, entryId, facts }: {
   )
 }
 
-/* `pending` is the only phase with no work under way. `loading` and
+/* `pending` is the only dotted phase with no work under way. `loading` and
  * `unloading` are both live transitions the Host is running — an async
- * disposer can hold `unloading` for a while — so both animate. */
+ * disposer can hold `unloading` for a while — so both animate. `active` and
+ * `failed` carry no dot: a settled enabled row shows its enablement tag alone,
+ * and a failed row has the failure tag. */
 const PHASE_DOT_STATES = {
   pending: 'idle',
   loading: 'ongoing',
-  active: 'done',
-  failed: 'error',
   unloading: 'ongoing',
-} as const satisfies Record<NonNullable<PluginFiberPhase>, StateDotState>
+} as const satisfies Partial<Record<NonNullable<PluginFiberPhase>, StateDotState>>
 
-/** Status dot naming a live root-fiber phase; rows with no live fiber show none. */
-function PhaseDot({ phase, t }: { readonly phase: NonNullable<PluginFiberPhase>; readonly t: Translate }): ReactNode {
+/** A live root-fiber phase whose dot still adds to the row's enablement tag. */
+type DotPhase = keyof typeof PHASE_DOT_STATES
+
+/** Whether a live root-fiber phase carries a dot of its own. */
+function showsPhaseDot(phase: PluginFiberPhase): phase is DotPhase {
+  return phase === 'pending' || phase === 'loading' || phase === 'unloading'
+}
+
+/** Status dot naming a live root-fiber phase; rows without a dotted phase show none. */
+function PhaseDot({ phase, t }: { readonly phase: DotPhase; readonly t: Translate }): ReactNode {
   const status = phaseLabel(phase, t)
   /* StateDot is aria-hidden, so the phase name lives on this wrapper. */
   return (
@@ -197,7 +211,10 @@ function StateTag({ kind, label }: { readonly kind: EnablementKind; readonly lab
 }
 
 /** Render the read-only plugin inventory: agent presets first, then the global plane. */
-export function PluginInventorySettingsTab({ list, presetName, t }: PluginInventorySettingsTabProps): ReactNode {
+export function PluginInventorySettingsTab(
+  { list, presetName, t, useClientSync, retryClient }: PluginInventorySettingsTabProps,
+): ReactNode {
+  const clientSync = useClientSync(snapshot => snapshot)
   const sectionId = useId()
   const [request, setRequest] = useState(0)
   const [query, setQuery] = useState('')
@@ -257,8 +274,9 @@ export function PluginInventorySettingsTab({ list, presetName, t }: PluginInvent
   const otherMatchCount = otherPresetMatches
     .reduce((total, preset) => total + preset.rows.filter(rowMatch).length, 0)
 
-  const presetEffectiveOpen = searching || (presetOpen ?? true)
-  const globalEffectiveOpen = searching || (globalOpen ?? presets.length === 0)
+  // Both groups start collapsed; a search opens them for as long as it lasts.
+  const presetEffectiveOpen = searching || (presetOpen ?? false)
+  const globalEffectiveOpen = searching || (globalOpen ?? false)
   const nothingMatches = searching && globalCount === 0 && selectedRows.length === 0
     && otherPresetMatches.length === 0
 
@@ -291,7 +309,7 @@ export function PluginInventorySettingsTab({ list, presetName, t }: PluginInvent
         ariaLabel={`${title}${row.entryId === null ? '' : `, ${row.entryId}`}, ${stateText}`}
         trailing={(
           <>
-            {row.enabled === true && !failed && row.fiberPhase !== null
+            {row.enabled === true && showsPhaseDot(row.fiberPhase)
               ? <PhaseDot phase={row.fiberPhase} t={t} />
               : null}
             <StateTag kind={kind} label={stateText} />
@@ -337,7 +355,7 @@ export function PluginInventorySettingsTab({ list, presetName, t }: PluginInvent
         ariaLabel={`${title}, ${entry.entryId}, ${stateText}`}
         trailing={(
           <>
-            {entry.enabled && !failed && entry.fiberPhase !== null
+            {entry.enabled && showsPhaseDot(entry.fiberPhase)
               ? <PhaseDot phase={entry.fiberPhase} t={t} />
               : null}
             <StateTag kind={kind} label={stateText} />
@@ -375,6 +393,14 @@ export function PluginInventorySettingsTab({ list, presetName, t }: PluginInvent
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
+      {clientSync.syncing ? <p className={css.status} role="status">{t('clientSyncing')}</p> : null}
+      {clientSync.failures.length === 0 ? null : (
+        <div className={css.failure} data-client-sync-failure>
+          <p role="alert">{t('clientSyncFailed')}</p>
+          <ul>{clientSync.failures.map(failure => <li key={failure.id}>{failure.id}: {failure.message}</li>)}</ul>
+          <button type="button" disabled={clientSync.syncing} onClick={retryClient}>{t('clientSyncRetry')}</button>
+        </div>
+      )}
       {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
       {state.status === 'error' ? (
         <div className={css.failure}>

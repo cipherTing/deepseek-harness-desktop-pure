@@ -14,7 +14,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
   bindSnapshotSelector, conversationSnapshot, sessionSnapshot,
 } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SubmitAttachment, SubmitOutcome } from '../src/client/contract/input.ts'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -56,9 +56,10 @@ function mountBar(shell: SessionInputShell, over?: { running?: boolean; disabled
       ids: [], byId: {}, current: undefined, phase: 'ready',
       subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
     })),
-    useSessionPendingInteraction: bindSnapshotSelector(
-      createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
+    useSessionStatus: bindSnapshotSelector(
+      createSnapshotStore<SessionStatusSnapshot>(new Map()),
     ),
+    useSessionRetainInfo: () => undefined,
     useResource,
     useWorkspaces: bindSnapshotSelector(createSnapshotStore({
       items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
@@ -122,6 +123,25 @@ function bench(over?: {
 }
 
 describe('matrix row: plain', () => {
+  it('unsubscribes from the Inbox projection when disposed', () => {
+    const unsubscribe = vi.fn()
+    const subscribe = vi.fn(() => unsubscribe)
+    const shell = new SessionInputShell({
+      actx: SCTX,
+      defaultSink: () => Promise.resolve({ kind: 'success' }),
+      inbox: { getSnapshot: () => undefined, subscribe },
+      commandAttachments: {
+        serialize: () => Promise.resolve([]),
+        release: () => {},
+        unsupportedNotice: token => `${token.trim()} attachments-unsupported`,
+      },
+    })
+
+    expect(subscribe).toHaveBeenCalledOnce()
+    shell.dispose()
+    expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+
   it('enter falls to the default sink; no claim on the currency; edits free', async () => {
     const { textarea, shell, sink } = bench()
     act(() => { shell.setDraft('普通消息') })

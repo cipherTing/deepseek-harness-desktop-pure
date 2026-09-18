@@ -7,9 +7,9 @@
     - button "模型":
       - img
       - text: 模型
-    - button "插件":
+    - button "内置插件":
       - img
-      - text: 插件
+      - text: 内置插件
     - button "Agent 预设":
       - img
       - text: Agent 预设
@@ -43,39 +43,19 @@
           - textbox "显示名称 1":
             - /placeholder: 显示名称
             - text: DeepSeek-V41-Flash
-          - button "容量 1":
+          - button "模型选项 1":
             - img
           - button "删除模型 1":
             - img
           - textbox "模型 ID 2":
             - /placeholder: 模型 ID
-            - text: deepseek-v4-flash
+            - text: deepseek-v4-pro
           - textbox "显示名称 2":
             - /placeholder: 显示名称
-            - text: DeepSeek-V4-Flash
-          - button "容量 2":
+            - text: DeepSeek-V4-Pro
+          - button "模型选项 2":
             - img
           - button "删除模型 2":
-            - img
-          - textbox "模型 ID 3":
-            - /placeholder: 模型 ID
-            - text: deepseek-v4-pro
-          - textbox "显示名称 3":
-            - /placeholder: 显示名称
-            - text: DeepSeek-V4-Pro
-          - button "容量 3":
-            - img
-          - button "删除模型 3":
-            - img
-          - textbox "模型 ID 4":
-            - /placeholder: 模型 ID
-            - text: deepseek-v4-flash-vision-exp
-          - textbox "显示名称 4":
-            - /placeholder: 显示名称
-            - text: DeepSeek-V4-Flash-Vision-Exp
-          - button "容量 4":
-            - img
-          - button "删除模型 4":
             - img
           - button "添加模型":
             - img

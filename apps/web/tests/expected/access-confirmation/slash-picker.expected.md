@@ -1,8 +1,8 @@
 - textbox "筛选选项":
   - /placeholder: 搜索…
 - listbox "/permission 匹配项":
-  - option "仅可查看" [selected]
-  - option "工作区内修改":
+  - option "仅可查看"
+  - option "工作区内修改" [selected]:
     - text: 工作区内修改
     - img
   - option "完全权限"

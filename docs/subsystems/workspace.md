@@ -214,13 +214,22 @@ Typed Remote control of transient Session-owned terminal processes.
 @Remote list(sessionId: SessionId): WebTerminalInfo[]
 
 /**
- * Allocate an interactive shell once for a caller-generated identity.
+ * Allocate a user shell once for a caller-generated identity, without Agent sandbox or approval restrictions.
  * @param agent - Session owner supplied by the Gateway.
  * @param request - initial dimensions and idempotency identity.
  * @param signal - allocation cancellation; committed terminals survive disconnection.
  * @returns the existing or newly committed terminal.
  */
 @Remote async create(agent: Agent, request: TerminalCreateRequest, signal: AbortSignal): Promise<WebTerminalInfo>
+
+/**
+ * Retain an existing terminal for a window without activating its Agent or taking input control.
+ * @param sessionId - owning Session identity, including an inactive saved layout.
+ * @param id - retained Host terminal identity.
+ * @param signal - physical Remote stream cancellation.
+ * @returns a hold acknowledgement followed by an open lifetime stream.
+ */
+@Remote({ mode: 'stream' }) retain(sessionId: SessionId, id: WebTerminalId, signal: AbortSignal): AsyncIterable<TerminalRetentionFrame>
 
 /**
  * Attach to a terminal without binding its process lifetime to the transport.

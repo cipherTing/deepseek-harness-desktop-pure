@@ -812,6 +812,14 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         assertions.dshSdkChild !== undefined,
       )
       const actualContext = contextOf(ordered, cwd)
+      if (scenario.name === 'subagent-activation-limit') {
+        expect(ordered).toHaveLength(2)
+        const denied = records(ordered[0]!.content).find(record => record.type === 'tool/result'
+          && JSON.stringify(record).includes('call_over_capacity'))
+        expect(denied).toMatchObject({ data: {
+          message: { content: [{ isError: true, content: [{ type: 'text', text: expect.stringContaining('subagent limit reached (active child limit: 1)') }] }] },
+        } })
+      }
       if (scenario.name === 'tool-error-details') {
         const events = results.flatMap(result => result.events)
         const errors = events.filter(event => event.type === 'tool/result' || event.type === 'tool/ptc-dispatch')

@@ -7,7 +7,7 @@ import type {
   ChatSnapshot, RunningToolCall, ToolCallBlock, ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { SlotTestRuntime, TestRemote, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import {
@@ -115,13 +115,14 @@ async function bench(snapshot: ChatSnapshot) {
     summary: { title: 'S', displayTitle: 'S', cwd: '/w' },
     snapshot: { running: snapshot.legacy.runningCalls.length > 0 },
   })
+  await runtime.sessions.retainFor(runtime.ctx, SID, { source: 'mainView' }).ready
   const layout = { openDetails: vi.fn(), closeDetails: vi.fn() }
   const openWorkspacePath = vi.fn(async () => ({ ok: true, value: { opened: true } }))
   ctx.provide('layout', layout as never)
   const sidebarRight = { openResource: vi.fn<(address: string) => void>() }
   ctx.provide('sidebarRight', sidebarRight as never)
   ctx.provide('uiWorkspace', {} as never)
-  new TestRemote(ctx, { session: { openWorkspacePath } })
+  runtime.remote.provideNamespaces({ session: { openWorkspacePath } })
   const locale = new LocaleRuntime(ctx)
   ctx.provide('locale', locale)
   locale.register(CONVERSATION_NS, { zh: conversationZh, en: conversationEn })

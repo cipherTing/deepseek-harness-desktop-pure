@@ -5,6 +5,9 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   CodeBlock,
+  FileTypeIcon,
+  fileExtension,
+  fileSizeText,
   IconCheckOutline16,
   IconChevronRightOutline14,
   IconCodeOutline16,
@@ -20,7 +23,6 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { JsonTreeLabels, JsonTreeProps, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { structuredPatch } from 'diff'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
   AssistantRequestConfig, ConversationPromptSnapshot, RenderMessageImages,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -1130,18 +1132,20 @@ function MarkdownFragment({
   text,
   rendered,
   preview,
+  variant = 'body',
   t,
 }: {
   text: string
   rendered: boolean
   preview: boolean
+  variant?: 'body' | 'compact'
   t: TrajectoryTranslate
 }) {
   const labels = useMemo(() => markdownLabels(t), [t])
   if (rendered) {
     return (
       <div className={preview ? css.markdownPreview : css.markdownPayload}>
-        <MarkdownText text={text} labels={labels} />
+        <MarkdownText text={text} labels={labels} variant={variant} />
       </div>
     )
   }
@@ -1155,75 +1159,120 @@ function MarkdownFragment({
 function SourceBlocks({
   blocks,
   onOpenCall,
-  renderImages,
   t,
 }: {
   blocks: readonly TrajectorySourceBlock[]
   onOpenCall: (callId: string) => void
-  renderImages: RenderMessageImages
   t: TrajectoryTranslate
 }) {
+  const attachments = new Map(recordAttachments(blocks, t).map(entry => [entry.index, entry]))
   return (
     <div className={css.sourceBlocks}>
-      {blocks.map((block, index) => (
-        <section className={css.sourceBlock} key={index}>
-          {block.callId !== undefined
-            ? (
-              <button
-                type="button"
-                className={css.sourceBlockJumpTarget}
-                aria-label={t('block.openSummary', { index: index + 1 })}
-                title={t('block.openSummaryTitle')}
-                onClick={() => {
-                  if (block.callId !== undefined) onOpenCall(block.callId)
-                }}
-              >
-                <span className={css.sourceBlockLabel}>
-                  {t('block.label', { index: index + 1, type: block.type })}
-                </span>
-                <IconChevronRightOutline14 className={css.sourceBlockJumpIcon} size={12} />
-              </button>
-            )
-            : (
-              <div className={css.sourceBlockHeader}>
-                <span className={css.sourceBlockLabel}>
-                  {t('block.label', { index: index + 1, type: block.type })}
-                </span>
-              </div>
-            )}
-          {/* The Raw view keeps model block order and granularity: one
-              gallery per image block, unlike the aggregated record gallery. */}
-          {block.attachment !== undefined
-            ? renderImages({ images: [{ attachment: block.attachment }], align: 'start' })
-            : <pre className={css.sourceBlockContent}>{block.content}</pre>}
-        </section>
-      ))}
+      {blocks.map((block, index) => {
+        const attachment = attachments.get(index)
+        return attachment !== undefined ? (
+          <details className={css.attachmentDisclosure} key={index}>
+            <summary>
+              <span className={css.sourceBlockLabel}>
+                {t('block.label', { index: index + 1, type: block.type })}
+              </span>
+              <span className={css.attachmentName} title={attachment.name}>
+                {attachment.name}
+              </span>
+            </summary>
+            <pre className={css.sourceBlockContent}>{block.content}</pre>
+          </details>
+        )
+          : (
+            <section className={css.sourceBlock} key={index}>
+              {block.callId !== undefined
+                ? (
+                  <button
+                    type="button"
+                    className={css.sourceBlockJumpTarget}
+                    aria-label={t('block.openSummary', { index: index + 1 })}
+                    title={t('block.openSummaryTitle')}
+                    onClick={() => {
+                      if (block.callId !== undefined) onOpenCall(block.callId)
+                    }}
+                  >
+                    <span className={css.sourceBlockLabel}>
+                      {t('block.label', { index: index + 1, type: block.type })}
+                    </span>
+                    <IconChevronRightOutline14 className={css.sourceBlockJumpIcon} size={12} />
+                  </button>
+                )
+                : (
+                  <div className={css.sourceBlockHeader}>
+                    <span className={css.sourceBlockLabel}>
+                      {t('block.label', { index: index + 1, type: block.type })}
+                    </span>
+                  </div>
+                )}
+              <pre className={css.sourceBlockContent}>{block.content}</pre>
+            </section>
+          )
+      })}
     </div>
   )
 }
 
-function recordImages(
+function recordAttachments(
   blocks: readonly TrajectorySourceBlock[] | undefined,
-): { readonly attachment: ImageAttachmentRef }[] {
-  return (blocks ?? []).flatMap(block =>
-    block.attachment !== undefined ? [{ attachment: block.attachment }] : [])
+  t: TrajectoryTranslate,
+) {
+  let imageIndex = 0
+  return (blocks ?? []).flatMap((block, index) => {
+    const ref = block.attachment ?? block.file
+    if (ref === undefined) return []
+    if (block.attachment !== undefined) imageIndex += 1
+    return [{
+      block,
+      index,
+      name: ref.name ?? t('attachment.imageName', { index: imageIndex }),
+      metadata: [
+        block.attachment?.mediaType ?? fileExtension(ref.name ?? '').toUpperCase(),
+        fileSizeText(ref.bytes),
+        ...(block.attachment === undefined ? [] : [`${block.attachment.width} × ${block.attachment.height}`]),
+      ].filter(Boolean).join(' · '),
+    }]
+  })
 }
 
-function MessageImages({
+function RecordAttachments({
   blocks,
   preview,
   renderImages,
+  t,
 }: {
   blocks: readonly TrajectorySourceBlock[] | undefined
   preview: boolean
   renderImages: RenderMessageImages
+  t: TrajectoryTranslate
 }) {
-  const images = recordImages(blocks)
-  if (images.length === 0) return null
+  const attachments = recordAttachments(blocks, t)
+  if (attachments.length === 0) return null
   return (
-    <div className={preview ? `${css.messageImages} ${css.messageImagesPreview}` : css.messageImages}>
-      {renderImages({ images, align: 'start' })}
-    </div>
+    <ul
+      className={preview ? `${css.attachments} ${css.attachmentsPreview}` : css.attachments}
+      aria-label={t('attachment.list')}
+    >
+      {attachments.map(({ block, index, name, metadata }) => (
+        <li className={css.attachmentRow} key={index}>
+          {block.attachment !== undefined
+            ? renderImages({
+              images: [{ attachment: block.attachment, label: name }],
+              align: 'start',
+              thumbnail: true,
+            })
+            : <span className={css.attachmentIcon}><FileTypeIcon path={name} /></span>}
+          <div className={css.attachmentInfo}>
+            <span className={css.attachmentName} title={name}>{name}</span>
+            <span className={css.attachmentMetadata}>{metadata}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -1486,7 +1535,6 @@ function MarkdownRecordContent({
       <SourceBlocks
         blocks={record.cell.sourceBlocks}
         onOpenCall={onOpenCall}
-        renderImages={renderImages}
         t={t}
       />
     )
@@ -1521,6 +1569,7 @@ function MarkdownRecordContent({
               text={record.cell.thinkingDetail}
               rendered={rendered}
               preview={preview}
+              variant="compact"
               t={t}
             />
           )}
@@ -1541,25 +1590,26 @@ function MarkdownRecordContent({
           onOpenCall={onOpenCall}
           t={t}
         />
-        <MessageImages
+        <RecordAttachments
           blocks={record.cell.sourceBlocks}
           preview={preview}
           renderImages={renderImages}
+          t={t}
         />
       </div>
     )
   }
   const source = markdownSource(record)
-  const hasImages = record.cell.sourceBlocks?.some(block => block.attachment !== undefined) === true
+  const hasAttachments = record.cell.sourceBlocks?.some(block => block.attachment !== undefined || block.file !== undefined) === true
   const hasToolCalls = record.cell.kind === 'message'
     && record.cell.sourceBlocks?.some(block => block.type === 'tool-call') === true
-  if (!source && !hasImages && !hasToolCalls) {
+  if (!source && !hasAttachments && !hasToolCalls) {
     const emptyLabel = isToolCallOnly(record.cell, t)
       ? t('record.toolCallOnly')
       : record.cell.text || t('record.noContent')
     return <p className={css.noPayload}>{emptyLabel}</p>
   }
-  if (!rendered || (!hasImages && !hasToolCalls)) {
+  if (!rendered || (!hasAttachments && !hasToolCalls)) {
     return <MarkdownFragment text={source ?? ''} rendered={rendered} preview={preview} t={t} />
   }
   return (
@@ -1573,7 +1623,7 @@ function MarkdownRecordContent({
           t={t}
         />
       )}
-      <MessageImages blocks={record.cell.sourceBlocks} preview={preview} renderImages={renderImages} />
+      <RecordAttachments blocks={record.cell.sourceBlocks} preview={preview} renderImages={renderImages} t={t} />
     </div>
   )
 }

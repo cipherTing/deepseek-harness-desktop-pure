@@ -8,6 +8,7 @@ import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from '@deepsee
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
 import { apply as hostApply } from '../src/index.ts'
+import type { SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 
 async function bench() {
   const ctx = new Context()
@@ -18,8 +19,6 @@ async function bench() {
     title: 'new', sessionIds: [], createdAt: '0', updatedAt: '0',
   }))
   const rename = vi.fn(async () => ({}))
-  const open = vi.fn()
-  const clear = vi.fn()
   const selectPanel = vi.fn()
   ctx.provide('layout', { selectPanel, beginNavigation: () => new AbortController().signal })
   const search = vi.fn(async () => ({
@@ -27,7 +26,23 @@ async function bench() {
     value: { items: [{ sessionId: 'session' as never, snippet: 'match' }], hasMore: false },
   }))
   const renameSession = vi.fn(async (title: string) => ({ ok: true, value: { title, seq: 1 } }))
-  const binding = vi.fn(() => ({ session: { rename: renameSession } }))
+  const binding = vi.fn((_id: string) => ({ session: { rename: renameSession } }))
+  const retain = vi.fn((target: string) => {
+    const resolved = binding(target)
+    const release = vi.fn()
+    return {
+      sessionId: target,
+      binding: resolved,
+      ready: Promise.resolve(resolved),
+      release,
+      [Symbol.dispose]: release,
+    } as unknown as SessionReference
+  })
+  const using = vi.fn(async (
+    target: string,
+    _options: unknown,
+    operation: (reference: SessionReference) => unknown,
+  ) => await operation(retain(target)))
   const fork = vi.fn(async () => 'forked' as never)
   const subscribe = () => () => {}
   ctx.provide('workspaces', {
@@ -53,11 +68,13 @@ async function bench() {
       subscribe,
     },
     create: vi.fn(async () => 'created' as never),
-    open,
-    clear,
+    retain,
+    using,
     search,
     searchResultLimit: 20,
     binding,
+    subagentAddress: vi.fn(() => undefined),
+    refreshSubagents: vi.fn(() => Promise.resolve()),
     fork,
   } as never)
   const pickDirectory = vi.fn(() => Promise.resolve({ ok: true as const, value: '/projects/picked' }))
@@ -72,7 +89,7 @@ async function bench() {
   ctx.provide('locale', locale)
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, rename,
-    open, clear, selectPanel, search, renameSession, binding, fork, pickDirectory,
+    retain, using, selectPanel, search, renameSession, binding, fork, pickDirectory,
   }
 }
 
@@ -126,7 +143,7 @@ describe('ui-workspace apply', () => {
     browser.startSession()
     expect(startSession).toHaveBeenLastCalledWith(undefined)
     browser.open('session' as never)
-    expect(b.open).toHaveBeenCalledWith('session')
+    expect(b.retain).toHaveBeenCalledWith('session', { source: 'mainView' })
     const signal = new AbortController().signal
     await expect(browser.searchSessions('match', signal)).resolves.toEqual({
       items: [{ sessionId: 'session', snippet: 'match' }],
@@ -135,11 +152,13 @@ describe('ui-workspace apply', () => {
     expect(b.search).toHaveBeenCalledWith('match', signal)
     expect(browser.searchResultLimit).toBe(20)
     await browser.renameSession('session' as never, 'renamed session')
-    expect(b.binding).toHaveBeenCalledWith('session')
+    expect(b.using).toHaveBeenCalledWith(
+      'session', { source: 'workspaceOperation' }, expect.any(Function),
+    )
     expect(b.renameSession).toHaveBeenCalledWith('renamed session')
     browser.forkSession('session' as never)
     await vi.waitFor(() => {
-      expect(b.open).toHaveBeenCalledWith('forked')
+      expect(b.retain).toHaveBeenCalledWith('forked', { source: 'mainView' })
     })
     expect(b.fork).toHaveBeenCalledWith({ sessionId: 'session', increaseTitle: true })
     await browser.renameWorkspace('ws' as never, 'renamed')

@@ -107,6 +107,10 @@
   overflow: hidden;
 }
 
+.body:has([data-pdf-preview]) {
+  background: var(--dsw-alias-bg-document-preview);
+}
+
 .wrap {
   white-space: pre-wrap;
   word-break: break-word;
@@ -308,10 +312,12 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 .viewerTool {
+  flex: none;
   width: auto;
   max-width: 160px;
   padding: 0 6px;
   overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   white-space: nowrap;
   text-overflow: ellipsis;

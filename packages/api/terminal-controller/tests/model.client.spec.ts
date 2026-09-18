@@ -31,6 +31,13 @@ function failure(message: string): RemoteResult<never> {
 
 function fixture(prepareStream?: <Item>(stream: RemoteStream<Item>) => void) {
   const remote: TerminalRemote = {
+    retain: vi.fn<TerminalRemote['retain']>(async function* (_session, _id, signal) {
+      yield { type: 'retained' }
+      await new Promise<void>((resolve) => {
+        if (signal?.aborted) resolve()
+        else signal?.addEventListener('abort', () => { resolve() }, { once: true })
+      })
+    }),
     shells: vi.fn<TerminalRemote['shells']>(async () => success([info.shell])),
     environment: vi.fn<TerminalRemote['environment']>(async () => success(environment)), list: vi.fn<TerminalRemote['list']>(async () => success([])),
     create: vi.fn<TerminalRemote['create']>(async (_sessionId, request) => success({ ...info, id: request.id })),

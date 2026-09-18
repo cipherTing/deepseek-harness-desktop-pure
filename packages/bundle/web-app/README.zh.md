@@ -73,7 +73,7 @@ dsh --profile web --no-open --port 8080
 <details>
 <summary>实现细节——点击展开</summary>
 
-本组合包是一份 patch 加一个运行时粘合插件。存储栈与投影缓存来自 `dsh-base`；Web 叠加层的 workspace 与 message-feedback 行使用共享的 `storageDomain` 服务。patch 重述 base 刻意省略的表层专属值，插入仅 Web 使用的宿主行与浏览器名录，然后把 agent 层改由 preset 承载；粘合插件负责 dist 服务、信任采样、提示词段落、bash 变量与就绪宣告。
+此 bundle 由一个补丁和一个运行时胶水插件组成。存储栈与投影缓存来自 `dsh-base`；Web 叠加层的工作区和消息反馈条目消费共享的 `storageDomain` 服务。补丁重述 base 有意省略的界面专用值，插入 Web 专用宿主条目和浏览器插件列表，再将 Agent 层移到预设后面。胶水插件负责 dist 服务、信任采样、提示词段落、bash 变量和就绪通知。`office-to-pdf` 条目为宿主消费者挂载一个延迟创建引擎的 [Office 转换提供方](../../document/office-to-pdf/README.zh.md)，使用此 bundle 的 Desktop 组合也共享该提供方。 转换服务的 Remote 方法负责预览读取授权，Document Preview 负责 Office 查看器和客户端缓存。
 
 ### patch 语义
 
@@ -81,7 +81,7 @@ patch 会替换目标行的整个 `config`，因此每个 Web 行都重述自己
 
 ### 就绪宣告
 
-URL 行与浏览器交接都是就绪信号：监督方一观察到该行就发起 RPC，浏览器一打开就请求页面，因此两者只在 Loader 配置树结算、通过 required 启动检查且 Connection 认证可用后运行——在没有 Loader 的手工构建树中则立即运行。可选插件失败不会阻止就绪宣告；required 启动失败或启动中途被释放的树不会宣告任何内容。
+URL 行与浏览器交接都是就绪信号：监督方一观察到该行就发起 RPC，浏览器一打开就请求页面，因此两者只在 Loader 配置树结算、通过 required 启动检查且 Connection 认证可用后运行——在没有 Loader 的手工构建树中则立即运行。此时 client combo JavaScript 和 source map 仍未物化。可选插件失败不会阻止就绪宣告；required 启动失败或启动中途被释放的树不会宣告任何内容。
 
 ### LAN 信任采样
 
