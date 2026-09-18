@@ -341,7 +341,7 @@ test('Desktop overlay rows match the shipped web composition contract', () => {
   }
   // Alpha1 keeps the base HMR host and the Web client reload row mounted;
   // the Desktop overlay must not disable either one.
-  assert.match(basePatch, /- id: hmr\n\s+name: '@deepseek-ai\/cordis-plugin-hmr'/)
+  assert.match(basePatch, /- id: hmr\n\s+name: '@deepseek-ai\/dsh-hmr'/)
   assert.doesNotMatch(overlay, /- id: hmr\n\s+disabled: true/)
   assert.match(webPatch, /- id: client-hmr\n\s+name: '@deepseek-ai\/dsh-client-hmr'/)
   assert.doesNotMatch(overlay, /- id: client-hmr\n\s+disabled: true/)
@@ -361,7 +361,7 @@ test('Desktop client UI package ships the dsh.client contract', () => {
     '@deepseek-ai/dsh-client-ui-renderer',
     '@deepseek-ai/dsh-client-ui-settings',
   ])
-  assert.match(client, /const inject = \["locale", "slots"\]/)
+  assert.match(client, /const inject = \["locale", "slots", "settingsScope"\]/)
   assert.ok(Object.keys(runtime.dependencies ?? {}).includes('@deepseek-ai/dsh-desktop-client-ui'))
   // Identity facts the About section surfaces.
   assert.equal(runtime.repository?.url, 'https://github.com/cipherTing/deepseek-harness-desktop-pure')

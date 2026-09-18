@@ -35,6 +35,7 @@ window.__ModuleLoader__.load({
       ".dab-button:hover{background:var(--dsw-alias-interactive-bg-hover)}",
       ".dab-status{font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}",
       ".dab-statusWarn{color:var(--dsw-alias-state-warn-label)}",
+      ".dab-ignoreGroup{display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin-right:auto;text-align:left}",
       ".dab-badge{position:static;align-self:stretch;z-index:1;flex:none;height:30px;margin:0 0 4px;padding:0 10px;border-radius:10px;border:none;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary-foreground);font-size:12px;font-weight:600;line-height:16px;cursor:pointer}",
       ".dab-badgeRail{align-self:center;width:10px;height:10px;margin:0 0 4px;padding:0;border:2px solid var(--dsw-alias-bg-layer-1);border-radius:50%;font-size:0;line-height:0}",
       ".dab-brandLabel{font-size:17px;font-weight:600;letter-spacing:0;white-space:nowrap}",
@@ -106,6 +107,8 @@ window.__ModuleLoader__.load({
       "dialog.emptyNotes": "此版本未提供更新说明。",
       "dialog.later": "稍后",
       "dialog.start": "开始更新",
+      "dialog.ignore": "忽略本次版本",
+      "dialog.ignoreHint": "忽略后可在「设置 → 关于 DeepDive」继续更新",
     };
     const en = {
       "about.nav": "About DeepDive",
@@ -131,6 +134,8 @@ window.__ModuleLoader__.load({
       "dialog.emptyNotes": "No release notes were provided for this version.",
       "dialog.later": "Later",
       "dialog.start": "Start update",
+      "dialog.ignore": "Skip this version",
+      "dialog.ignoreHint": "You can update later in Settings → About DeepDive",
     };
 
     // ── helpers ────────────────────────────────────────────────────────────
@@ -303,9 +308,40 @@ window.__ModuleLoader__.load({
       return info;
     }
 
+    // ── ignored release ────────────────────────────────────────────────────
+    // One preference read by the badge: the release whose reminder the user
+    // skipped. It lives in the durable `desktop-ui` settings namespace this
+    // package's Host half registers, so it survives a restart.
+    const DESKTOP_UI_NAMESPACE = "desktop-ui";
+    const ignoredListeners = new Set();
+    let ignoredVersion;
+    // Published by `apply`; inert until the plugin body runs.
+    let ignoreRelease = () => {};
+    function publishIgnoredVersion(next) {
+      if (ignoredVersion === next) return;
+      ignoredVersion = next;
+      for (const listener of ignoredListeners) listener();
+    }
+    function subscribeIgnoredVersion(listener) {
+      ignoredListeners.add(listener);
+      return () => { ignoredListeners.delete(listener); };
+    }
+    function useIgnoredVersion() {
+      const [version, setVersion] = React.useState(ignoredVersion);
+      React.useEffect(() => {
+        setVersion(ignoredVersion);
+        return subscribeIgnoredVersion(() => { setVersion(ignoredVersion); });
+      }, []);
+      return version;
+    }
+
     // ── components ─────────────────────────────────────────────────────────
-    function UpdateDialog({ latest, info, t, onClose }) {
+    function UpdateDialog({ latest, info, t, onClose, onIgnore }) {
       const footer = React.createElement(React.Fragment, null,
+        React.createElement("div", { className: "dab-ignoreGroup" },
+          React.createElement(Button, { variant: "outline", onClick: onIgnore }, t("dialog.ignore")),
+          React.createElement("span", { className: "dab-status" }, t("dialog.ignoreHint")),
+        ),
         React.createElement(Button, { variant: "outline", onClick: onClose }, t("dialog.later")),
         React.createElement("a", {
           className: "dab-startLink",
@@ -405,7 +441,9 @@ window.__ModuleLoader__.load({
           ),
         ),
         dialogOpen && status === "update" && latest !== null && React.createElement(UpdateDialog, {
-          latest, info, t, onClose: () => { setDialogOpen(false); },
+          latest, info, t,
+          onClose: () => { setDialogOpen(false); },
+          onIgnore: () => { setDialogOpen(false); ignoreRelease(latest.version); },
         }),
         close !== undefined && null,
       );
@@ -415,6 +453,7 @@ window.__ModuleLoader__.load({
       const info = useDesktopInfo();
       const [latest, setLatest] = React.useState(null);
       const [open, setOpen] = React.useState(false);
+      const ignored = useIgnoredVersion();
 
       React.useEffect(() => {
         if (info === null) return;
@@ -434,6 +473,8 @@ window.__ModuleLoader__.load({
       }, [info]);
 
       if (latest === null || !isNewer(latest.version, info?.desktopVersion)) return null;
+      // The ignored release stays quiet; a newer release replaces it.
+      if (ignored === latest.version) return null;
       return React.createElement(React.Fragment, null,
         React.createElement("button", {
           type: "button",
@@ -443,7 +484,9 @@ window.__ModuleLoader__.load({
           onClick: () => { setOpen(true); },
         }, wide ? t("badge.update") : "·"),
         open && React.createElement(UpdateDialog, {
-          latest, info, t, onClose: () => { setOpen(false); },
+          latest, info, t,
+          onClose: () => { setOpen(false); },
+          onIgnore: () => { setOpen(false); ignoreRelease(latest.version); },
         }),
       );
     }
@@ -458,13 +501,23 @@ window.__ModuleLoader__.load({
     }
 
     // ── plugin body ────────────────────────────────────────────────────────
-    // Cordis must wait for both services before running this plugin.
-    const inject = ["locale", "slots"];
+    // Cordis must wait for these services before running this plugin.
+    const inject = ["locale", "slots", "settingsScope"];
 
     function apply(ctx) {
       const locale = ctx.locale;
       const slots = ctx.slots;
       ctx.effect(() => locale.register(NS, { zh, en }), "desktop-client-ui: dictionaries");
+      const ignoredScope = ctx.settingsScope.bind({ namespace: DESKTOP_UI_NAMESPACE });
+      ctx.effect(() => {
+        const sync = () => { publishIgnoredVersion(ignoredScope.getSnapshot().value?.ignoredUpdateVersion); };
+        sync();
+        return ignoredScope.subscribe(sync);
+      }, "desktop-client-ui: ignored release");
+      ignoreRelease = (version) => {
+        publishIgnoredVersion(version);
+        void ignoredScope.set("ignoredUpdateVersion", version);
+      };
       ctx.effect(
         () => installDesktopDropFeedback(
           () => locale.bind(NS)("drop.release"),

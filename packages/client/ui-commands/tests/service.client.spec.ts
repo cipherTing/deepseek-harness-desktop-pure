@@ -107,9 +107,12 @@ async function bench(opts: BenchOptions = {}) {
   })
   // Real scope tags behind a fake sessions face.
   const scopes = new Map<SessionId, { ctx: Context; fiber: { dispose(): Promise<void> } }>()
+  const bindings = new Map<SessionId, { sessionId: SessionId; session: { sessionId: SessionId }; ctx: Context }>()
   const removeSessions = ctx.provide('sessions', {
     scope: (id: SessionId) => scopes.get(id)?.ctx,
     scopeOf: (c: Context) => scopeOf(c),
+    sessionOf: (scopeCtx: Context) => [...bindings.values()].find(binding => binding.ctx === scopeCtx)?.session,
+    binding: (id: SessionId) => bindings.get(id),
     subagentAddress: (id: SessionId) => id === opts.addressed
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
@@ -122,12 +125,15 @@ async function bench(opts: BenchOptions = {}) {
   })
   /** Notices the fake conversation face collected (runDetached routing). */
   const notices: Array<{ scope: SessionId | undefined; level: 'info' | 'error'; text: string }> = []
+  /** Composer focuses the fake conversation face collected (popup dismissal). */
+  const focuses: Array<SessionId | undefined> = []
   const removeConversation = ctx.provide('conversation', {
     input: {
       for: (actx: Context) => ({
         notify: (level: 'info' | 'error', text: string) => {
           notices.push({ scope: scopeOf(actx), level, text })
         },
+        focus: () => { focuses.push(scopeOf(actx)) },
       }),
     },
   })
@@ -137,8 +143,14 @@ async function bench(opts: BenchOptions = {}) {
   const source = registered.get('/ command')
   if (source === undefined) throw new Error('command source not registered')
   const mint = (key: string) => {
-    const handle = createScope(ctx, sid(key))
-    scopes.set(sid(key), handle)
+    const id = sid(key)
+    const handle = createScope(ctx, id)
+    const binding = { sessionId: id, session: { sessionId: id }, ctx: handle.ctx }
+    scopes.set(id, handle)
+    bindings.set(id, binding)
+    handle.ctx.effect(() => () => {
+      if (bindings.get(id) === binding) bindings.delete(id)
+    })
     return handle
   }
   /** Warm one session's catalog through the source's own candidate pull. */
@@ -146,7 +158,7 @@ async function bench(opts: BenchOptions = {}) {
     await source.candidates(session, { query: '', position: 'leading', drilled: false, signal: new AbortController().signal })
   }
   return {
-    ctx, fiber, command, source, mint, warm, listCalls, executeCalls, executions, registered, notices, remote,
+    ctx, fiber, command, source, mint, warm, listCalls, executeCalls, executions, registered, notices, focuses, remote,
     removeSessions, removeConversation,
   }
 }
@@ -939,7 +951,7 @@ describe('popupFor', () => {
   })
 
   it('dismisses matching popups and confirmations while preserving other commands and drafts', async () => {
-    const { command, source, mint } = await bench()
+    const { command, source, mint, focuses } = await bench()
     const pending = Promise.withResolvers<readonly SelectOption[]>()
     let pendingSignal: AbortSignal | undefined
     const onSelect = vi.fn()
@@ -967,8 +979,6 @@ describe('popupFor', () => {
     const other = command.popupFor(mint('other').ctx)
     const consume = vi.fn(() => true as const)
     scope.ctx.on('slash/input-consume-token', consume)
-    const focus = vi.fn()
-    command.bindComposerFocus(sid('s1'), focus)
     menuPick(source, 'theme', proj('s1'))
     menuPick(source, 'theme', proj('s2'))
     menuPick(source, 'other', proj('other'))
@@ -990,7 +1000,8 @@ describe('popupFor', () => {
     expect(second.state.getSnapshot()).toMatchObject({ open: false, options: [] })
     expect(onSelect).not.toHaveBeenCalled()
     expect(consume).not.toHaveBeenCalled()
-    expect(focus).not.toHaveBeenCalled()
+    // The stale catalog takes the rows away; the composer keeps the keyboard.
+    expect(focuses).toEqual([sid('s1'), sid('s2')])
   })
 
   it('resolves lazily per session; a foreign session gets its own controller; unscoped ctx throws', async () => {
@@ -999,11 +1010,11 @@ describe('popupFor', () => {
     const first = command.popupFor(a.ctx)
     expect(command.popupFor(a.ctx)).toBe(first)
     expect(command.popupFor(mint('s2').ctx)).not.toBe(first)
-    expect(() => command.popupFor(ctx)).toThrow('requires a session scope')
+    expect(() => command.popupFor(ctx)).toThrow('requires a retained Session scope')
   })
 
-  it('a successful select dispatches the scoped consume-token and fires the bound composer focus', async () => {
-    const { command, source, mint } = await bench()
+  it('a successful select dispatches the scoped consume-token and focuses the composer', async () => {
+    const { command, source, mint, focuses } = await bench()
     const onSelect = vi.fn()
     command.register(themeContribution({ ui: themeUi({ onSelect }) }))
     const scope = mint('s1')
@@ -1012,38 +1023,13 @@ describe('popupFor', () => {
       consumes.push(r)
       return true
     })
-    const focus = vi.fn()
-    command.bindComposerFocus(sid('s1'), focus)
-
     expect(menuPick(source, 'theme', proj('s1'), 6)).toBe('handled')
     const popup = command.popupFor(scope.ctx)
     await Promise.resolve() // options land
     await popup.select(0)
     expect(onSelect).toHaveBeenCalledExactlyOnceWith({ id: 'dark', label: 'Dark' } satisfies SelectOption, proj('s1'))
     expect(consumes).toEqual([{ guard: { kind: 'span', span: { start: 0, end: 6, draftRev: 3 } } }])
-    expect(focus).toHaveBeenCalledTimes(1)
-  })
-
-  it('unbinding an old composer preserves its replacement and unbinding the current one removes focus', async () => {
-    const { command, source, mint } = await bench()
-    command.register(themeContribution())
-    const scope = mint('s1')
-    scope.ctx.on('slash/input-consume-token', () => true)
-    const oldFocus = vi.fn()
-    const newFocus = vi.fn()
-    const unbindOld = command.bindComposerFocus(sid('s1'), oldFocus)
-    const unbindNew = command.bindComposerFocus(sid('s1'), newFocus)
-    unbindOld()
-    menuPick(source, 'theme', proj('s1'))
-    await Promise.resolve()
-    await command.popupFor(scope.ctx).select(0)
-    expect(oldFocus).not.toHaveBeenCalled()
-    expect(newFocus).toHaveBeenCalledOnce()
-    unbindNew()
-    menuPick(source, 'theme', proj('s1'))
-    await Promise.resolve()
-    await command.popupFor(scope.ctx).select(0)
-    expect(newFocus).toHaveBeenCalledOnce()
+    expect(focuses).toEqual([sid('s1')])
   })
 
   it('the enter path opens with the bare-token guard', async () => {

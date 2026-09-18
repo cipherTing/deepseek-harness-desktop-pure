@@ -142,6 +142,8 @@ export interface ChatViewInjected {
   }
   /** Open the current source file of a skill referenced by a sent message. */
   openSkill: (name: string) => void
+  /** Open one HTTP(S) message link in a Sidebar Browser tab. */
+  openExternalLink: (url: string) => void
   openFile: (path: string, options?: OpenFileOptions) => Promise<void>
   loadOlder: () => void
   /** Jump loader: page history back through seq; resolves when the window covers it. */
@@ -204,11 +206,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.chat.commandview': { kind: 'keyed'; scope: 'session'; owner: CommandRowOwnerProps }
     /**
-     * Selector-routed extension before a completed Turn's action row. The
-     * component receives the Turn, closing sequence, and file opener. The first
-     * selector that accepts the owner renders; an all-declined chain is empty.
+     * Ordered feature contributions before a completed Turn's action row. Each
+     * entry receives the Turn, closing sequence, and file opener. A fresh `id`
+     * adds an entry; entries without content return null.
      */
-    'conversation.chat.turnTail': { kind: 'chain'; scope: 'session'; owner: TurnTailOwnerProps }
+    'conversation.chat.turnTail': { kind: 'list'; scope: 'session'; owner: TurnTailOwnerProps }
     /**
      * Ordered actions for one finalized assistant message. Each entry receives
      * the durable message id; a fresh `id` adds an action and reusing one replaces

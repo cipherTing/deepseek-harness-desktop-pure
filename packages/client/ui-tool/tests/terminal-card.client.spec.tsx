@@ -405,11 +405,9 @@ describe('chat row terminal body', () => {
 describe('BashRow terminal card', () => {
   const list = () => createSnapshotStore<SessionListState>({
     ids: [SID],
-    byId: { [SID]: { id: SID, displayTitle: 'r', running: false, blank: false, updatedAt: 0 } },
-    current: undefined,
+    byId: { [SID]: { id: SID, displayTitle: 'r', running: false, retainedBy: {}, blank: false, updatedAt: 0 } },
     phase: 'ready',
     subagentsByParent: {}, jobsBySession: {},
-    currentAddress: undefined,
   })
 
   const rowProps = (block: RunningToolCall | ToolResultNode): BashRowProps => ({

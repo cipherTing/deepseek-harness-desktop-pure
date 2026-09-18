@@ -4,9 +4,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 import { en, zh } from '../src/client/locales.ts'
+import type { DesktopUpdateView } from '../src/client/desktop-update-bridge.ts'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
@@ -28,16 +31,18 @@ const SEAT_CONTENT: Record<string, string> = {
   'settings.close': 'Close',
 }
 
-type AttentionSnapshot = Parameters<Parameters<SettingsRootComponentProps['useSessionPendingInteraction']>[0]>[0]
+type AttentionSnapshot = Parameters<Parameters<SettingsRootComponentProps['useSessionStatus']>[0]>[0]
 type ConnectionSnapshot = Parameters<Parameters<SettingsRootComponentProps['useConnectionState']>[0]>[0]
 const noAttention: AttentionSnapshot = new Map()
-const useSessionPendingInteraction: SettingsRootComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
+const useSessionStatus: SettingsRootComponentProps['useSessionStatus'] = selector => selector(noAttention)
 
 function mount({
   wide = true,
   dictionary = en,
   connectionState = 'connected',
+  desktopUpdate = { failed: false, opening: false },
   onboardingActive = true,
+  mainView = true,
   rows = [
     { id: 'general', order: 0, label: 'General' },
     { id: 'models', order: 10, label: 'Models' },
@@ -51,7 +56,9 @@ function mount({
   wide?: boolean
   dictionary?: typeof en | typeof zh
   connectionState?: ConnectionSnapshot
+  desktopUpdate?: DesktopUpdateView
   onboardingActive?: boolean
+  mainView?: boolean
   rows?: Row[]
   steps?: Step[]
 } = {}) {
@@ -69,21 +76,31 @@ function mount({
       return SEAT_CONTENT[key]
     }) as SettingsRootComponentProps['renderSlot'],
   )
-  const useSessions = ((select: (state: unknown) => unknown) => select(onboardingActive
-    ? { phase: 'ready', current: undefined, byId: {} }
-    : {
-      phase: 'ready',
-      current: 'active-session',
-      byId: { 'active-session': { blank: false } },
-    })) as never
+  const activeId = SessionId('active-session')
+  const sessions: SessionListState = {
+    ids: [activeId],
+    byId: {
+      [activeId]: {
+        id: activeId,
+        displayTitle: 'Active',
+        blank: onboardingActive,
+        running: false,
+        retainedBy: mainView ? { mainView: 1 } : {},
+        updatedAt: 0,
+      },
+    },
+    phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+  }
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
   const props: SettingsRootComponentProps = {
-    useSessions,
-    useSessionPendingInteraction,
-    usePanelInfo, useResource,
+    useSessions: select => select(sessions),
+    useSessionStatus,
+    usePanelInfo, useSessionRetainInfo: () => undefined, useResource,
     useWorkspaces: unusedHook,
     wide,
     reconnect,
+    openDesktopUpdate: () => {},
+    useDesktopUpdate: select => select(desktopUpdate),
     t: makeTranslate(dictionary),
     useConnectionState: (select) => {
       const [, force] = useState(0)
@@ -119,7 +136,11 @@ function mount({
       for (const fn of [...connectionListeners]) fn()
     })
   }
-  return { view, renderSlot, bump, listeners, reconnect, setConnectionState }
+  const setDesktopUpdate = (next: DesktopUpdateView) => {
+    desktopUpdate = next
+    view.rerender(<SettingsRoot {...props} />)
+  }
+  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, setDesktopUpdate }
 }
 
 function openPanel() {
@@ -130,6 +151,17 @@ function openPanel() {
 }
 
 describe('SettingsRoot trigger', () => {
+  it('shows installation instead of expected backend reconnection and restores connection feedback after failure', () => {
+    const presentation = { phase: 'installing' as const, version: '1.0.1' }
+    const f = mount({ dictionary: zh, connectionState: 'connecting',
+      desktopUpdate: { failed: false, opening: false, presentation } })
+    expect(screen.getByRole('button', { name: '正在准备重启…' })).toBeTruthy()
+    expect(screen.queryByText('重新连接中')).toBeNull()
+    f.setDesktopUpdate({ failed: false, opening: false,
+      presentation: { phase: 'error', version: presentation.version, failure: 'install' } })
+    expect(screen.queryByRole('button', { name: '重试更新' })).toBeNull()
+    expect(screen.getByText('重新连接中')).toBeTruthy()
+  })
   it.each([
     { column: 'expanded English', wide: true, dictionary: en, name: 'Settings' },
     { column: 'collapsed English', wide: false, dictionary: en, name: 'Settings' },
@@ -369,6 +401,12 @@ describe('SettingsPanel navigation', () => {
     const inactive = mount({ onboardingActive: false }).renderSlot.mock.calls
       .filter(call => call[0] === 'settings.onboarding')
     expect(inactive).toHaveLength(0)
+  })
+
+  it('keeps onboarding active before a main Session is retained', () => {
+    const { renderSlot } = mount({ mainView: false })
+
+    expect(renderSlot.mock.calls.some(call => call[0] === 'settings.onboarding')).toBe(true)
   })
 
   it('paints no takeover chrome of its own around the mounted step', () => {

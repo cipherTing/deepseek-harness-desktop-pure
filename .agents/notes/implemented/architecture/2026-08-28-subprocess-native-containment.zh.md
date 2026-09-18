@@ -54,6 +54,8 @@ selector 是 per-spawn locator 或 sentinel，不是凭据或持久格式。Linu
 
 ## Verification
 
+宿主退出清理 fixture 对比 provider 在 disposal 前后的监听器身份，并验证独立注册的退出监听器仍然存在。进程监听器总数无法证明 provider 清理完成，因为其他进程生命周期处理器可能在 provider 构造之后注册。
+
 - provider 与 Linux 协议测试套件固定同步 NUL 拒绝发生在启动副作用之前、严格 request／error 解码、target cwd 与完整环境恢复、私有变量碰撞、保留 argv 且对 symlink 敏感的 PATH 遍历、为继承 stdio 清除 close-on-exec、pre-exec error ownership、失败深度 probe 重试与成功深度 probe 缓存及逐调用 manager 检查、三种 scope 建立状态（包括 request 未消费时的请求终止与意外退出）、`LoadState`／`ActiveState`／`TasksCurrent` 解析、释放被留在 active 且没有任何进程的遗留 scope（连同 client 仍存活、未请求终止与进程数未上报三种情形）、`reloading`、带未胜出 delay 取消的 terminate wake-up、建立后有上限的退避，以及 PTY managed-owner 恰好一次 cleanup。
 - Windows 协议与 Win32 测试套件固定恰好两个 result 分支、只含数字的 target exit、使用普通 error 的 start cancellation 与 parent 原样保留的本地 reason、缩减到 `name`／`message`／`code`／`syscall`／`path` 的 error record、固定的 `2`／`3`／`267` 到 `ENOENT`、`740` 到 `EACCES`、`5` 到 `EPERM`、`193` 到 `EFTYPE` 及其余 code 到 `UNKNOWN` 的映射、runner spawn 后才发送 start、spawn 前 failure 的 empty-range settlement、按序数显式排序的 target 环境块及 `=C:` 保留和双 NUL 结尾、`uv_get_osfhandle()` carrier 映射与 unsigned invalid sentinel 拒绝、null-device ignored-stdin carrier 与非 ignore stdin pipe、result-send 与 IPC-disconnect failure、stdio settlement 前的 direct-result 锁存、active-process 完全停稳，以及唯一 handle cleanup。
 - 无需密钥的 [`bash-startup-timeout`](../../../../snapshots/session/bash-startup-timeout/snapshot.yml) Session 快照固定模型可见的超时结果。Linux user-systemd fixture 通过输入屏障保持启动请求未消费，并验证取消与 range settlement。

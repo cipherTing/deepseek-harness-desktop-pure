@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import { TerminalGuideIcon } from './TerminalIcon.tsx'
 import { TerminalGuide, type TerminalGuideInjected } from './TerminalGuide.tsx'
-import { TerminalBody } from './TerminalBody.tsx'
+import { LazyTerminalBody } from './LazyTerminalBody.tsx'
 import { TerminalTitle } from './TerminalTitle.tsx'
 import { TerminalRecovery, type TerminalRecoveryInjected } from './TerminalRecovery.tsx'
 import { TerminalCleanup, type TerminalCleanupInjected } from './TerminalCleanup.tsx'
@@ -29,6 +29,12 @@ export function apply(ctx: Context): void {
   let disposed = false
   const recovered = new Map<SessionId, Promise<void>>()
   ctx.effect(() => () => { disposed = true; recovered.clear() }, 'ui-sidebar-terminal.lifetime')
+  ctx.effect(() => {
+    const sync = (): void => { ctx.webTerminals.retainTabs(ctx.sidebarRight.openTabs.getSnapshot().filter(tab => tab.kind === 'terminal')) }
+    const unsubscribe = ctx.sidebarRight.openTabs.subscribe(sync)
+    sync()
+    return () => { unsubscribe(); ctx.webTerminals.retainTabs([]) }
+  }, 'ui-sidebar-terminal.window-holds')
   const target = (sessionId: SessionId, key: string): SidebarRightTabParamsMap['terminal'] | undefined =>
     ctx.sidebarRight.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation.getSnapshot().params
   const terminalId = (sessionId: SessionId, key: string): WebTerminalId | undefined => {
@@ -37,7 +43,8 @@ export function apply(ctx: Context): void {
   }
   const view = (sessionId: SessionId, key: string) => {
     const params = target(sessionId, key)
-    return ctx.webTerminals.view(sessionId, key, terminalId(sessionId, key),
+    const contentId = ctx.sidebarRight.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation.getSnapshot().address
+    return ctx.webTerminals.view(sessionId, key, contentId, terminalId(sessionId, key),
       params !== undefined && 'shellPath' in params ? params.shellPath : undefined)
   }
   const namespace = 'sidebarTerminal'
@@ -49,7 +56,7 @@ export function apply(ctx: Context): void {
     guide: [{ id: 'new', order: 20, title: () => t('new'), description: () => t('description'), icon: TerminalGuideIcon }],
   }), 'ui-sidebar-terminal.type')
   ctx.effect(() => ctx.sidebarRight.registerCloseHandler('terminal', (sessionId, tab) => {
-    ctx.webTerminals.close(sessionId, tab.id, terminalId(sessionId, tab.id))
+    ctx.webTerminals.close(sessionId, tab.id, tab.contentId, terminalId(sessionId, tab.id))
   }), 'ui-sidebar-terminal.close')
   const inject = (sessionId: SessionId): TerminalInjected => ({
     view: key => view(sessionId, key),
@@ -69,7 +76,7 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab', key: id, locale: namespace,
       inject: (sessionId): TerminalBodyInjected => ({ ...inject(sessionId), hooks: { theme } }),
-    }, TerminalBody,
+    }, LazyTerminalBody,
   )), 'ui-sidebar-terminal.body')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab.title', key: id, locale: namespace, inject }, TerminalTitle,
@@ -80,6 +87,9 @@ export function apply(ctx: Context): void {
       restore: () => {
         let pending = recovered.get(sessionId)
         if (pending === undefined) {
+          for (const tab of ctx.sidebarRight.tabsIn(sessionId)) {
+            if (tab.kind === 'terminal') view(sessionId, tab.id)
+          }
           pending = ctx.webTerminals.recover(sessionId).then((terminals) => {
             if (disposed) return
             for (const info of terminals) ctx.sidebarRight.openTabIn(sessionId, 'terminal', {

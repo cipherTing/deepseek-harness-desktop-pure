@@ -74,6 +74,7 @@ function loadClientUi({
   releaseBody = '## 更新日志\n\n- 新增更新弹窗。',
   userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
   activate = true,
+  ignoredVersion,
 } = {}) {
   const releaseTag = `v${releaseVersion}`
   dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
@@ -90,6 +91,7 @@ function loadClientUi({
     })
   }
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  let releaseFetches = 0
   globalThis.fetch = async (input) => {
     const url = String(input)
     if (url === '/desktop-info.json') {
@@ -101,6 +103,7 @@ function loadClientUi({
       })
     }
     if (url.endsWith('/repos/cipherTing/deepseek-harness-desktop-pure/releases/latest')) {
+      releaseFetches += 1
       return response({
         tag_name: releaseTag,
         html_url: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/tag/${releaseTag}`,
@@ -155,20 +158,39 @@ function loadClientUi({
     inject: (_name, register) => register(),
     register: (entry, component) => { components.set(entry.name, component); return () => {} },
   }
+  // The durable Desktop preference behind the update badge: the stub records
+  // every write and republishes the section it now holds.
+  const ignored = { value: ignoredVersion, writes: [], listeners: new Set() }
+  const settingsScopeEntry = {
+    getSnapshot: () => ({
+      value: ignored.value === undefined ? undefined : { ignoredUpdateVersion: ignored.value },
+    }),
+    subscribe: (listener) => { ignored.listeners.add(listener); return () => { ignored.listeners.delete(listener) } },
+    set: (field, value) => {
+      assert.equal(field, 'ignoredUpdateVersion')
+      ignored.writes.push(value)
+      ignored.value = value
+      for (const listener of ignored.listeners) listener()
+      return Promise.resolve()
+    },
+  }
+  const settingsScope = { bind: () => settingsScopeEntry }
   const context = {
     locale,
     slots,
+    settingsScope,
     effect: (install) => install(),
-    get: (name) => name === 'locale' ? locale : name === 'slots' ? slots : undefined,
+    get: (name) => name === 'locale' ? locale : name === 'slots' ? slots
+      : name === 'settingsScope' ? settingsScope : undefined,
   }
   if (activate) plugin.apply(context)
   const t = locale.bind()
-  return { components, t, locale, slots, plugin }
+  return { components, t, locale, slots, plugin, ignored, releaseFetches: () => releaseFetches }
 }
 
-test('Desktop client UI waits for locale and slots before registering its contributions', async () => {
+test('Desktop client UI waits for locale, slots, and the settings scope before registering its contributions', async () => {
   const { components, locale, slots, plugin } = loadClientUi({ activate: false })
-  assert.deepEqual(plugin.inject, ['locale', 'slots'])
+  assert.deepEqual(plugin.inject, ['locale', 'slots', 'settingsScope'])
 
   // Use the built Cordis runtime used by the Desktop sidecar; a hand-written
   // context would not prove that a missing provider parks the plugin fiber.
@@ -187,6 +209,10 @@ test('Desktop client UI waits for locale and slots before registering its contri
     assert.equal(components.size, 0)
 
     ctx.provide('slots', slots)
+    await Promise.resolve()
+    assert.equal(components.size, 0)
+
+    ctx.provide('settingsScope', { bind: () => ({ getSnapshot: () => ({ value: undefined }), subscribe: () => () => {}, set: () => Promise.resolve(), unset: () => Promise.resolve() }) })
     await fiber
     assert.deepEqual([...components.keys()], [
       'settings.section',
@@ -228,6 +254,37 @@ test('update badge opens release details only after the user clicks it', async (
   assert.ok(dialog.classList.contains('dab-updateDialog'))
   assert.ok(dialog.querySelector('.dab-updateDialogContent'))
   assert.ok(view.getByTestId('modal-footer').contains(start))
+  // Skipping the shown release is the third dialog action, and its hint names
+  // the surface that still offers the update.
+  const ignore = view.getByRole('button', { name: '忽略本次版本' })
+  assert.ok(view.getByTestId('modal-footer').contains(ignore))
+  assert.match(dialog.textContent, /忽略后可在「设置 → 关于 DeepDive」继续更新/)
+})
+
+test('skipping the shown release hides the badge and stores the version', async () => {
+  const { components, t, ignored } = loadClientUi()
+  const UpdateBadge = components.get('settings.update')
+  const view = render(React.createElement(UpdateBadge, { wide: true, t }))
+  fireEvent.click(await view.findByRole('button', { name: '更新' }))
+  await view.findByRole('dialog', { name: 'DeepDive 更新' })
+
+  fireEvent.click(view.getByRole('button', { name: '忽略本次版本' }))
+
+  await waitFor(() => assert.equal(view.queryByRole('button', { name: '更新' }), null))
+  assert.equal(view.queryByRole('dialog'), null)
+  assert.deepEqual(ignored.writes, ['v0.2.0'])
+})
+
+test('the ignored release stays quiet while a newer release shows the badge', async () => {
+  const quiet = loadClientUi({ ignoredVersion: 'v0.2.0' })
+  const quietView = render(React.createElement(quiet.components.get('settings.update'), { wide: true, t: quiet.t }))
+  await waitFor(() => assert.ok(quiet.releaseFetches() > 0))
+  assert.equal(quietView.queryByRole('button', { name: '更新' }), null)
+  cleanup()
+
+  const newer = loadClientUi({ ignoredVersion: 'v0.2.0', releaseVersion: '0.3.0' })
+  const newerView = render(React.createElement(newer.components.get('settings.update'), { wide: true, t: newer.t }))
+  assert.ok(await newerView.findByRole('button', { name: '更新' }))
 })
 
 test('macOS brand title moves down without changing the row layout', () => {

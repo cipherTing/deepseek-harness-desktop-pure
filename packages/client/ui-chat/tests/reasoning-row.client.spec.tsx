@@ -106,7 +106,7 @@ describe('ReasoningRow', () => {
       text: 'Inspect the session\n**Comparing checkout and merge bases**',
       streaming: true,
     },
-  ])('strips double-asterisk markers from the $label summary without changing the reasoning body', ({ text, streaming }) => {
+  ])('strips double-asterisk markers from the $label summary and renders body emphasis', ({ text, streaming }) => {
     const view = render(
       <AssistantMarkdown
         t={t}
@@ -120,10 +120,64 @@ describe('ReasoningRow', () => {
     expect(view.queryByText('**Comparing checkout and merge bases**')).toBeNull()
 
     fireEvent.click(view.getByText('思考'))
-    expect(view.container.querySelector('[class*="thinkBody"]')?.textContent).toBe(text)
+    expect(view.getByText('Comparing checkout and merge bases').tagName).toBe('STRONG')
+    expect(view.container.querySelector('[class*="thinkBody"]')?.textContent).not.toContain('**')
   })
 
-  it('expanded Think drops the inline summary and renders plain prose, no IN card', () => {
+  it('keeps heading syntax in the collapsed summary and renders compact headings when expanded', () => {
+    const text = Array.from({ length: 6 }, (_, index) => `${'#'.repeat(index + 1)} Section ${index + 1}`)
+      .join('\n\n') + '\n\nReasoning body.'
+    const view = render(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text }]}
+        streaming={false}
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    const summary = view.getByText('# Section 1')
+    expect(summary.tagName).toBe('SPAN')
+    expect(view.queryByRole('heading')).toBeNull()
+
+    fireEvent.click(summary)
+    const compact = view.container.querySelector('[data-markdown-variant="compact"]')
+    expect(compact).not.toBeNull()
+    expect(compact?.querySelectorAll('h1, h2, h3, h4, h5, h6')).toHaveLength(6)
+    expect(compact?.querySelector('p')?.textContent).toBe('Reasoning body.')
+
+    fireEvent.click(view.getByText('思考'))
+    expect(view.getByText('# Section 1').tagName).toBe('SPAN')
+    expect(view.queryByRole('heading')).toBeNull()
+  })
+
+  it('keeps completed reasoning blocks mounted while the open streaming tail grows', () => {
+    const first = '## Investigation\n\n**Check persistence**\n\n'
+    const view = render(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: first }]}
+        streaming
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    fireEvent.click(view.getByText('思考'))
+    const heading = view.getByRole('heading', { name: 'Investigation' })
+    const emphasis = view.getByText('Check persistence')
+    const text = first + Array.from({ length: 8 }, (_, index) => `Paragraph ${index}.`).join('\n\n')
+    view.rerender(
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text }]}
+        streaming
+        renderMessageImages={renderMessageImages}
+      />,
+    )
+    expect(view.getByRole('heading', { name: 'Investigation' })).toBe(heading)
+    expect(view.getByText('Check persistence')).toBe(emphasis)
+    expect(view.container.querySelector('[class*="thinkBody"]')?.textContent).not.toContain('##')
+  })
+
+  it('expanded Think drops the inline summary and renders prose without an IN card', () => {
     const view = render(
       <AssistantMarkdown
         t={t}

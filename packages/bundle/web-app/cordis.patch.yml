@@ -145,8 +145,9 @@
     # assembly fact of dsh-web-app, never user config), mounts the
     # frontend-static fallback owner, registers the web-surface prompt
     # section and the bash runtime variable, prints the URL line, and opens the
-    # canonical local URL after the full tree settles. The webStartup provider
-    # supplies invocation-only values; after the server binds, this row samples
+    # canonical local URL after the full Loader tree settles and the required-
+    # entry audit passes. The
+    # webStartup provider supplies invocation-only values; after the server binds, this row samples
     # LAN trust once and provides `webRuntime`. A complete agent-preset persona
     # suppresses the prompt section for that agent while retaining the host-owned
     # shell variable.
@@ -224,14 +225,21 @@
       name: '@deepseek-ai/dsh-client-ui-sidebar-right'
 
 
+    - id: office-to-pdf
+      name: '@deepseek-ai/dsh-office-to-pdf'
+
     # The right Sidebar's document tab: bounded file reads with selectable
-    # Markdown, code, HTML, PDF, and plain-text renderers.
+    # Markdown, code, HTML, PDF, Office, and plain-text renderers.
     - id: ui-sidebar-documentpreview
       name: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
 
-    # The right Sidebar's workspace file tree tab type.
+    # Sandboxed HTTP(S) Browser tabs, including loopback targets.
+    - id: ui-sidebar-browser
+      name: '@deepseek-ai/dsh-client-ui-sidebar-browser'
+
     - id: ui-sidebar-terminal
       name: '@deepseek-ai/dsh-client-ui-sidebar-terminal'
+    # The right Sidebar's workspace file tree tab type.
     - id: ui-sidebar-files
       name: '@deepseek-ai/dsh-client-ui-sidebar-files'
 
@@ -244,6 +252,14 @@
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
 
+    # Plugin management: the sidebar Plugins page installs, enables, disables,
+    # and removes the profile's bundles through the `pluginManager` Remote.
+    # Without a profile-backed Host it reports itself unavailable.
+    - id: ui-plugin-manager
+      name: '@deepseek-ai/dsh-client-ui-plugin-manager'
+
+    # Read-only Plugin list tab in the Settings Plugins section; the built-in
+    # bundles the sidebar page leaves out are inspected here.
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
 
@@ -273,19 +289,25 @@
     - id: ui-cordis
       name: '@deepseek-ai/dsh-client-ui-cordis'
 
-    # Durable workflow lifecycle as an independent Chat node after the
-    # existing generic workflow tool row.
-    - id: ui-workflow-run
-      name: '@deepseek-ai/dsh-client-ui-workflow-run'
-
-    # Turn tail: the produced-files row under each closing assistant message.
-    # Remove this entry to turn the surface off; the tail hole renders empty.
+    # Turn tail: the changed-files card and delivery cards under each closing
+    # assistant message. Remove this entry to turn the surface off; the tail
+    # hole renders empty.
     - id: ui-deliverables
       name: '@deepseek-ai/dsh-client-ui-deliverables'
+
+    # Records each top-level turn's changed files from git working-tree
+    # snapshots; the changed-files card above renders its events.
+    - id: workspace-changes
+      name: '@deepseek-ai/dsh-workspace-changes'
 
 
     - id: ui-workspace
       name: '@deepseek-ai/dsh-client-ui-workspace'
+
+    # Durable workflow lifecycle as an independent Chat node after the
+    # existing generic workflow tool row.
+    - id: ui-workflow-run
+      name: '@deepseek-ai/dsh-client-ui-workflow-run'
 
     # Input triggers: the '/' | '@' pipeline (ui-input-trigger), the command surface over
     # it (ui-commands), and the reference sources (ui-skill / ui-reference).
@@ -368,6 +390,9 @@
 # the criterion for host-plane ownership — injection resolves before any session
 # exists, so there is no agent to key by. Behind a preset realm those variables
 # would never reach the model's shell at all.
+
+- id: tool-plugin-manager
+  disabled: true
 
 - id: tool-bash
   disabled: true

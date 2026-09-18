@@ -4,6 +4,4 @@
     - menuitemradio "Messages Flash" [checked]:
       - text: Messages Flash
       - img
-    - menuitemradio "DeepSeek-V4-Flash"
     - menuitemradio "DeepSeek-V4-Pro"
-    - menuitemradio "DeepSeek-V4-Flash-Vision-Exp"

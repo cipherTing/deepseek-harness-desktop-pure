@@ -103,6 +103,7 @@ async function serve(): Promise<void> {
     runProfile(options: {
       environment: ReturnType<typeof appBoot.loadLayeredEnv>
       profile: string
+      resolutionMode: 'link'
       patchFiles: readonly string[]
       args: readonly string[]
     }): Promise<RunningProfile>
@@ -110,6 +111,11 @@ async function serve(): Promise<void> {
   const running = await profileBoot.runProfile({
     environment: appBoot.loadLayeredEnv('dsh'),
     profile: 'web',
+    // The shared `web` profile resolves loader-visible packages from the
+    // materialized fallback this sidecar seeds above; the enforcing runtime
+    // table describes the dsh installation alone and would not carry the
+    // desktop runtime packages.
+    resolutionMode: 'link',
     patchFiles: [overlayPath],
     args: ['--host', '127.0.0.1', '--port', '0', '--no-open'],
   })

@@ -779,6 +779,8 @@ function docSyncLeafGates(options: {
     pnpmExec('docs-site-projection', [
       'vitest', 'run', 'scripts/project-doc-site.spec.ts', 'scripts/verify-doc-site-fragments.spec.ts',
       'website/tests/mermaid-viewer.spec.ts',
+      'website/tests/code-groups.spec.ts',
+      'website/tests/page-markdown-actions.spec.ts', 'website/tests/raw-markdown.spec.ts',
     ], {
       label: 'documentation site checks',
     }),
@@ -805,7 +807,7 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     'apps/cli/tests/built-bin.e2e.ts',
     'packages/host/directory-picker-native/tests/built-worker.e2e.ts',
     'packages/sdk/server/tests/built-scope-carrier.e2e.ts',
-    'packages/fs/tool-present/tests/built-errors.e2e.ts',
+    'packages/deliverables/tool-present/tests/built-errors.e2e.ts',
     'packages/subprocess/subprocess-local/tests/spawn-runner-built.e2e.ts',
     'packages/subagent/subagent-codex/tests/loader-composition.e2e.ts',
     'packages/subagent/subagent-claude-code/tests/loader-composition.e2e.ts',

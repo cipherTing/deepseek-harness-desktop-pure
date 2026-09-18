@@ -40,6 +40,8 @@ const LINK_MAP: Record<string, string> = {
   StreamChunk: 'subsystems/llm-streaming.md',
   TokenUsage: 'subsystems/llm-streaming.md',
   TodoItem: 'subsystems/todo.md',
+  WorkspaceChangesSummary: 'subsystems/deliverables.md',
+  PresentedFile: 'subsystems/deliverables.md',
   TurnTrigger: 'subsystems/session.md',
   TurnEndReason: 'subsystems/session.md',
   SessionTitleEventData: 'subsystems/session-title.md',

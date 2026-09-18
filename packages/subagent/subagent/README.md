@@ -42,6 +42,18 @@ Mount the service with a provider and the delegation tool. The provider register
 
 An agent that calls the tool gets the child's final answer as the tool result. Mounting the service alone changes nothing: nothing can delegate until a provider and a tool are composed.
 
+### Delegation settings
+
+The limits section on the **Plugins → Subagent** page edits the Host’s `subagent` settings section. User values override this plugin's composition; reset removes the user override. `maxDepth` defaults to `1` and supplies the delegation tools' depth when their own configuration omits it. An explicit tool depth, including `provider-managed`, takes precedence. Depth `0` disables delegation through tools inheriting this setting; depth `1` permits direct children only. Changes apply on the next delegation attempt. Direct service callers continue to supply their own optional request depth.
+
+### Continuable capacity
+
+Set `maxActiveSubagents` on the host `dsh-subagent` plugin to limit live children sharing uninterrupted continuable parent links. It defaults to `8` and accepts positive safe integers. A non-continuable parent starts a separate pool and does not consume a slot; continuable descendants inherit that pool. Fresh creation and cold resume reserve before reconstructing the Agent, and cleanup returns the slot after handle disposal. A waiting parent, pending inbox work, and an Activation being stopped still occupy slots. Messages to a resident child reuse its slot. One-shot and external-provider runs are outside this limit. Pool inheritance does not cross a one-shot parent; its continuable children share a separate pool. Depth remains the delegation tool's separate policy.
+
+The current `maxActiveSubagents` value is sampled before every new or cold-resumed Activation. Raising it admits more children in existing trees; lowering it leaves resident children running and refuses further admissions until usage is below the limit.
+
+At capacity, creation or cold resume rejects with `ACTIVATION_LIMIT_REACHED` (browser prompts receive `subagent/delivery-unavailable`): wait for a child to finish or continue using the existing agents. Admission does not queue, because a parent waiting for descendants must not wait for its own occupied slot. Slots are process-local and do not constrain cumulative Session history or token usage.
+
 ### One-shot and continuable children
 
 One-shot children run once and settle with a single result, plus an optional structured output and a safe diagnostic on failure. A start request may override the child Agent's provider, model, reasoning effort, and output-token limit through `agentOptions`; every requested option requires the provider's matching capability. Continuable children keep a durable session and accept later messages in order: the caller receives a stable child id, sends adjacent-Agent messages, and can interrupt the current turn without destroying the child. The tool row's `backgroundMode` picks the shape (`one-shot` by default, or `continuable` on providers that support it).

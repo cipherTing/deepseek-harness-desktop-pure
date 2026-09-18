@@ -8,7 +8,8 @@ import type {
   MaybeSnapshotSelectorHook, ObservableSnapshot, SnapshotSelectorHook,
 } from '@deepseek-ai/dsh-client-store'
 import type {
-  InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
+  FactoryComponentPropsOf, FactoryLocalComponentPropsOf,
+  InjectFace, PropsLocale, PropsRenderFactories, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionPendingInteraction } from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -76,7 +77,11 @@ export interface ComposerAttachmentsOwnerProps {
  * local preview of a submission echo whose admission is still in flight.
  */
 export type MessageImageSource =
-  | { readonly attachment: ImageAttachmentRef }
+  | {
+    readonly attachment: ImageAttachmentRef
+    /** Presentation-only name for the thumbnail and lightbox; loading uses the original reference. */
+    readonly label?: string
+  }
   | {
     readonly preview: {
       /** Browser-owned preview URL (lifecycle stays with the submitter). */
@@ -104,6 +109,8 @@ export interface MessageImagesOwnerProps {
   align: 'start' | 'end'
   /** Force every image into the compact message-attachment tile size. */
   compact?: boolean
+  /** Fixed, uncropped thumbnail for an attachment list row. */
+  thumbnail?: boolean
 }
 
 /** Slot-backed renderer used by Conversation targets without importing an attachment implementation. */
@@ -119,7 +126,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Conversation shell beneath its root-scoped main-panel entry. */
     'main.conversation': { kind: 'single'; scope: 'session-maybe' }
     /** Strict per-Session Conversation body. */
-    'conversation.session': { kind: 'single'; scope: 'session' }
+    'conversation.session': {
+      kind: 'single'
+      scope: 'session'
+      owner: { view?: string }
+    }
     /** Strict per-Session title, actions, and View navigation. */
     'conversation.session.header': { kind: 'single'; scope: 'session' }
     /** Optional replacement for one Session breadcrumb title. */
@@ -141,6 +152,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       owner: ConversationHeaderActionOwnerProps
     }
     /**
+     * Leading seat before the Session breadcrumbs, for window-chrome-adjacent
+     * controls (macOS desktop sidebar reopen and New Session while the sidebar
+     * is hidden). The seat is laid out only while its occupant renders
+     * something, and it stays mounted through the blank-session state so a
+     * hidden sidebar always keeps a reopen control on screen.
+     */
+    'conversation.session.header.leading': {
+      kind: 'single'
+      scope: 'session'
+      owner: ConversationHeaderLeadingOwnerProps
+    }
+    /**
      * The header's far-right corner, past the utilities' edge and into the
      * header's own padding, for one control. The corner is laid out only while
      * its occupant renders something; an occupant with nothing to show renders
@@ -160,7 +183,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Brand mark shown before the blank-session headline. */
     'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
     /** Agent-preset control staged for a New Session. */
-    'conversation.hero.agentPreset': { kind: 'single'; scope: 'root'; owner: HeroAgentPresetOwnerProps }
+    'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe'; owner: HeroAgentPresetOwnerProps }
     /** Full-width entries above the composer card. */
     'conversation.input.dock': { kind: 'list'; scope: 'session'; owner: InputZone }
     /** Floating entries rendered inside the resident composer card. */
@@ -185,6 +208,29 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.input.permission': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
     /** Model selector inside the composer tool row. */
     'conversation.input.model': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
+  }
+
+  interface SlotFactoryMap {
+    /** Reusable Conversation content instantiated by presentation hosts. */
+    'conversation.content': {
+      scope: 'session-maybe'
+      props: ConversationContentInputProps
+      children: {
+        'conversation.session': { kind: 'single'; scope: 'session' }
+        'conversation.composer': { kind: 'chain'; scope: 'session' }
+        'conversation.composer.bar': { kind: 'single'; scope: 'session-maybe' }
+        'conversation.input.dock': { kind: 'list'; scope: 'session' }
+        'conversation.hero.brand.mark': { kind: 'single'; scope: 'root' }
+        'conversation.hero.workspace': { kind: 'single'; scope: 'root' }
+        'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe' }
+      }
+      inject: ConversationInjected
+      locale: 'conversation'
+      slots: {
+        views: { scope: 'session' }
+        widthControls: { scope: 'root'; props: ConversationWidthControlsInputProps }
+      }
+    }
   }
 
   interface GlobalStandardProps {
@@ -225,6 +271,12 @@ export interface ConversationHeaderActionOwnerProps {
 
 /** The header corner's occupant derives its state from standard Session props. */
 export interface ConversationHeaderCornerOwnerProps {
+  /** Marker field: the occupant receives no owner-specific values. */
+  children?: never
+}
+
+/** The leading seat's occupant derives its state from standard Session props. */
+export interface ConversationHeaderLeadingOwnerProps {
   /** Marker field: the occupant receives no owner-specific values. */
   children?: never
 }
@@ -367,19 +419,36 @@ export interface HeroBrandMarkOwnerProps {
 /** Full props of the resident optional-Session Conversation shell. */
 export type ConversationSlotProps =
   PropsRuntime<'main.conversation'>
-  & PropsRenderSlots<
-    | 'conversation.session' | 'conversation.session.header'
-    | 'conversation.composer' | 'conversation.composer.bar'
-    | 'conversation.input.dock'
-    | 'conversation.hero.brand.mark'
-    | 'conversation.hero.workspace'
-    | 'conversation.hero.agentPreset'
-  >
-  & InjectFace<ConversationInjected>
-  & PropsLocale<'conversation'>
+  & PropsRenderSlots<'conversation.session.header'>
+  & PropsRenderFactories
+
+/** Inputs shared by main and embedded Conversation content occurrences. */
+export interface ConversationContentInputProps {
+  variant: 'main' | 'embedded'
+  phase: 'settling' | 'hero' | 'active'
+  hero: boolean
+}
+
+/** Values passed from shared content to its occurrence-selected width controls. */
+export interface ConversationWidthControlsInputProps {
+  /** Mounted Conversation body measured and styled by the selected controls. */
+  container: HTMLDivElement | null
+  /** Current body phase; handles render only for an active transcript. */
+  phase: ConversationContentInputProps['phase']
+}
+
+/** Full props of the reusable Conversation Factory definition. */
+export type ConversationContentProps = FactoryComponentPropsOf<'conversation.content'>
 
 /** Shared target-neutral Conversation store handle. */
 export type ConversationStore = ReturnType<typeof createConversationStore>
+
+/** Full props of the Factory's caller-selectable Conversation View position. */
+export type ConversationViewsProps = FactoryLocalComponentPropsOf<'conversation.content', 'views'>
+
+/** Full props of the Factory's caller-selected width-control position. */
+export type ConversationWidthControlsProps =
+  FactoryLocalComponentPropsOf<'conversation.content', 'widthControls'>
 
 /** Full props of the strict Session body. */
 export type ConversationSessionSlotProps =
@@ -393,6 +462,7 @@ export type ConversationSessionHeaderSlotProps =
   PropsRuntime<'conversation.session.header'>
   & PropsRenderSlots<
     'conversation.session.header.lineage'
+    | 'conversation.session.header.leading'
     | 'conversation.session.header.actions'
     | 'conversation.session.header.utilities'
     | 'conversation.session.header.corner'

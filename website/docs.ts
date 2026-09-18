@@ -251,7 +251,7 @@ const develop = pairedPages([
   {
     source: 'docs/user/develop/practice/dynamic-cordis.md',
     route: 'develop/practice/dynamic-cordis.md',
-    label: { root: '运行时 Cordis 工具', en: 'Runtime Cordis tools' },
+    label: { root: '持久化 Harness 插件', en: 'Persistent Harness plugins' },
     sidebar: { root: 'zh-develop', en: 'en-develop' },
     section: { root: '实战', en: 'Practice' },
     order: 3,

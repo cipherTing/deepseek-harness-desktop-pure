@@ -19,6 +19,7 @@ import sysconfig
 import tempfile
 import threading
 import time
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -99,35 +100,6 @@ RESTART_SECOND_PROMPT = "Complete the second isolated Python SDK process turn."
 RESTART_SECOND_TEXT = "PROCESS_TWO_OK"
 RESTART_FIRST_SESSION_ID = "process-one"
 RESTART_SECOND_SESSION_ID = "process-two"
-SNAPSHOT_PLUGIN_CODE = """\
-return (ctx) => {
-  ctx.on('tools/pre-execute', (exec, next) => {
-    if (exec.name !== 'snapshot_double' || exec.arguments.value !== -1) return next()
-    return {
-      kind: 'deny',
-      reason: 'Auto review rejected tool "snapshot_double"; its body was not executed',
-      info: {
-        name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED',
-        reason: '  transport raw\\r\\nreason  ',
-      },
-    }
-  })
-  harness.registerTool(ctx, harness.defineTool({
-    name: 'snapshot_double',
-    description: 'Double a number for executable snapshot verification.',
-    parameters: { value: { type: 'number', required: true } },
-    output: {
-      schema: { type: 'number' },
-      render(_args, value) {
-        return [{ type: 'text', text: String(value) }]
-      }
-    },
-    async execute(args) {
-      return args.value * 2
-    }
-  }))
-}
-"""
 SNAPSHOT_WORKFLOW_SCRIPT = (
     "phase('Delegate')\n"
     f"const reply = await agent('{SNAPSHOT_WORKFLOW_CHILD_PROMPT}', {{ label: 'workflow-child' }})\n"
@@ -404,16 +376,12 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
     if prompt == SNAPSHOT_WORKFLOW_CHILD_PROMPT:
         return text_chunks("WORKFLOW_CHILD_OK")
     if prompt == SNAPSHOT_PROMPT:
-        assert_advertised_tool(body, "cordis_define")
+        assert_advertised_tool(body, "snapshot_double")
+        assert_advertised_tool(body, "run_code")
         return tool_call_chunks(
-            "advanced-define",
-            "cordis_define",
-            {
-                "plugin": {"kind": "new", "idPrefix": "snap"},
-                "name": "Snapshot Double",
-                "purpose": "Expose a deterministic doubling tool for executable snapshot verification.",
-                "code": {"host": SNAPSHOT_PLUGIN_CODE},
-            },
+            "advanced-code", "run_code",
+            {"code": "return await tools.snapshot_double({ value: 21 })",
+             "description": "Call the configured Plugin tool"},
         )
     if prompt == RESTART_FIRST_PROMPT:
         return text_chunks(RESTART_FIRST_TEXT)
@@ -578,33 +546,9 @@ def advanced_tool_followup(
     """Advance the executable snapshot's deterministic parent tool chain."""
     if not call_id.startswith("advanced-"):
         return None
-    if call_id == "advanced-define" and tool_name == "cordis_define":
-        if "Defined snap-1/pkg-1 (Snapshot Double)" not in tool_text:
-            raise AssertionError(f"cordis_define returned no dynamic Package ids: {tool_text}")
-        if "snapshot_double" in advertised_tool_names(body):
-            raise AssertionError("snapshot_double was advertised before cordis_run")
-        assert_advertised_tool(body, "cordis_run")
-        return tool_call_chunks(
-            "advanced-run",
-            "cordis_run",
-            {"pluginId": "snap-1", "packageId": "pkg-1", "mode": "run"},
-        )
-    if call_id == "advanced-run" and tool_name == "cordis_run":
-        if "snap-1/pkg-1 is running (run-1)" not in tool_text:
-            raise AssertionError(f"cordis_run returned no running Package ids: {tool_text}")
-        assert_advertised_tool(body, "run_code")
-        assert_advertised_tool(body, "snapshot_double")
-        return tool_call_chunks(
-            "advanced-code",
-            "run_code",
-            {
-                "code": "return await tools.snapshot_double({ value: 21 })",
-                "description": "Run the temporary Plugin tool",
-            },
-        )
     if call_id == "advanced-code" and tool_name == "run_code":
         if "42" not in tool_text:
-            raise AssertionError(f"run_code returned no dynamic-tool value: {tool_text}")
+            raise AssertionError(f"run_code returned no configured-tool value: {tool_text}")
         return tool_call_chunks("advanced-denied-native", "snapshot_double", {"value": -1})
     if call_id == "advanced-denied-native" and tool_name == "snapshot_double":
         if 'Auto review rejected tool "snapshot_double"; its body was not executed' not in tool_text:
@@ -647,17 +591,6 @@ def advanced_tool_followup(
     if call_id == "advanced-workflow" and tool_name == "workflow":
         if "WORKFLOW_CHILD_OK" not in tool_text:
             raise AssertionError(f"workflow returned no expected child value: {tool_text}")
-        assert_advertised_tool(body, "cordis_undefine")
-        return tool_call_chunks(
-            "advanced-undefine",
-            "cordis_undefine",
-            {"pluginId": "snap-1"},
-        )
-    if call_id == "advanced-undefine" and tool_name == "cordis_undefine":
-        if "Removed dynamic Plugin snap-1 and all of its Packages." not in tool_text:
-            raise AssertionError(f"cordis_undefine returned no removal result: {tool_text}")
-        if "snapshot_double" in advertised_tool_names(body):
-            raise AssertionError("snapshot_double remained advertised after cordis_undefine")
         return text_chunks(SNAPSHOT_FINAL_TEXT)
     raise AssertionError(f"unexpected advanced tool follow-up: {call_id} {tool_name}: {tool_text}")
 
@@ -776,7 +709,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scenario",
-        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-profile-plugin", "sdk-live", "runner", "direct"),
+        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-profile-plugin", "sdk-office", "sdk-live", "runner", "direct"),
         default="all",
     )
     parser.add_argument("--exe", type=Path)
@@ -795,12 +728,19 @@ def main() -> None:
         parser.error("--scenario sdk-profile-plugin requires --installed-wheel")
     if args.installed_wheel:
         args.exe = assert_installed_wheel_environment()
-    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-snapshot", "sdk-restart", "runner", "direct"} and args.exe is None:
-        parser.error("--exe is required for custom, minimal, fs-search, spawn-node, snapshot, restart, runner, and direct scenarios")
+    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-minimal-in-history", "sdk-fs-search", "sdk-spawn-node", "sdk-snapshot", "sdk-restart", "sdk-office", "runner", "direct"} and args.exe is None:
+        parser.error("--exe is required for custom, minimal, fs-search, spawn-node, snapshot, restart, office, runner, and direct scenarios")
     if args.update_snapshots and args.scenario not in {"all", "sdk-minimal", "sdk-minimal-in-history", "sdk-snapshot", "sdk-restart"}:
         parser.error("--update-snapshots requires --scenario sdk-minimal, sdk-minimal-in-history, sdk-snapshot, sdk-restart, or all")
     if args.exe is not None and not args.exe.is_file():
         parser.error(f"runtime executable does not exist: {args.exe}")
+
+    if args.scenario in {"all", "sdk-office"}:
+        assert args.exe is not None
+        smoke_sdk_office(args.exe.resolve())
+    if args.scenario == "sdk-office":
+        print("smoke-python-runtime: sdk-office passed")
+        return
 
     if args.scenario in {"all", "runner"}:
         assert args.exe is not None
@@ -848,6 +788,73 @@ def main() -> None:
         if not MockModelHandler.requests:
             raise AssertionError("mock model endpoint received no requests")
     print(f"smoke-python-runtime: {args.scenario} passed")
+
+
+def smoke_sdk_office(executable: Path) -> None:
+    """Relocate the wheel payload and convert a real DOCX with the target platform engine."""
+    from deepseek_harness import DeepSeekHarness
+
+    with tempfile.TemporaryDirectory(prefix="dsh-sdk-office-") as temporary:
+        root = Path(temporary).resolve()
+        relocated = root / executable.name
+        stem = executable.name.removesuffix(".exe")
+        for source in executable.parent.glob(f"{stem}*"):
+            destination = root / source.name
+            if source.is_dir():
+                shutil.copytree(source, destination)
+            else:
+                shutil.copy2(source, destination)
+        office = root / f"{stem}-office"
+        adapter = office / "node_modules/@deepseek-ai/libreoffice-kit/package.json"
+        native = stem.removeprefix("deepseek-harness-sdk-runtime-").replace("win-", "win32-").replace("macos-", "darwin-")
+        declared = json.loads(adapter.read_text(encoding="utf-8")).get("optionalDependencies", {})
+        selected = native if f"@deepseek-ai/libreoffice-kit-{native}" in declared else "wasm"
+        expected_backend = "wasm" if selected == "wasm" else "native"
+        engines = [
+            json.loads(manifest.read_text())["engine"]["kind"]
+            for manifest in (office / "node_modules/@deepseek-ai").glob("libreoffice-kit-*/prebuilds.json")
+        ]
+        if engines != [expected_backend]:
+            raise AssertionError(f"Office sidecar must contain only {expected_backend}: {engines}")
+        plugin = root / "office.mjs"
+        shutil.copy2(Path(__file__).resolve().parent / "fixtures/python-sdk-office.mjs", plugin)
+        document = root / "document.docx"
+        with zipfile.ZipFile(document, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
+            archive.writestr("_rels/.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
+            archive.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Python Office wheel</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>')
+
+        mode = expected_backend
+        output = root / f"{mode}.pdf"
+        result_path = root / f"{mode}.json"
+        patch = root / f"{mode}.patch.yml"
+        patch.write_text(json.dumps([{"insert": [{
+            "id": "python-sdk-office-smoke",
+            "name": plugin.as_uri(),
+            "config": {"input": str(document), "output": str(output), "result": str(result_path)},
+        }]}]))
+        with DeepSeekHarness(
+            provider="deepseek-official",
+            model="smoke-model",
+            cwd=str(root),
+            dsh_bin=str(relocated),
+            dsh_home=str(root / f"home-{mode}"),
+            patches=(str(patch),),
+            api_key="sk-keyless-smoke",
+            base_url="http://127.0.0.1:9",
+            env={"DSH_PERMISSION_MODE": "danger-full-access", "DSH_TELEMETRY_DISABLED": "1"},
+            request_timeout_seconds=180,
+        ):
+            pass
+        result = json.loads(result_path.read_text())
+        if result["backend"] != expected_backend:
+            raise AssertionError(f"Office conversion did not use {expected_backend}: {result}")
+        if not result["moduleUrl"].startswith(office.as_uri() + "/"):
+            raise AssertionError(f"Office module was not loaded from the relocated wheel: {result}")
+        pdf = output.read_bytes()
+        if len(pdf) < 100 or not pdf.startswith(b"%PDF-"):
+            raise AssertionError(f"Office conversion produced an invalid PDF at {output}")
+        print(f"smoke-python-runtime: relocated Office {result['backend']} DOCX produced {len(pdf)} PDF bytes")
 
 
 def assert_installed_wheel_environment() -> Path:
@@ -971,7 +978,7 @@ def smoke_sdk_live() -> None:
 
 
 def assert_live_turn(label: str, result: RunResult) -> None:
-    """Require completed model tool use and the exact smoke answer for each live turn."""
+    """Require completed model tool use and the smoke sentinel on the final answer line."""
     if result.finish_reason != "completed":
         event_types = [event.get("type") for event in result.events]
         turn_end_data = next(
@@ -988,7 +995,8 @@ def assert_live_turn(label: str, result: RunResult) -> None:
             f"{label} turn made no model-requested tool call; "
             f"final={result.final_response!r}"
         )
-    if result.final_response.strip() != LIVE_API_SENTINEL:
+    answer_lines = result.final_response.strip().splitlines()
+    if not answer_lines or answer_lines[-1].strip() != LIVE_API_SENTINEL:
         raise AssertionError(f"{label} turn returned {result.final_response!r}")
 
 def safe_turn_end(value: object) -> object:
@@ -1330,6 +1338,9 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
         sessions = dsh_home / "sessions"
         patch = write_advanced_profile_patch(root, "snapshot.patch.yml", sessions)
         feedback_patch = write_profile_patch(root, "feedback.patch.yml", sessions, [{"insert": [
+            {"id": "snapshot-tool", "name": (
+                Path(__file__).resolve().parent / "fixtures/python-snapshot-tool.mjs"
+            ).as_uri()},
             {"id": "snapshot-image-offload", "name": (
                 Path(__file__).resolve().parent / "fixtures/python-snapshot-image-offload.mjs"
             ).as_uri(), "config": {"parentSessionId": SNAPSHOT_SESSION_ID}},

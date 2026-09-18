@@ -38,6 +38,7 @@ import type { SidebarRightTabClaim, SidebarRightTabRegistry } from './tab-regist
 import { canCloseTab, type SidebarRightState, type SurfaceState } from './stores.ts'
 import type { createSidebarRightStore } from './stores.ts'
 import { TabDomain, type PinResource } from './tab-domain.ts'
+import { SidebarTabInventory } from './tab-inventory.ts'
 
 /** The seat's bound action set. */
 export type SurfaceActions = BoundActions<ReturnType<typeof createSidebarRightStore>>
@@ -57,27 +58,32 @@ interface Adoption {
 
 /**
  * Create the public controller and the plugin-private store adoption callback.
- * Adoption subscribes without reconciling; the first store commit creates occurrences.
+ * Adoption reconciles restored records before any seat renders, then follows commits.
  * @param tabs - registered tab types.
  * @param pin - resource retention for an occurrence's lifetime.
- * @returns the controller and a callback releasing exactly its own adoption.
+ * @returns the controller and plugin-owned adoption and scope-removal callbacks.
  */
 export function createSidebarRightController(tabs: SidebarRightTabRegistry, pin: PinResource): {
   controller: SidebarRightController
   adopt: (sessionId: SessionId, store: SidebarRightSurfaceStore) => () => void
+  forget: (sessionId: SessionId) => void
 } {
   const adopted = new Map<SessionId, Adoption>()
-  const controller = new SidebarRightController(tabs, pin, adopted)
+  const inventory = new SidebarTabInventory()
+  const controller = new SidebarRightController(tabs, pin, adopted, inventory.source)
   return {
     controller,
+    forget: (sessionId) => { inventory.remove(sessionId) },
     adopt(sessionId, store) {
       adopted.get(sessionId)?.unsubscribe()
       const sync = (): void => {
         const surface = store.getSnapshot().bySession[sessionId]
+        inventory.update(sessionId, Object.values(surface?.layout.tabs ?? {}))
         if (surface !== undefined) controller.tabDomain.sync(sessionId, surface.layout)
       }
       const adoption: Adoption = { store, unsubscribe: store.subscribe(sync) }
       adopted.set(sessionId, adoption)
+      sync()
       return () => {
         adoption.unsubscribe()
         if (adopted.get(sessionId) === adoption) adopted.delete(sessionId)
@@ -109,6 +115,8 @@ export interface SidebarRightBinding {
 export interface SidebarRightPlacement {
   /** Land a new tab in this pane instead of the active docked one. */
   readonly paneId?: PaneId
+  /** Prefer a new pane for new content; use the target pane when splitting is unavailable. */
+  readonly preferNewPane?: boolean
   /** Take this tab's place — its pane and its strip slot — and close it in the same step. */
   readonly replaceTab?: TabId
   /**
@@ -206,6 +214,8 @@ export interface ISidebarRight {
 
 /** Cross-plugin right-Sidebar face (ctx.sidebarRight). */
 export class SidebarRightController implements ISidebarRight {
+  /** Open tab metadata across saved and adopted Sessions, independent of visible seats. */
+  readonly openTabs: SidebarTabInventory['source']
   private binding: SidebarRightBinding | undefined
   private readonly closeHandlers = new Map<string, SidebarRightCloseHandler>()
 
@@ -231,13 +241,25 @@ export class SidebarRightController implements ISidebarRight {
    * @param tabs - the tab-type registry consulted to claim an address.
    * @param pin - `ctx.resources.pin`, which the Tab domain holds addresses with.
    * @param adopted - plugin-owned session stores used by occurrence actions.
+   * @param openTabs - plugin-owned metadata source across saved and adopted layouts.
    */
   constructor(
     private readonly tabs: SidebarRightTabRegistry,
     pin: PinResource,
     private readonly adopted = new Map<SessionId, Adoption>(),
+    openTabs: SidebarTabInventory['source'] = new SidebarTabInventory().source,
   ) {
+    this.openTabs = openTabs
     this.tabDomain = new TabDomain(this, pin)
+  }
+
+  /**
+   * Read the committed tabs of a Session so providers can restore their content.
+   * @param sessionId - Session whose layout has been adopted.
+   * @returns its open records, or an empty list before adoption.
+   */
+  tabsIn(sessionId: SessionId): readonly TabRecord[] {
+    return Object.values(this.adopted.get(sessionId)?.store.getSnapshot().bySession[sessionId]?.layout.tabs ?? {})
   }
 
   /**
@@ -358,15 +380,30 @@ export class SidebarRightController implements ISidebarRight {
     placement: SidebarRightPlacement,
     params: SidebarRightNavigationParams,
   ): void {
+    const surface = this.adopted.get(sessionId)?.store.getSnapshot().bySession[sessionId]
+      ?? (this.binding?.sessionId === sessionId ? this.binding.surfaces[sessionId] : undefined)
+    const targetPane = surface === undefined ? undefined : placement.paneId ?? activeDockPaneId(surface.layout)
+    const target = targetPane === undefined ? undefined : surface?.layout.nodes[targetPane]
+    const preferNewPane = placement.preferNewPane === true
+      && placement.replaceTab === undefined
+      && surface !== undefined
+      && target?.kind === 'pane'
+      && target.host === 'dock'
+      && target.tabs.length > 0
+      && canSplit(surface.layout)
+      && dockPaneIds(surface.layout).length < 2
+      && this.binding?.sessionId === sessionId
+      && this.binding.canSplitPane(target.id)
     const commit = (): void => { actions.openContent(sessionId, {
       kind: claim.kind,
       contentId: claim.contentId,
       title: claim.title,
       ...placement.paneId === undefined ? {} : { paneId: placement.paneId },
+      ...preferNewPane ? { preferNewPane: true } : {},
       ...placement.replaceTab === undefined ? {} : { replaceTab: placement.replaceTab },
       ...placement.revealIfOpened === undefined ? {} : { revealIfOpened: placement.revealIfOpened },
     }, (tabId) => { this.tabDomain.navigate(sessionId, tabId, { address, params }) }) }
-    const layout = this.adopted.get(sessionId)?.store.getSnapshot().bySession[sessionId]?.layout
+    const layout = surface?.layout
     const replaced = placement.replaceTab === undefined ? undefined : layout?.tabs[placement.replaceTab]
     const revealed = layout === undefined || placement.revealIfOpened === false
       ? undefined : findContentTab(layout, claim.contentId, claim.kind)

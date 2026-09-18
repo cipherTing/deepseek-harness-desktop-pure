@@ -6,23 +6,23 @@ English | [中文](2026-09-09-profile-resolution-generations.zh.md)
 
 ## Problem
 
-A profile loads plugin rows from its own package project, while Harness packages and packages carried by selected bundles can live outside that project's ordinary dependency tree. The current launcher bridges the trees by calculating package precedence at startup and materializing that result as shared symlinks, profile-owned links, or packaged-executable proxy packages. The files persist across processes and installations, require reconciliation and locking, expose generated proxy manifests to metadata readers, and cannot represent a process-local change atomically.
+A profile loads plugin rows from its own package project, while Harness packages and packages carried by selected bundles can live outside that project's ordinary dependency tree. Bridging the trees through shared symlinks, profile-owned links, or packaged-executable proxy packages persists package selections across processes and installations. Those files require reconciliation and locking, expose generated proxy manifests to metadata readers, and cannot represent a process-local change atomically.
 
 The runtime design preserves the existing selection rules rather than introducing a second package policy. It covers imports performed by plugin modules as well as Loader row imports and works in the main thread and Harness-owned Workers. Generation replacement accepts only additive package sets and never mutates a live table entry by entry.
 
 ## Decision
 
-Profile startup computes one immutable `ResolutionGeneration` from the same dependency traversal that supplies the disk module fallback. The launcher defaults to link mode and preserves the existing materialized lookup behavior. Internal callers and tests can select runtime mode, which installs the generation into Node's ESM and CommonJS resolvers, or dual mode, which materializes and verifies the same generation. `PluginPackages.replace()` publishes a complete additive successor with one reference replacement.
+Profile startup computes one immutable `ResolutionGeneration` from the same dependency traversal that supplies the disk module fallback. The launcher defaults to runtime mode, which installs the generation into Node's ESM and CommonJS resolvers without materializing fallback links. Plain Node callers and tests can explicitly select link mode to materialize the generation or dual mode to materialize and verify it. `PluginPackages.replace()` publishes a complete additive successor with one reference replacement.
 
 ### One selection algorithm
 
-The package traversal remains in `@deepseek-ai/dsh-app-boot` beside profile loading. The disk materializer and the runtime resolver consume one pure plan; neither owns a copy of the precedence algorithm. Ordinary Node callers can select link, dual, or runtime mode, while an omitted mode selects link. Packaged executables and the Electron Host select runtime mode because their dependency trees may live in a virtual filesystem; dual remains an internal comparison path.
+The package traversal remains in `@deepseek-ai/dsh-app-boot` beside profile loading. The disk materializer and the runtime resolver consume one pure plan; neither owns a copy of the precedence algorithm. Ordinary Node callers can select link, dual, or runtime mode, while an omitted mode selects runtime. Packaged executables and the Electron Host select runtime mode because their dependency trees may live in a virtual filesystem; dual remains an internal comparison path.
 
 The installation manifest is the first root. Its graph traverses `dependencies` followed by `peerDependencies` breadth-first, resolving each edge from the manifest that declares it. The first installed package reached under a name owns that name. Selected bundle roots then run in profile order, with each earlier root's complete graph taking precedence over every later root. Names supplied by the installation are reserved, and bundle package roots themselves do not become plugin fallbacks. Missing declared packages are skipped as before.
 
 Profile-local and plugin-private `node_modules` entries stay outside the fallback entries, and Node checks them before the virtual fallback position. The generation records only installed direct profile package names for a no-I/O native fast path. Each fallback entry records the package name, version, selected lookup directory, declaring manifest anchor, and scope needed to rerun Node's native resolution from the selected package and validate that a successor preserves existing mappings.
 
-The existing `healProfilesModuleFallback()` remains as the disk materializer for the same computed result, which permits direct comparison without rewriting the selection rules. The launcher uses it by default. Runtime mode computes the generation without materializing it, while dual mode materializes and installs that generation for comparison.
+The existing `healProfilesModuleFallback()` remains as the disk materializer for the same computed result, which permits direct comparison without rewriting the selection rules. Named profile launches use it only in explicit link or dual mode. Runtime mode computes the generation without materializing it, while dual mode materializes and installs that generation for comparison.
 
 ### Immutable generations
 
@@ -74,11 +74,11 @@ Legacy disk state remains available to link-only launches, old processes, and ro
 
 Link, dual, and runtime modes use the same generation schema and dependency-selection policy. Link mode persists the computed result, runtime mode installs it only in the process, and dual mode requires Node's materialized result to equal the generation route.
 
-The `dsh` launcher selects link mode when an ordinary Node caller omits `resolutionMode`, so existing npm-installed profile startup keeps its filesystem behavior. A pkg executable always selects runtime mode, and the Electron Host installs its runtime generation before any profile row mounts. Tests and low-level embedders can still select runtime or dual explicitly.
+The `dsh` launcher selects runtime mode when an ordinary Node caller omits `resolutionMode`. A pkg executable always selects runtime mode, and the Electron Host explicitly selects runtime mode in both development and packaged builds before any profile row mounts. Plain Node tests and low-level embedders can explicitly select link, dual, or runtime.
 
 Runtime mode requires a supported Node Internal loader interface and does not create, update, or retire fallback links. Dual mode retains link writes and fails when Node's disk result differs from the generation. Writable profile state and package-manager transactions remain outside the resolver.
 
-Pkg and packaged Electron carriers force runtime resolution. The Electron Host runs through the Electron executable with `ELECTRON_RUN_AS_NODE=1`, reads its dsh tree from ASAR, and maps executable ASAR entries to electron-builder's unpacked tree. Neither carrier creates, updates, or removes legacy resolution links.
+Pkg and Electron carriers force runtime resolution. The Electron Host runs through the Electron executable with `ELECTRON_RUN_AS_NODE=1`; packaged builds read the dsh tree from ASAR and map executable ASAR entries to electron-builder's unpacked tree. Their runtime resolvers do not create, update, or remove legacy resolution links.
 
 ### Performance and verification
 
@@ -115,4 +115,4 @@ Behavior tests compare the runtime generation with the disk materializer over th
 
 ## Consequences
 
-Runtime startup avoids disk mutation and proxy manifests while preserving the existing package-selection algorithm. It accepts the maintenance cost of Node Internal compatibility tests and an early, self-contained bootstrap in each owned Worker. Link remains the ordinary Node launcher default, dual keeps a migration comparison path, and pkg plus Electron carriers force runtime resolution without retiring old links. Generation replacement remains additive until the product owns module-cache invalidation and Worker restart.
+Runtime startup avoids disk mutation and proxy manifests while preserving the existing package-selection algorithm. It accepts the maintenance cost of Node Internal compatibility tests and an early, self-contained bootstrap in each owned Worker. Runtime is the ordinary Node launcher default, link and dual remain explicit comparison options, and pkg plus Electron carriers force runtime resolution without the resolver retiring old links. Generation replacement remains additive until the product owns module-cache invalidation and Worker restart.

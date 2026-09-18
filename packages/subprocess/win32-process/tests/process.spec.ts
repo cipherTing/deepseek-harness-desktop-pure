@@ -7,7 +7,7 @@ import {
   spawnPipedProcess,
 } from '../src/index.ts'
 import { CREATE_SUSPENDED } from '../src/abi.ts'
-import { PROCESS_INFORMATION } from '../src/ffi.ts'
+import { processInformationType, startupInfoType } from '../src/ffi.ts'
 import type { NativePtr, Win32ProcessBindings } from '../src/index.ts'
 
 const PVOID = koffi.pointer('void')
@@ -23,8 +23,9 @@ function inheritedApi(overrides: Partial<Win32ProcessBindings> = {}): {
   const createProcessAsUserWImpl: Win32ProcessBindings['createProcessAsUserW'] =
     overrides.createProcessAsUserW
     ?? ((_token, _app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, _startup, info) => {
+      expect(koffi.decode(_startup, startupInfoType())).toMatchObject({ dwFlags: 0x101, wShowWindow: 0 })
       events.push('create')
-      koffi.encode(info, PROCESS_INFORMATION, {
+      koffi.encode(info, processInformationType(), {
         hProcess: 60n,
         hThread: 61n,
         dwProcessId: 1234,
@@ -176,7 +177,7 @@ describe('spawnInheritedJobProcess', () => {
       closeHandle,
       terminateProcess,
       createProcessAsUserW: vi.fn((_token, _app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, _startup, info) => {
-        koffi.encode(info, PROCESS_INFORMATION, {
+        koffi.encode(info, processInformationType(), {
           hProcess: 60n,
           hThread: 0n,
           dwProcessId: 1234,
@@ -232,7 +233,7 @@ describe('wait and pipe cleanup', () => {
       }),
       setHandleInformation: vi.fn(() => 1),
       createProcessAsUserW: vi.fn((_token, _app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, _startup, info) => {
-        koffi.encode(info, PROCESS_INFORMATION, {
+        koffi.encode(info, processInformationType(), {
           hProcess: 60n,
           hThread: 0n,
           dwProcessId: 1234,

@@ -5,20 +5,22 @@ import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Mess
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { DeepSeekConnectionOptions as Connection } from '../../common/types.ts'
 import type { DeepSeekFileId } from '../../common/file-id.ts'
-import { object, readReplay } from './replay.ts'
+import { readReplay } from './replay.ts'
 import type { WireBlock, WireInput, WireMessage, WireRequest } from './types.ts'
 
 function unsupported(type: string): never {
   throw new LlmError(`DeepSeek Messages cannot represent ${type}`, 'UNSUPPORTED_CONTENT')
 }
 
-/** Parse tool input only when constructing an outgoing native tool_use block. */
+/** Historical arguments that Messages cannot represent use empty input; durable content stays unchanged. */
 function toolInput(raw: string): Record<string, unknown> {
   let value: unknown
   try { value = JSON.parse(raw) } catch (_invalidToolHistoryJson) {
-    throw new LlmError('DeepSeek Messages historical tool input is invalid JSON', 'INVALID_REQUEST')
+    return {}
   }
-  return object(value, 'INVALID_REQUEST')
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
 }
 
 function assistant(message: Message, model: string, onReplayDegrade?: (reason: string) => void): WireBlock[] {

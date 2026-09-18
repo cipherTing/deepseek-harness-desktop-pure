@@ -9,7 +9,7 @@ import { apply, inject } from '../src/client/index.ts'
 import { NativeDirectoryFlow } from '../src/client/flow.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const HOLES = ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.directoryFlow'] as const
 
@@ -147,6 +147,27 @@ describe('directory-picker-native client half', () => {
     const injected = (entry.inject as () => { pick: () => Promise<string | null> })()
     await expect(injected.pick()).resolves.toBe('/tmp/picked')
     expect(b.pickDirectory).toHaveBeenCalledOnce()
+  })
+
+  it('uses the desktop bridge without calling the Host and preserves cancellation and errors', async () => {
+    const pick = vi.fn<() => Promise<string | null>>().mockResolvedValue('/desktop/workspace')
+    vi.stubGlobal('__DSH_DIRECTORY_PICKER__', { pick })
+    const b = await bench()
+    b.declare()
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    try {
+      const entry = b.slots.entries(HOLES[0])[0]!
+      const injected = (entry.inject as () => { pick: () => Promise<string | null> })()
+      await expect(injected.pick()).resolves.toBe('/desktop/workspace')
+      pick.mockResolvedValue(null)
+      await expect(injected.pick()).resolves.toBeNull()
+      pick.mockRejectedValue(new Error('desktop dialog failed'))
+      await expect(injected.pick()).rejects.toThrow('desktop dialog failed')
+      expect(b.pickDirectory).not.toHaveBeenCalled()
+    } finally {
+      await fiber.dispose()
+    }
   })
 
   it('runs one pick per open edge and reports the path to the latest onPicked', async () => {

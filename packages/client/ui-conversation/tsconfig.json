@@ -48,6 +48,9 @@
       "path": "../ui-session"
     },
     {
+      "path": "../../core/agent"
+    },
+    {
       "path": "../../core/session"
     },
     {
@@ -85,6 +88,9 @@
     },
     {
       "path": "../../util/crypto"
+    },
+    {
+      "path": "../../util/values"
     },
     {
       "path": "../../util/workspace-path"

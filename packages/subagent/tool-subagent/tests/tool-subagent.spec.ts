@@ -323,7 +323,7 @@ describe('dsh-tool-subagent', () => {
       },
     })
     // Direct apply with only `provider` — no toolName, no agentOptions.
-    tool.apply(ctx, { provider: 'bare' })
+    tool.apply(ctx, { maxDepth: 'provider-managed', provider: 'bare' })
     await new Promise(r => setTimeout(r, 10))
 
     expect(ctx.tools.schemas().some(s => s.name === 'subagent')).toBe(true)
@@ -1028,7 +1028,7 @@ describe('dsh-tool-subagent background mode', () => {
       inheritsParentContext: false,
       start: async () => { throw new Error('setup failed') },
     })
-    tool.apply(ctx, { provider: 'broken-start', toolName: 'subagent_broken' })
+    tool.apply(ctx, { maxDepth: 'provider-managed', provider: 'broken-start', toolName: 'subagent_broken' })
 
     const started = await ctx.tools.execute({
       signal: testToolSignal,
@@ -1059,7 +1059,7 @@ describe('dsh-tool-subagent background mode', () => {
         request.signal.addEventListener('abort', () => { reject(new Error('startup aborted')) }, { once: true })
       }),
     })
-    tool.apply(ctx, { provider: 'pending-start', toolName: 'subagent_pending' })
+    tool.apply(ctx, { maxDepth: 'provider-managed', provider: 'pending-start', toolName: 'subagent_pending' })
 
     await ctx.tools.execute({
       signal: testToolSignal,
@@ -1101,7 +1101,7 @@ describe('dsh-tool-subagent background mode', () => {
         }, { once: true })
       }),
     })
-    tool.apply(ctx, { provider: 'broken-start-rollback', toolName: 'subagent_broken_rollback' })
+    tool.apply(ctx, { maxDepth: 'provider-managed', provider: 'broken-start-rollback', toolName: 'subagent_broken_rollback' })
 
     await ctx.tools.execute({
       signal: testToolSignal,
@@ -1154,7 +1154,7 @@ describe('dsh-tool-subagent background mode', () => {
       },
     })
     // Direct apply preserves omitted agentOptions instead of applying schema defaults.
-    tool.apply(ctx, { provider: 'hanging', toolName: 'subagent_hang' })
+    tool.apply(ctx, { maxDepth: 'provider-managed', provider: 'hanging', toolName: 'subagent_hang' })
 
     const startOne = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('h1'), name: 'subagent_hang', arguments: { description: 'one', prompt: 'p', run_in_background: true }, agent: parent })
     const startTwo = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('h2'), name: 'subagent_hang', arguments: { description: 'two', prompt: 'p', run_in_background: true }, agent: parent })
@@ -1371,7 +1371,7 @@ describe('background preflight failure (no orphaned child, by construction)', ()
         }
       },
     })
-    tool.apply(ctx, { provider: 'probe', toolName: 'subagent_probe' })
+    tool.apply(ctx, { maxDepth: 'provider-managed', provider: 'probe', toolName: 'subagent_probe' })
 
     const result = await ctx.tools.execute({
       signal: testToolSignal,
@@ -1413,11 +1413,11 @@ describe('depth budget configuration', () => {
     return { ctx, requests }
   }
 
-  it('defaults maxDepth to 3 and forwards it in the start request', async () => {
+  it('defaults maxDepth to 1 and forwards it in the start request', async () => {
     const { ctx, requests } = await captureSetup()
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
     expect(requests[0]?.label).toBe('d')
-    expect(requests[0]?.maxDepth).toBe(3)
+    expect(requests[0]?.maxDepth).toBe(1)
     expect(requests[0]?.toolFilter).toBeUndefined()
   })
 

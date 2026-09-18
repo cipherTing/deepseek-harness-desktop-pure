@@ -499,6 +499,13 @@ Named provider registry with one-shot runs, durable discovery, and continuable-c
 
 ```ts cordis-catalog
 /**
+ * Resolve a delegation tool's depth policy against the current user setting.
+ * @param configured - Explicit tool limit, or provider-managed for external delegation.
+ * @returns The numeric limit, or undefined when the provider owns depth enforcement.
+ */
+resolveMaxDepth(configured?: number | 'provider-managed'): number | undefined
+
+/**
  * Establish one durable continuable child and deliver its initial prompt.
  * Resolves when the child's inbox accepts that prompt, without waiting for the
  * turn to start or for the message to reach the Session log; any earlier
@@ -626,6 +633,7 @@ listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<Subagen
  * nearest step and retains the Agent loop's best-effort fallback semantics.
  * Image parts are admitted and persisted through the attachment store
  * before delivery, and the child's model must accept image input.
+ * Cold resume at capacity rejects with `subagent/delivery-unavailable`.
  * @param request - durable address, delivery, minted identity, content, and optional browser zone.
  * @param signal - carrier cancellation, owning the call until inbox acceptance.
  * @returns the accepted message's inbox identity.
