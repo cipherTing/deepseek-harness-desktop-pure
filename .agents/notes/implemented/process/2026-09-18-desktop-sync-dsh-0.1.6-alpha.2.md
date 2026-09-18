@@ -26,7 +26,7 @@ The Desktop carrier follows the three upstream changes it depends on. `desktop/s
 
 The `settings.update` seat and the asynchronous Session export carrier stay in place, and `ui-settings-general` keeps rendering that seat while upstream's carrier-driven update indicator renders nothing without a `dshDesktop` preload. The new upstream `weighted-approval.yml` and `weighted-approval-review-event.yml` workflows enter the tree unchanged and stay disabled in GitHub Actions, like the other upstream workflows.
 
-`desktop/UPSTREAM_COMMIT` records only `dsh-v0.1.6-alpha.2`; the root README identifies the integrated kernel as `0.1.6-alpha.2`. The independent DeepDive Desktop version is unchanged by this integration.
+`desktop/UPSTREAM_COMMIT` records only `dsh-v0.1.6-alpha.2`; the root README identifies the integrated kernel as `0.1.6-alpha.2`. The independent DeepDive Desktop version advances to `0.1.15` in this integration.
 
 ## Alternatives considered
 

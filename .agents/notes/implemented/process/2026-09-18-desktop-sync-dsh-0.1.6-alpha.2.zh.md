@@ -26,7 +26,7 @@ Desktop 载体跟进它所依赖的三处上游变化。`desktop/scripts/build-r
 
 `settings.update` 座位与异步 Session 导出载体保持原位，`ui-settings-general` 继续渲染该座位，而上游由载体驱动的更新指示器在没有 `dshDesktop` preload 时不渲染任何内容。新增的上游 `weighted-approval.yml` 与 `weighted-approval-review-event.yml` 工作流原样进入本树，并与其他上游工作流一样在 GitHub Actions 中保持禁用。
 
-`desktop/UPSTREAM_COMMIT` 只记录 `dsh-v0.1.6-alpha.2`；根 README 标注集成的内核为 `0.1.6-alpha.2`。本次集成不改变独立的 DeepDive Desktop 版本。
+`desktop/UPSTREAM_COMMIT` 只记录 `dsh-v0.1.6-alpha.2`；根 README 标注集成的内核为 `0.1.6-alpha.2`。独立的 DeepDive Desktop 版本在本次集成中升到 `0.1.15`。
 
 ## Alternatives considered
 
