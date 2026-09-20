@@ -12,6 +12,10 @@ A bundled Node.js sidecar starts the standard `web` profile on a random loopback
 - Releases are self-contained: users install no Node.js, pnpm, runtime, or package manager. Support only macOS Apple Silicon and Windows x64 unless explicitly changed.
 - `desktop/` contains packaging source and resources, never a Harness profile, workspace, configuration home, or user-data directory.
 
+## Git and release authority
+
+Read-only Git inspection (`status`, `log`, `diff`, `show`, `fetch`) is always available. Every state-changing Git or GitHub action — committing, pushing, tagging, creating or deleting a branch, merging, publishing a Release, and dispatching a workflow — runs only on the maintainer's explicit request for that action. An earlier approval never covers a later action, and an approved task never carries an unrequested one.
+
 ## Upstream synchronization
 
 Synchronization is manual. Follow [`dsh-desktop-upstream-sync`](.agents/skills/dsh-desktop-upstream-sync/SKILL.md): verify the upstream SHA, create a `codex/` sync branch from the verified current `master`, merge the tag there, review and validate it, then land it in `master` only when authorized.
