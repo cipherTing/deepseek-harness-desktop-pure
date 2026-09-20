@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-18-webkit-model-menu-press-loss.md
+2026-09-18-webkit-model-menu-press-loss.md: 198f4b3ac9836884bba8b7ba83e522f266b40eaf
+2026-09-18-webkit-model-menu-press-loss.zh.md: fcdf0de2f1e6b956d089f397604573209bb023de
