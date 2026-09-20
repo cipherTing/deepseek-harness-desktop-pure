@@ -244,6 +244,44 @@ describe('ModelSelect reasoning effort', () => {
     }
   })
 
+  it('keeps a pressed row mounted and selectable when the engine moves no focus on press', async () => {
+    const select = vi.fn().mockResolvedValue({ ok: true, value: undefined })
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={createSnapshotStore(state({
+        groups: [{
+          id: 'deepseek-official',
+          name: 'DeepSeek',
+          models: [
+            { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', reasoning },
+            { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', reasoning },
+          ],
+        }],
+      }))}
+      load={vi.fn()}
+      select={select}
+      t={t}
+    />)
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    // Drilling hands the keyboard to the row in use, which is what makes a
+    // later press able to move focus at all.
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    const row = screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ })
+    // WebKit gives a pressed `<button>` no focus: the press would pull focus off
+    // the focused row with no related target, the card's blur guard would close
+    // it, and this row would unmount before its click. The press must therefore
+    // cancel that focus move — and leave the row in place.
+    expect(fireEvent.mouseDown(row)).toBe(false)
+    expect(screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ })).toBeTruthy()
+    // The card's own chrome has nothing to focus, so its press stays untouched.
+    expect(fireEvent.mouseDown(screen.getByRole('menu'))).toBe(true)
+    fireEvent.click(row)
+    await waitFor(() => {
+      expect(select).toHaveBeenCalledWith({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    })
+  })
+
   it('renders no Agent-bound control for an addressed subagent session', () => {
     const load = vi.fn()
     render(<ModelSelect
