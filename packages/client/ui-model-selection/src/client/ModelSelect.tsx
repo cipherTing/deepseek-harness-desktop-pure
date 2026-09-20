@@ -378,6 +378,9 @@ export function ModelSelect(
           // would read that as "focus left the card", close it, and unmount the
           // row before its click. Cancelling only the press's focus move keeps
           // the click, the row's focus, and the card's keys.
+          // FORK PATCH (temporary): upstream tracks this same press in
+          // deepseek-ai/deepseek-harness#6997/#7002. When a synchronized kernel
+          // carries upstream's fix, adopt it and delete this handler.
           onMouseDown={(event) => {
             if (event.target instanceof Element && event.target.closest('button') !== null) event.preventDefault()
           }}

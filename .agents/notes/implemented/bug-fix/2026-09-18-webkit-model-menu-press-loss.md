@@ -33,4 +33,4 @@ The package's menu, portal, keyboard, catalog, and selection specs stay green, a
 
 ## Consequences
 
-The model menu selects by mouse again on WebKit engines, including the macOS Desktop build, without changing Chromium behavior or the keyboard model added for drilled panes.
+The model menu selects by mouse again on WebKit engines, including the macOS Desktop build, without changing Chromium behavior or the keyboard model added for drilled panes. This is a temporary fork-side patch: the handler carries a comment naming the upstream reports, and the synchronization that brings upstream's own fix adopts that fix and deletes the handler.
