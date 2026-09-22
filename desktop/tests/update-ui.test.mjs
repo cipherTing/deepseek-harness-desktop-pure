@@ -161,7 +161,7 @@ function loadClientUi({
   // The durable Desktop preference behind the update badge: the stub records
   // every write and republishes the section it now holds.
   const ignored = { value: ignoredVersion, writes: [], listeners: new Set() }
-  const settingsScopeEntry = {
+  const configFormEntry = {
     getSnapshot: () => ({
       value: ignored.value === undefined ? undefined : { ignoredUpdateVersion: ignored.value },
     }),
@@ -174,14 +174,14 @@ function loadClientUi({
       return Promise.resolve()
     },
   }
-  const settingsScope = { bind: () => settingsScopeEntry }
+  const configForms = { get: () => configFormEntry }
   const context = {
     locale,
     slots,
-    settingsScope,
+    configForms,
     effect: (install) => install(),
     get: (name) => name === 'locale' ? locale : name === 'slots' ? slots
-      : name === 'settingsScope' ? settingsScope : undefined,
+      : name === 'configForms' ? configForms : undefined,
   }
   if (activate) plugin.apply(context)
   const t = locale.bind()
@@ -190,7 +190,7 @@ function loadClientUi({
 
 test('Desktop client UI waits for locale, slots, and the settings scope before registering its contributions', async () => {
   const { components, locale, slots, plugin } = loadClientUi({ activate: false })
-  assert.deepEqual(plugin.inject, ['locale', 'slots', 'settingsScope'])
+  assert.deepEqual(plugin.inject, ['locale', 'slots', 'configForms'])
 
   // Use the built Cordis runtime used by the Desktop sidecar; a hand-written
   // context would not prove that a missing provider parks the plugin fiber.
@@ -212,7 +212,7 @@ test('Desktop client UI waits for locale, slots, and the settings scope before r
     await Promise.resolve()
     assert.equal(components.size, 0)
 
-    ctx.provide('settingsScope', { bind: () => ({ getSnapshot: () => ({ value: undefined }), subscribe: () => () => {}, set: () => Promise.resolve(), unset: () => Promise.resolve() }) })
+    ctx.provide('configForms', { get: () => ({ getSnapshot: () => ({ value: undefined }), subscribe: () => () => {}, set: () => Promise.resolve(), unset: () => Promise.resolve() }) })
     await fiber
     assert.deepEqual([...components.keys()], [
       'settings.section',

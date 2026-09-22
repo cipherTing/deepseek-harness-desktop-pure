@@ -1,5 +1,4 @@
 - button "Edit large.txt +130 -130" [expanded]:
-  - img
   - text: Edit
   - button "large.txt"
   - text: +130 -130

@@ -27,13 +27,24 @@
 
 .panel {
   position: relative;
+  isolation: isolate;
   overflow: hidden;
   width: 100%;
   padding: 2px 0;
   border-radius: 12px 12px 0 0;
-  background: var(--dsw-specific-tip);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.panel::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  content: '';
+  pointer-events: none;
 }
 
 .panel::after {

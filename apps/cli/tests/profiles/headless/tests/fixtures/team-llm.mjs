@@ -28,11 +28,9 @@ function hasTaskAction(messages, action) {
 }
 
 function latestToolText(messages) {
-  const message = messages.findLast(candidate => candidate.content.some(block => block.type === 'tool-result'))
+  const message = messages.findLast(candidate => candidate.role === 'tool')
   if (message === undefined) return ''
-  return message.content.flatMap(block => block.type === 'tool-result'
-    ? block.content.filter(item => item.type === 'text').map(item => item.text)
-    : []).join('\n')
+  return message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
 }
 
 function toolChunks(specs) {

@@ -1,8 +1,8 @@
 /** Read-only `cordis_define` card with Host and Client source tabs. */
 
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useState } from 'react'
 import {
-  CodeBlock, DisclosureRow, IconCodeOutline16, IconInspectOutline12, StateDot,
+  CodeBlock, DisclosureRow, IconCodeOutlineRegular, IconInspectOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -31,14 +31,6 @@ function stateStatus(state: CordisToolState): CordisKey | null {
     case 'error': return 'a11y.failed'
     case 'stopped': return 'a11y.stopped'
     default: return null
-  }
-}
-
-function leadingFor(state: CordisToolState): ReactNode {
-  switch (state) {
-    case 'error': return <StateDot state="error" />
-    case 'stopped': return <StateDot state="warning" />
-    default: return <IconCodeOutline16 size={14} />
   }
 }
 
@@ -88,7 +80,7 @@ export function CordisDefineRow({
         rowClassName={css.row}
         titleClassName={css.title}
         chevronClassName={css.chevron}
-        icon={leadingFor(card.state)}
+        icon={<IconCodeOutlineRegular size={14} />}
         title={t('row.defineTitle')}
         open={open}
         expandable={expandable}
@@ -160,7 +152,7 @@ export function CordisDefineRow({
           {card.pluginId !== null && <div className={css.panelHint}>{t('panel.hint')}</div>}
           {inspect !== undefined && (
             <button type="button" className={css.inspectButton} onClick={inspect}>
-              <IconInspectOutline12 />
+              <IconInspectOutlineRegular />
               {t('action.inspect')}
             </button>
           )}

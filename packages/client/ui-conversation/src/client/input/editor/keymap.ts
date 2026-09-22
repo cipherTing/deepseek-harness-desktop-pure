@@ -34,8 +34,12 @@ export interface ComposerKeymapHandlers {
   canSubmit(): boolean
   /** The Enter gesture after every guard passed; `accelerated` = Ctrl/Cmd held. */
   submit(accelerated: boolean): void
-  /** Pasted files (image intake). */
-  intakeFiles(files: readonly File[]): void
+  /**
+   * Pasted files with directory metadata supplied by the clipboard entry API.
+   * @param files - browser files in clipboard order.
+   * @param directories - known directory members; absent when no entry identifies a directory.
+   */
+  intakeFiles(files: readonly File[], directories?: ReadonlySet<File>): void
   /** Pasted plain text (sanitized insertion through the shell). */
   pasteText(text: string): void
 }
@@ -154,11 +158,18 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
       // deliver clipboardData on plain events.
       const clipboardData = (event as ClipboardEvent).clipboardData ?? null
       if (clipboardData === null) return false
-      const files = Array.from(clipboardData.items)
-        .filter(item => item.kind === 'file')
-        .map(item => item.getAsFile())
-        .filter((file): file is File => file !== null)
-      if (files.length > 0) handlers.intakeFiles(files)
+      const files: File[] = []
+      const directories = new Set<File>()
+      for (const item of clipboardData.items) {
+        if (item.kind !== 'file') continue
+        const file = item.getAsFile()
+        if (file === null) continue
+        files.push(file)
+        if (typeof item.webkitGetAsEntry === 'function' && item.webkitGetAsEntry()?.isDirectory === true) {
+          directories.add(file)
+        }
+      }
+      if (files.length > 0) handlers.intakeFiles(files, directories.size === 0 ? undefined : directories)
       const text = clipboardData.getData('text/plain')
       if (text === '') {
         if (files.length === 0) return false

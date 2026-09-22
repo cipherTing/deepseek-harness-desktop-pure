@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, ReactNode, SyntheticEvent } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import { IconCheckOutline16 } from './icons/index.tsx'
+import { IconCheckOutlineRegular } from './icons/index.tsx'
+import { overlayTopMargin } from './overlay-top-margin.ts'
 import { usePointerGrace } from './pointer-grace.ts'
 import css from './Menu.module.css'
 
@@ -35,6 +36,61 @@ export interface MenuLabel {
 /** One primary-menu entry: a row, a separator, or a heading label. */
 export type MenuEntry = MenuItem | MenuSeparator | MenuLabel
 
+/** Props for one component-rendered menu row. */
+export interface MenuItemButtonProps {
+  /** Visible row label. */
+  children: ReactNode
+  /** Leading icon (figma .Menu_cell gap 8). */
+  icon?: ReactNode
+  /** Whether the row cannot be activated. */
+  disabled?: boolean
+  /** Destructive row: error-colored text/icon and danger hover fill. */
+  danger?: boolean
+  /**
+   * Start a new group: a hairline above this row, the same one a
+   * `{ type: 'separator' }` data entry draws. It comes and goes with the row,
+   * so a row that renders nothing leaves no stray line; a data separator
+   * directly before it draws no second line, and the list's first row draws none.
+   */
+  separatorBefore?: boolean
+  /** Row activation (click, Enter, or Tab on the focused row). */
+  onSelect: () => void
+}
+
+/**
+ * Render one `role="menuitem"` row for a {@link Menu} whose rows are
+ * components rather than `items` data: the same markup and styling as a data
+ * row, so it joins the list's keyboard walk and post-selection focus return
+ * without any shared state. Closing the menu stays the owner's decision, as
+ * it is for data rows.
+ * @param props.children - visible row label.
+ * @param props.icon - optional leading icon.
+ * @param props.disabled - whether the row cannot be activated.
+ * @param props.danger - whether to use the destructive row colors.
+ * @param props.separatorBefore - whether this row starts a new group (hairline above it).
+ * @param props.onSelect - row activation callback.
+ * @returns one menu-item row.
+ */
+export function MenuItemButton({
+  children, icon, disabled = false, danger = false, separatorBefore = false, onSelect,
+}: MenuItemButtonProps) {
+  return (
+    <div className={css.itemWrap}>
+      {separatorBefore && <div className={css.separator} role="separator" />}
+      <button
+        type="button"
+        role="menuitem"
+        className={clsx(css.item, danger && css.danger)}
+        disabled={disabled}
+        onClick={onSelect}
+      >
+        {icon !== undefined && <span className={css.itemIcon}>{icon}</span>}
+        <span className={css.itemLabel}>{children}</span>
+      </button>
+    </div>
+  )
+}
+
 function isSeparator(entry: MenuEntry): entry is MenuSeparator {
   return 'type' in entry && entry.type === 'separator'
 }
@@ -56,10 +112,10 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * @param props.autoFocus - focus the first item on open; the arrow keys walk the list either way.
  * @param props.open - whether the list is showing (owner-controlled).
  * @param props.anchor - the trigger element (rendered in place).
- * @param props.items - selectable rows and optional separators.
+ * @param props.items - selectable data rows and optional separators (default none; with no `children` either, the list is empty).
  * @param props.selectedId - row shown as selected.
  * @param props.selectedIds - rows shown as selected when a menu contains independent option groups.
- * @param props.onSelect - row click callback (not called for disabled rows or submenu parents that only open children).
+ * @param props.onSelect - data-row activation callback (not called for disabled rows or submenu parents that only open children).
  * @param props.onClose - invoked on outside click, Escape, or a window blur
  * that moved focus into an iframe (the only signal a pointerdown inside a
  * cross-origin iframe leaves).
@@ -83,21 +139,30 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * scroll/resize; return null to skip placement for that frame.
  * @param props.footer - rows pinned below the scrolling items area, separated
  * by a hairline; they stay visible while the items above scroll.
+ * @param props.children - component rows rendered after `items` in the same
+ * list, each a `role="menuitem"` button such as {@link MenuItemButton}; they
+ * share the keyboard walk, the submenu exclusivity, and the post-selection
+ * focus return.
  * @param props.selection - how a selected row is marked: a trailing check
  * (`'check'`, default — figma .Menu_cell) or the hover fill held on the row
  * with no check (`'fill'`, for icon-labelled rows where a trailing glyph
  * crowds the cell).
+ * @param props.className - extra class on the anchor wrapper span.
+ * @param props.listClassName - extra class on the dropdown card itself; the
+ * only style hook that reaches a portaled list, which renders under
+ * document.body outside the owner's DOM subtree.
  * @returns anchor wrapper with the conditional list.
  */
-export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = 'check', getAnchorRect, footer, className }: {
+export function Menu({ open, anchor, items = [], children, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = 'check', getAnchorRect, footer, className, listClassName }: {
   open: boolean
   autoFocus?: boolean
   anchor: ReactNode
-  items: readonly MenuEntry[]
+  items?: readonly MenuEntry[]
+  children?: ReactNode
   footer?: readonly MenuEntry[]
   selectedId?: string | undefined
   selectedIds?: readonly string[] | undefined
-  onSelect: (id: string) => void
+  onSelect?: (id: string) => void
   onClose: () => void
   align?: 'start' | 'end'
   side?: 'bottom' | 'top' | 'right'
@@ -108,6 +173,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
   selection?: 'check' | 'fill'
   getAnchorRect?: () => DOMRect | null
   className?: string | undefined
+  listClassName?: string | undefined
 }) {
   const rootRef = useRef<HTMLSpanElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -192,7 +258,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       }
 
       if (lw > 0) x = Math.min(Math.max(x, MARGIN), vw - lw - MARGIN)
-      if (lh > 0) y = Math.min(Math.max(y, MARGIN), vh - lh - MARGIN)
+      if (lh > 0) y = Math.min(Math.max(y, overlayTopMargin(MARGIN)), vh - lh - MARGIN)
 
       setFixedPos({ left: x, top: y })
     }
@@ -351,7 +417,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       <div
         key={entry.id}
         className={css.itemWrap}
-        onMouseEnter={() => { setOpenSubmenuId(hasSub ? entry.id : null) }}
+        onMouseEnter={hasSub ? () => { setOpenSubmenuId(entry.id) } : undefined}
         onMouseLeave={() => { setOpenSubmenuId(null) }}
       >
         <button
@@ -361,20 +427,19 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
           disabled={entry.disabled}
           aria-haspopup={hasSub ? 'menu' : undefined}
           aria-expanded={hasSub ? subOpen : undefined}
-          onFocus={() => { setOpenSubmenuId(hasSub ? entry.id : null) }}
+          onFocus={hasSub ? () => { setOpenSubmenuId(entry.id) } : undefined}
           onClick={() => {
             if (hasSub) {
               setOpenSubmenuId(entry.id)
               return
             }
-            onSelect(entry.id)
-            refocusAfterSelection()
+            onSelect?.(entry.id)
           }}
         >
           {entry.icon !== undefined && <span className={css.itemIcon}>{entry.icon}</span>}
           <span className={css.itemLabel}>{entry.label}</span>
           {/* Selection marker is a trailing check (figma .Menu_cell) unless the fill mode carries it. */}
-          {selected && selection === 'check' && <IconCheckOutline16 className={css.check} />}
+          {selected && selection === 'check' && <IconCheckOutlineRegular className={css.check} />}
         </button>
         {subOpen && entry.submenu !== undefined && (
           <div className={clsx(css.submenu, compact && css.compactList)} role="menu">
@@ -385,7 +450,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
                 role="menuitem"
                 className={css.item}
                 disabled={sub.disabled}
-                onClick={() => { onSelect(sub.id); refocusAfterSelection() }}
+                onClick={() => { onSelect?.(sub.id) }}
               >
                 {sub.icon !== undefined && <span className={css.itemIcon}>{sub.icon}</span>}
                 <span className={css.itemLabel}>{sub.label}</span>
@@ -397,6 +462,17 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
     )
   }
 
+  // Submenu exclusivity is decided from the list's own bubble, by DOM:
+  // reaching a top-level row that is not a submenu parent — by pointer or by
+  // focus, data row or component row — closes the open card. A parent opens
+  // its card in its own handlers; rows inside the card are not top-level rows.
+  const collapseSubmenuFrom = (e: SyntheticEvent<HTMLDivElement>): void => {
+    const row = e.target instanceof Element ? e.target.closest('button[role="menuitem"]') : null
+    if (row === null || row.getAttribute('aria-haspopup') === 'menu') return
+    if (row.closest('[role="menu"]') !== e.currentTarget) return
+    setOpenSubmenuId(null)
+  }
+
   // Portal lists render hidden until placed: the placement effect measures
   // this pre-render in the same commit, so the first painted frame is
   // already at the final position (with getAnchorRect returning null the
@@ -404,16 +480,26 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
   const list = open && (
     <div
       ref={listRef}
-      className={clsx(css.list, dense && css.denseList, compact && css.compactList, scrollable && css.scrollable, portal && css.portal, side === 'top' && !portal && css.sideTop, align === 'end' && !portal && css.alignEnd)}
+      className={clsx(css.list, listClassName, dense && css.denseList, compact && css.compactList, scrollable && css.scrollable, portal && css.portal, side === 'top' && !portal && css.sideTop, align === 'end' && !portal && css.alignEnd)}
       style={portal ? fixedPos ?? MEASURE_STYLE : undefined}
       role="menu"
       // React portals bubble synthetic events through the REACT tree: without
       // this stop, an item click re-fires the anchor row's own onClick
-      // (open/toggle) after onSelect.
-      onClick={(e) => { e.stopPropagation() }}
+      // (open/toggle) after onSelect. The same bubble is where every row's
+      // activation lands — data rows and component rows alike — so the
+      // post-selection focus return is decided once here, after the row's
+      // own handler ran; a submenu parent only opened its card.
+      onClick={(e) => {
+        e.stopPropagation()
+        const row = e.target instanceof Element ? e.target.closest('button[role="menuitem"]') : null
+        if (row !== null && row.getAttribute('aria-haspopup') !== 'menu') refocusAfterSelection()
+      }}
+      onMouseOver={collapseSubmenuFrom}
+      onFocus={collapseSubmenuFrom}
     >
       <div className={css.viewport} role="presentation">
         {items.map(renderEntry)}
+        {children}
       </div>
       {footer !== undefined && footer.length > 0 && (
         <div className={css.footer} role="presentation">

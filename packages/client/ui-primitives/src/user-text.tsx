@@ -16,7 +16,7 @@
  */
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
-import { ReferenceIcon } from './ReferenceIcon.tsx'
+import { ReferenceIconRegular } from './ReferenceIcon.tsx'
 import css from './user-text.module.css'
 import markdownCss from './markdown/MarkdownText.module.css'
 
@@ -120,7 +120,7 @@ export function projectUserText(
           : label.slice(1).replace(/^"|"$/gu, '').split(/[\\/]/u).filter(Boolean).at(-1) ?? label.slice(1))
     const contents = <>
       {referenceKind !== undefined && (
-        <ReferenceIcon kind={referenceKind} size={16} className={css.refIcon} />
+        <ReferenceIconRegular kind={referenceKind} size={16} className={css.refIcon} />
       )}
       {displayLabel}
     </>

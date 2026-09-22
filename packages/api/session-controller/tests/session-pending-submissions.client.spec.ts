@@ -13,6 +13,7 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { createClientTest, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import type { PendingSubmissionRetirement } from '../src/client/contract/session.ts'
 import type { SessionRequestId } from '../src/types.ts'
+import { ev, historyValue } from './event-script.client.ts'
 import { sessionBench } from './remote/bench.client.ts'
 import {
   FOLLOW, err, fileRef, followScript, history, imageRef, pushEvent,
@@ -193,6 +194,77 @@ describe('observed retirement', () => {
     expect(onRetire).toHaveBeenCalledExactlyOnceWith({ reason: 'observed', attachments: refs })
   })
 
+  it('keeps a running steer echo through accepted and claimed Inbox states until transcript admission', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    await session.open()
+    session.handleRunning(true)
+    const onRetire = vi.fn()
+    const handle = session.beginSubmission({ mode: 'steer', text: 'accepted', attachments: [], onRetire })
+    const refs = [imageRef('steer-image')]
+    const message = queuedItem(handle.requestId, refs)
+    const echo = session.getSnapshot().pendingSubmissions[0]
+    session.projections.apply('inbox', { 'next-turn': [], 'next-step': [message] }, SessionSeq(0))
+    await settleFrames()
+    expect(session.getSnapshot().pendingSubmissions).toEqual([echo])
+    await pushEvent(mock, {
+      type: 'agent/inbox/spliced', seq: SessionSeq(0), time: 1,
+      data: { target: 'next-step', start: 0, inserted: [message] },
+    })
+    await pushEvent(mock, {
+      type: 'agent/inbox/spliced', seq: SessionSeq(1), time: 2,
+      data: { target: 'next-step', start: 0, removedCount: 1, inserted: [] },
+    })
+    session.projections.apply('inbox', { 'next-turn': [], 'next-step': [] }, SessionSeq(1))
+    await settleFrames()
+    expect(session.getSnapshot().pendingSubmissions).toEqual([echo])
+    expect(onRetire).not.toHaveBeenCalled()
+    await pushEvent(mock, {
+      type: 'user/message', seq: SessionSeq(2), time: 3, surfaceOp: 'append', data: message,
+    })
+    await settleFrames()
+    expect(session.getSnapshot().pendingSubmissions).toEqual([])
+    expect(onRetire).toHaveBeenCalledExactlyOnceWith({ reason: 'observed', attachments: refs })
+  })
+
+  it('retires canceled or unadmitted steering without removing still-pending input', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    await session.open()
+    session.handleRunning(true)
+    const canceled = vi.fn()
+    const rejected = vi.fn()
+    const first = session.beginSubmission({ mode: 'steer', text: 'cancel', attachments: [], onRetire: canceled })
+    const second = session.beginSubmission({ mode: 'steer', text: 'reject', attachments: [], onRetire: rejected })
+    const unclaimed = session.beginSubmission({ mode: 'steer', text: 'later', attachments: [] })
+    const foreign = createUserMessage({ source: { kind: 'user' }, content: [] })
+    await pushEvent(mock, {
+      type: 'agent/inbox/spliced', seq: SessionSeq(0), time: 1,
+      data: { target: 'next-step', start: 0, inserted: [queuedItem(first.requestId), queuedItem(second.requestId)] },
+    })
+    await pushEvent(mock, {
+      type: 'agent/inbox/spliced', seq: SessionSeq(1), time: 2,
+      data: { target: 'next-step', start: 0, inserted: [foreign] },
+    })
+    await pushEvent(mock, {
+      type: 'agent/inbox/spliced', seq: SessionSeq(2), time: 3,
+      data: { target: 'next-step', start: 1, removedCount: 1, inserted: [], outcome: 'canceled' },
+    })
+    expect(canceled).toHaveBeenCalledExactlyOnceWith({ reason: 'failed' })
+    expect(rejected).not.toHaveBeenCalled()
+    await pushEvent(mock, {
+      type: 'agent/inbox/spliced', seq: SessionSeq(3), time: 4,
+      data: { target: 'next-step', start: 0, removedCount: 2, inserted: [] },
+    })
+    await pushEvent(mock, {
+      type: 'agent/inbox/spliced', seq: SessionSeq(4), time: 5,
+      data: { target: 'next-step', start: 0, inserted: [queuedItem(unclaimed.requestId)] },
+    })
+    await pushEvent(mock, {
+      type: 'turn/end', seq: SessionSeq(5), time: 6, data: { turn: 1, reason: { kind: 'blocked' } },
+    })
+    expect(rejected).toHaveBeenCalledExactlyOnceWith({ reason: 'failed' })
+    expect(session.getSnapshot().pendingSubmissions.map(echo => echo.requestId)).toEqual([unclaimed.requestId])
+  })
+
   it('a queue occurrence carrying the rpcId retires the echo (running-turn submissions)', async ({ mock, start }) => {
     const session = await sessionBench(mock, start, SID)
     const retirements: PendingSubmissionRetirement[] = []
@@ -242,6 +314,69 @@ describe('observed retirement', () => {
     await session.open()
     await settleFrames()
     expect(session.getSnapshot().pendingSubmissions).toEqual([])
+  })
+
+  for (const pending of [false, true]) {
+    it(`retires confirmed steering on resync with the Host input ${pending ? 'still pending' : 'outside the history window'}`, async ({ mock, start }) => {
+      const session = await sessionBench(mock, start, SID)
+      await session.open()
+      session.handleRunning(true)
+      const onRetire = vi.fn()
+      const handle = session.beginSubmission({ mode: 'steer', text: 'accepted', attachments: [], onRetire })
+      const refs = [imageRef('steer-image'), fileRef('steer-file')]
+      const message = queuedItem(handle.requestId, refs)
+      await pushEvent(mock, {
+        type: 'agent/inbox/spliced', seq: SessionSeq(0), time: 1,
+        data: { target: 'next-step', start: 0, inserted: [message] },
+      })
+      const unconfirmed = session.beginSubmission({ mode: 'steer', text: 'not accepted yet', attachments: [] })
+      const inbox = { 'next-turn': [], 'next-step': pending ? [message] : [] }
+      const replacement = {
+        ...historyValue([ev.turnEnd(SessionSeq(10), 2)], true),
+        projections: { asOfSeq: 10, values: { inbox } },
+      }
+      mock.stream(FOLLOW, followScript({ ok: true, value: replacement }))
+      await session.resync()
+      await settleFrames()
+
+      expect(session.getSnapshot().pendingSubmissions.map(item => item.requestId)).toEqual([unconfirmed.requestId])
+      expect(session.projections.get('inbox')).toEqual(inbox)
+      expect(onRetire).toHaveBeenCalledExactlyOnceWith({ reason: 'observed', attachments: refs })
+      await pushEvent(mock, ev.turnEnd(SessionSeq(11), 3))
+      expect(onRetire).toHaveBeenCalledTimes(1)
+    })
+  }
+
+  it('withdraws a confirmed optimistic steer when resync lands between claim and admission', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    await session.open()
+    session.handleRunning(true)
+    const onRetire = vi.fn()
+    const handle = session.beginSubmission({ mode: 'steer', text: 'accepted', attachments: [], onRetire })
+    const refs = [imageRef('claimed-image')]
+    const message = queuedItem(handle.requestId, refs)
+    await pushEvent(mock, {
+      type: 'agent/inbox/spliced', seq: SessionSeq(0), time: 1,
+      data: { target: 'next-step', start: 0, inserted: [message] },
+    })
+    const replacement = {
+      ...historyValue([{
+        type: 'agent/inbox/spliced', seq: SessionSeq(1), time: 2,
+        data: { target: 'next-step', start: 0, removedCount: 1, inserted: [] },
+      }], true),
+      projections: { asOfSeq: 1, values: { inbox: { 'next-turn': [], 'next-step': [] } } },
+    }
+    mock.stream(FOLLOW, followScript({ ok: true, value: replacement }))
+    await session.resync()
+    await settleFrames()
+    expect(session.getSnapshot().pendingSubmissions).toEqual([])
+    expect(onRetire).toHaveBeenCalledExactlyOnceWith({ reason: 'observed', attachments: refs })
+
+    const admitted = promptEvent(SessionSeq(2), handle.requestId, refs)
+    await pushEvent(mock, admitted)
+    await settleFrames()
+    expect(session.eventSource.getSnapshot().entries.at(-1)?.event).toEqual(admitted)
+    expect(onRetire).toHaveBeenCalledTimes(1)
   })
 
   it('the first observation wins: a later prompt failure cannot re-retire an observed echo', async ({ mock, start }) => {

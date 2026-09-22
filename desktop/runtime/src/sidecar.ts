@@ -1,6 +1,8 @@
 import { Console } from 'node:console'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import type { Profile } from '@deepseek-ai/dsh-app-boot'
 import {
   FrameDecoder, systemBridge, writeMessage, type ProtocolWriter,
 } from './protocol.ts'
@@ -27,6 +29,8 @@ const PROTOCOL_VERSION = 1
 const BOOT_TIMEOUT_MS = 90_000
 const runtimeRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const overlayPath = join(runtimeRoot, 'overlay.yml')
+// The deploy root manifest is this carrier's own installation package, so it
+// anchors both the profile's bundle resolution and the runtime resolution.
 const runtimeManifest = join(runtimeRoot, 'package.json')
 
 const protocolWrite = process.stdout.write.bind(process.stdout)
@@ -56,6 +60,17 @@ interface LoaderEntry {
 interface RunningProfile {
   ctx: unknown
   shutdown: { shutdown(code: number): Promise<void> }
+}
+
+/** The profile boot exported by the `@deepseek-ai/dsh` installation in this deploy root. */
+interface ProfileBoot {
+  runProfile(options: {
+    environment: LaunchEnvironmentSnapshot
+    profile: string
+    resolvedProfile: { profile: Profile; installAnchor: string }
+    patchFiles: readonly string[]
+    args: readonly string[]
+  }): Promise<RunningProfile>
 }
 
 function errorMessage(error: unknown): string {
@@ -96,26 +111,16 @@ async function handleRequest(
 
 async function serve(): Promise<void> {
   const appBoot = await import('@deepseek-ai/dsh-app-boot')
-  // The profile boot heals the CLI installation closure. Desktop also owns
-  // loader-visible packages from this deploy root, so seed that closure first.
-  await appBoot.healProfilesModuleFallback({ installAnchor: runtimeManifest })
-  const profileBoot = await import(new URL('./profile-boot.mjs', import.meta.url).href) as unknown as {
-    runProfile(options: {
-      environment: ReturnType<typeof appBoot.loadLayeredEnv>
-      profile: string
-      resolutionMode: 'link'
-      patchFiles: readonly string[]
-      args: readonly string[]
-    }): Promise<RunningProfile>
-  }
+  const profileBoot = await import(new URL('./profile-boot.mjs', import.meta.url).href) as ProfileBoot
+  // This carrier owns the deployed installation: the shared `web` profile loads
+  // against it, and profile boot installs that installation's runtime
+  // resolution — the harness closure plus the Desktop runtime packages — before
+  // any plugin import.
+  const profile = appBoot.loadProfile('dsh', 'web', runtimeManifest)
   const running = await profileBoot.runProfile({
     environment: appBoot.loadLayeredEnv('dsh'),
     profile: 'web',
-    // The shared `web` profile resolves loader-visible packages from the
-    // materialized fallback this sidecar seeds above; the enforcing runtime
-    // table describes the dsh installation alone and would not carry the
-    // desktop runtime packages.
-    resolutionMode: 'link',
+    resolvedProfile: { profile, installAnchor: runtimeManifest },
     patchFiles: [overlayPath],
     args: ['--host', '127.0.0.1', '--port', '0', '--no-open'],
   })

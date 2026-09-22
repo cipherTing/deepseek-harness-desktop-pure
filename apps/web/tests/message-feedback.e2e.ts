@@ -1,8 +1,6 @@
-// Keyless browser regression for durable per-message feedback. Cold-seeds a
-// settled two-turn transcript (zero model calls), records a Like through the
-// feedback dialog, replaces it through the same dialog with a Dislike, proves
-// the judgment survives a full page reload from the Host's canonical log, then
-// retracts it.
+// Keyless browser regression for durable message and Session feedback. A
+// cold-seeded, settled two-turn transcript avoids model calls while exercising
+// message ratings and the Session Header dialog against the Host's canonical log.
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
@@ -145,4 +143,40 @@ describe('web e2e: durable per-message feedback', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })
+
+  it.skipIf(MODE === 'record')('opens the shared dialog from the header and records Session feedback only on submit', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-header-feedback'))
+    await openSeededSession()
+    await page.getByText('DONE', { exact: true }).waitFor({ timeout: 30_000 })
+    const agent = scaffold.ctx.agents.get(SessionId(SEED_ID))
+    if (agent === undefined) throw new Error('seeded session did not attach an agent')
+    const feedbackEvents = () => agent.session.snapshotEvents().filter(event => event.type.startsWith('feedback/'))
+    const before = feedbackEvents().length
+    const dialog = page.getByRole('dialog', { name: 'Submit feedback' })
+
+    await page.getByRole('button', { name: 'More actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Download session log' }).waitFor()
+    await page.getByRole('menuitem', { name: 'Feedback', exact: true }).click()
+    await dialog.waitFor()
+    expect(await page.getByRole('menu').count()).toBe(0)
+    expect(feedbackEvents()).toHaveLength(before)
+    await dialog.getByRole('textbox', { name: 'Feedback details' }).fill('discarded draft')
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    expect(feedbackEvents()).toHaveLength(before)
+
+    await page.getByRole('button', { name: 'More actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Feedback', exact: true }).click()
+    await dialog.waitFor()
+    expect(await dialog.getByRole('textbox', { name: 'Feedback details' }).inputValue()).toBe('')
+    await dialog.getByRole('button', { name: 'Product features and interaction', exact: true }).click()
+    await dialog.getByRole('textbox', { name: 'Feedback details' }).fill('Feedback from the Session menu.')
+    await dialog.getByRole('button', { name: 'Submit', exact: true }).click()
+    await expect.poll(() => dialog.count()).toBe(0)
+    await page.getByRole('alert').filter({ hasText: 'Thanks for your feedback' }).waitFor()
+    expect(feedbackEvents().slice(before)).toMatchObject([
+      { type: 'feedback/record', data: { category: 'product-interaction', text: 'Feedback from the Session menu.' } },
+    ])
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  }, 60_000)
 })

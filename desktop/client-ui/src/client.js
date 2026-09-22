@@ -310,9 +310,9 @@ window.__ModuleLoader__.load({
 
     // ── ignored release ────────────────────────────────────────────────────
     // One preference read by the badge: the release whose reminder the user
-    // skipped. It lives in the durable `desktop-ui` settings namespace this
-    // package's Host half registers, so it survives a restart.
-    const DESKTOP_UI_NAMESPACE = "desktop-ui";
+    // skipped. It lives in the `desktop-client-ui` entry form this package's
+    // Host half declares, so it survives a restart.
+    const DESKTOP_UI_ENTRY = "desktop-client-ui";
     const ignoredListeners = new Set();
     let ignoredVersion;
     // Published by `apply`; inert until the plugin body runs.
@@ -502,13 +502,13 @@ window.__ModuleLoader__.load({
 
     // ── plugin body ────────────────────────────────────────────────────────
     // Cordis must wait for these services before running this plugin.
-    const inject = ["locale", "slots", "settingsScope"];
+    const inject = ["locale", "slots", "configForms"];
 
     function apply(ctx) {
       const locale = ctx.locale;
       const slots = ctx.slots;
       ctx.effect(() => locale.register(NS, { zh, en }), "desktop-client-ui: dictionaries");
-      const ignoredScope = ctx.settingsScope.bind({ namespace: DESKTOP_UI_NAMESPACE });
+      const ignoredScope = ctx.configForms.get(DESKTOP_UI_ENTRY);
       ctx.effect(() => {
         const sync = () => { publishIgnoredVersion(ignoredScope.getSnapshot().value?.ignoredUpdateVersion); };
         sync();

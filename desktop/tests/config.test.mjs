@@ -178,6 +178,7 @@ test('Desktop loads the loopback web host without custom protocols', () => {
     '@deepseek-ai/dsh-attachment',
     '@deepseek-ai/dsh-brand',
     '@deepseek-ai/dsh-credentials',
+    '@deepseek-ai/dsh-deepseek-account',
     '@deepseek-ai/dsh-jobs',
     '@deepseek-ai/dsh-session-persistence',
     '@deepseek-ai/dsh-session-query',
@@ -197,7 +198,14 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   assert.match(overlay, /surfaceContext: false/)
   assert.match(sidecar, /args: \['--host', '127\.0\.0\.1', '--port', '0', '--no-open'\]/)
   assert.match(sidecar, /connection\.authenticatedUrl\(origin\)/)
-  assert.match(sidecar, /healProfilesModuleFallback\(\{ installAnchor: runtimeManifest \}\)/)
+  // The profile-boot facade re-exports the boot of `@deepseek-ai/dsh` inside
+  // this deploy root. The sidecar anchors the shared `web` profile and that
+  // boot's runtime resolution on the deploy root manifest — this carrier's own
+  // installation — and installs no module-fallback links of its own.
+  assert.doesNotMatch(sidecar, /healProfilesModuleFallback|resolutionMode/)
+  assert.match(sidecar, /loadProfile\('dsh', 'web', runtimeManifest\)/)
+  assert.match(sidecar, /resolvedProfile: \{ profile, installAnchor: runtimeManifest \}/)
+  assert.match(sidecar, /runProfile\(\{\n\s+environment: appBoot\.loadLayeredEnv\('dsh'\),\n\s+profile: 'web',/)
 })
 
 test('Desktop leaves image drops to the browser attachment flow', () => {
@@ -277,6 +285,9 @@ test('Desktop uses the generic async save carrier instead of patching anchor cli
 
   assert.match(bridge, /__DSH_DOWNLOAD_CARRIER__/)
   assert.match(bridge, /desktop_save_session/)
+  // The shared carrier hands over a document-relative route; Rust validates the
+  // export request against the current loopback origin, so the bridge resolves it.
+  assert.match(bridge, /new URL\(url, document\.baseURI\)\.toString\(\)/)
   assert.doesNotMatch(bridge, /document\.cookie/)
   assert.doesNotMatch(bridge, /HTMLAnchorElement\.prototype\.click/)
 })
@@ -361,7 +372,7 @@ test('Desktop client UI package ships the dsh.client contract', () => {
     '@deepseek-ai/dsh-client-ui-renderer',
     '@deepseek-ai/dsh-client-ui-settings',
   ])
-  assert.match(client, /const inject = \["locale", "slots", "settingsScope"\]/)
+  assert.match(client, /const inject = \["locale", "slots", "configForms"\]/)
   assert.ok(Object.keys(runtime.dependencies ?? {}).includes('@deepseek-ai/dsh-desktop-client-ui'))
   // Identity facts the About section surfaces.
   assert.equal(runtime.repository?.url, 'https://github.com/cipherTing/deepseek-harness-desktop-pure')

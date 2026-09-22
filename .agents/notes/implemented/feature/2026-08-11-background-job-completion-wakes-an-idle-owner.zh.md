@@ -2,6 +2,8 @@
 
 Status: implemented
 
+Update：本文依赖的 `reported` 位与 `onJobDone` 已随 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md)离开注册表：`dsh-tool-jobs` 现在持有投递台账（等待或被接受的 `job_kill` 认领任务），并按 `settled` 事件的 cause 跳过 teardown 结算，因此下文唤醒或注入的决策仍然成立，只是它提到的机制是工具的台账而非注册表标志。
+
 [English](2026-08-11-background-job-completion-wakes-an-idle-owner.md) | 中文
 
 ## 问题

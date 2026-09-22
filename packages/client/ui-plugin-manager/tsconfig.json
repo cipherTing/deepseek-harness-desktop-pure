@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../../util/package-manifest"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {
@@ -21,7 +24,7 @@
       "path": "../../test-support/client-runtime"
     },
     {
-      "path": "../locale"
+      "path": "../locale/tsconfig.client.json"
     },
     {
       "path": "../store"
@@ -43,6 +46,9 @@
     },
     {
       "path": "../../util/crypto"
+    },
+    {
+      "path": "../ui-settings/tsconfig.client.json"
     }
   ]
 }

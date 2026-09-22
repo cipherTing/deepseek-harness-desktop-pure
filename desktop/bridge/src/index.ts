@@ -373,10 +373,13 @@ function installMacOSOverlayTitleBar(): void {
 }
 
 const carrier: DownloadCarrier = {
+  // The shared carrier hands over a document-relative Host route; the Rust
+  // command downloads from the current loopback origin, so resolve it here
+  // against the page's own base.
   save: (url, filename) => invoke<DesktopSaveResult>('desktop_save_session', {
     request: {
       method: 'GET',
-      url,
+      url: new URL(url, document.baseURI).toString(),
       headers: {},
     },
     filename,

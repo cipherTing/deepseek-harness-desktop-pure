@@ -226,13 +226,15 @@ describe('web e2e: secondary Thinking Markdown', () => {
       .evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize))
     expect(answerSize).toBeGreaterThan(Number.parseFloat(summaryStyle.fontSize))
     await page.setViewportSize({ width: 1680, height: 1000 })
-    await page.locator('[data-conversation-scroll]').evaluate((host) => {
+    const groupScroll = thinking.locator('xpath=ancestor::*[@data-step-process-body][1]')
+    await groupScroll.scrollIntoViewIfNeeded()
+    await groupScroll.evaluate((host) => {
       const row = host.querySelector('[data-variant="think"] tbody tr:nth-child(12)')
       if (row === null) throw new Error('tall Thinking table row missing')
       host.scrollTop += row.getBoundingClientRect().top - host.getBoundingClientRect().top
     })
     await expect.poll(() => toggle.evaluate((button) => {
-      const host = button.closest('[data-conversation-scroll]')
+      const host = button.closest('[data-step-process-body]')
       const table = button.closest('[data-variant="think"]')?.querySelector('table')
       if (host === null || table === null || table === undefined) throw new Error('Thinking scroll context missing')
       const buttonRect = button.getBoundingClientRect()
