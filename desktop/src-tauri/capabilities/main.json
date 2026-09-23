@@ -5,6 +5,8 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:path:deny-resolve",
+    "core:path:deny-resolve-directory",
     "core:window:allow-start-dragging",
     "core:window:allow-toggle-maximize",
     "opener:allow-open-url",
@@ -15,7 +17,6 @@
     "allow-desktop-copy-text",
     "allow-desktop-reveal-file",
     "allow-desktop-save-file-as",
-    "allow-desktop-copy-file-contents",
     "allow-desktop-save-session"
   ],
   "remote": {

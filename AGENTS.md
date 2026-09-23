@@ -2,7 +2,7 @@
 
 This independent distribution fork packages [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) with Tauri. It is not upstream, a second Harness implementation, or a place for new Harness features.
 
-A bundled Node.js sidecar starts the standard `web` profile on a random loopback port (`--host 127.0.0.1 --port 0`), and the WebView loads it directly. The upstream web host remains the source of the index, boot manifest, plugin bundles, `/api`, and event streams. Desktop adds no custom URI scheme, boot snapshot, or HTTP reimplementation; framed IPC carries only readiness, `graph-changed`, native dialogs/path opening, and shutdown.
+A bundled Node.js sidecar starts the standard `web` profile on a loopback port (`--host 127.0.0.1 --port 47821`), falling back to an ephemeral port when that one is taken, and the WebView loads it directly. The preferred port keeps the WebView origin — and the client state stored under it — stable across launches. The upstream web host remains the source of the index, boot manifest, plugin bundles, `/api`, and event streams. Desktop adds no custom URI scheme, boot snapshot, or HTTP reimplementation; framed IPC carries only readiness, `graph-changed`, native dialogs/path opening, and shutdown.
 
 ## Fork scope
 
@@ -54,7 +54,7 @@ Bundled Node.js, compiled Harness code, and dependencies are application resourc
 
 Tauri owns the window, assets, sidecar lifecycle, readiness, framed IPC, native dialogs/open operations, and distribution. Expose only business-level Desktop commands; never grant the WebView generic shell or filesystem access.
 
-The sidecar runs upstream `web` with `--no-open` plus a read-only overlay that replaces directory picking, substitutes Tauri-backed native open operations in the upstream Settings Controller, and adds bridge/index/prompt/info glue and Desktop client UI. Upstream Connection authentication, Host/Origin checks, exact Fetch routes, Typert Remote transport, user patches, and client HMR remain active; `graph-changed` reloads the page. The bundled runtime contains Node.js, compiled packages, and production dependencies. Launch the fixed Node `externalBin` only through Tauri's official Shell plugin with raw protocol output and an actor-owned stdin; do not grant the WebView generic Shell permission, invoke `taskkill`/`pkill`, scan process trees, or change DSH subprocess behavior. Normal Desktop shutdown terminates the owned Node sidecar; abnormal termination does not promise whole-tree cleanup.
+The sidecar runs upstream `web` with `--no-open` plus a read-only overlay that replaces directory picking, substitutes Tauri-backed native open operations in the upstream Settings Controller, and adds bridge/index/prompt/info glue and Desktop client UI. Upstream Connection authentication, Host/Origin checks, exact Fetch routes, Typert Remote transport, user patches, and client HMR remain active; `graph-changed` reloads the page. The bundled runtime contains Node.js, compiled packages, and production dependencies; its finalize step omits build outputs, type declarations, package-manager state, and native payloads for another platform, and rewrites the deployed manifest so no installation path travels with the artifact. Launch the fixed Node `externalBin` only through Tauri's official Shell plugin with raw protocol output and an actor-owned stdin; do not grant the WebView generic Shell permission, invoke `taskkill`/`pkill`, scan process trees, or change DSH subprocess behavior. Normal Desktop shutdown terminates the owned Node sidecar; abnormal termination does not promise whole-tree cleanup.
 
 Unexpected exits get at most three backoff respawns; update the live origin before navigating the window. Final startup/respawn failure shows a modal error and preserves a nonzero exit code. Desktop installs no native application menu; the default WebView context menu remains available. macOS uses Tauri's overlay title bar with native traffic lights; the top strip preserves native-style drag and double-click zoom through Tauri window APIs, while Windows keeps its native title bar. Rust downloads session exports directly from the current loopback host with a total timeout; framed IPC remains limited to readiness, `graph-changed`, system requests, and shutdown.
 
@@ -177,6 +177,8 @@ pnpm run test:docs      # quick documentation checks (no build; doc-quick aggreg
 pnpm run website:build  # VitePress build (doubles as dead-link check)
 pnpm dsh --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
 pnpm run demo:ptc -- "task"  # headless PTC mode run (needs key)
+pnpm run dev:web        # build, serve, and rebuild Web client bundles on source edits; start:web skips the build
+make web|dev-web|desktop|dev-desktop|build  # the same commands; ARGS='--no-open' forwards options
 ```
 
 ### Host sandbox failures
@@ -214,6 +216,7 @@ Real-API tests/demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and 
 - **Misconfiguration fails loud** at load when self-contained, otherwise at the earliest resolvable point; never silently skip a missing referent.
 - **Opaque cross-boundary ids are branded** (`Branded<B>` from `dsh-brand`), never bare `string`.
 - **Trust TypeScript at typed same-process boundaries.** Do not add runtime validation, fallback behavior, or hostile-input tests solely for values the static interface requires; validate at parser/config, queued, model/tool JSON, durable/file, worker, process, and wire boundaries.
+- **No new assertions to `unknown`** (`as unknown` or `<unknown>`). Preserve or reduce the exact legacy baseline; use typed values or validation for replacements ([rule](.agents/notes/implemented/process/2026-09-19-no-unknown-casts.md)).
 - **Source plane vs artifact plane, never mixed.** Static gates and tests resolve workspace imports through tsconfig `paths` to `src` and pass on a clean tree; gates consuming built `lib/` declare that dependency ([layout](docs/development.md#typescript-project-layout)).
 - **Keep compiler faces explicit.** A package with both Host and Client programs exposes face-specific leaf configs and a solution-only root; repo-wide programs seed a face config, never the root solution ([layout](docs/development.md#typescript-project-layout)).
 - **An empty `catch` names the error** and why; keep its `try` to one statement.

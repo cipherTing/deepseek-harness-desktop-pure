@@ -555,12 +555,6 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Enables the desktop_copy_file_contents command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-desktop-copy-file-contents",
-          "markdownDescription": "Enables the desktop_copy_file_contents command without any pre-configured scope."
-        },
-        {
           "description": "Enables the desktop_copy_text command without any pre-configured scope.",
           "type": "string",
           "const": "allow-desktop-copy-text",
@@ -607,12 +601,6 @@
           "type": "string",
           "const": "allow-desktop-save-session",
           "markdownDescription": "Enables the desktop_save_session command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the desktop_copy_file_contents command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-desktop-copy-file-contents",
-          "markdownDescription": "Denies the desktop_copy_file_contents command without any pre-configured scope."
         },
         {
           "description": "Denies the desktop_copy_text command without any pre-configured scope.",

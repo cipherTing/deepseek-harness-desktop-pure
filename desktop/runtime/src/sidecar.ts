@@ -1,6 +1,10 @@
 import { Console } from 'node:console'
+import { existsSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import type { Profile, ProfilePnpmInvocation } from '@deepseek-ai/dsh-app-boot'
 import {
   FrameDecoder, systemBridge, writeMessage, type ProtocolWriter,
 } from './protocol.ts'
@@ -25,9 +29,49 @@ import {
 const PROTOCOL_VERSION = 1
 /** Self-imposed cap on the host boot; the Rust side enforces 120s overall. */
 const BOOT_TIMEOUT_MS = 90_000
+/**
+ * Loopback port the sidecar asks for first. The WebView keys its storage by
+ * origin, so a port that changes every start would strand the client's own
+ * persisted state (sidebar layout, panel widths, store snapshots) in the
+ * previous launch's origin.
+ */
+const PREFERRED_WEB_PORT = 47_821
 const runtimeRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const overlayPath = join(runtimeRoot, 'overlay.yml')
+// The deploy root manifest is this carrier's own installation package, so it
+// anchors both the profile's bundle resolution and the runtime resolution.
 const runtimeManifest = join(runtimeRoot, 'package.json')
+
+/**
+ * Resolve this launch's loopback port: the preferred one, or an ephemeral port
+ * when another process holds it. A taken port costs that launch's client-side
+ * state and nothing else, so the fallback keeps the app starting.
+ * @returns the port to hand the `web` profile.
+ */
+async function webPort(): Promise<number> {
+  return await new Promise<number>((resolve) => {
+    const probe = createServer()
+    probe.unref()
+    probe.once('error', () => { resolve(0) })
+    probe.once('listening', () => {
+      probe.close(() => { resolve(PREFERRED_WEB_PORT) })
+    })
+    probe.listen(PREFERRED_WEB_PORT, '127.0.0.1')
+  })
+}
+
+/**
+ * Package-manager invocation for profile plugin operations. The deployed
+ * runtime ships pnpm beside the bundled Node, so installing or inspecting a
+ * plugin needs no system Node.js or pnpm; without this the Plugin Manager
+ * falls back to a PATH executable a self-contained install does not have.
+ * @returns the invocation, or `undefined` when the packaged pnpm is absent.
+ */
+function bundledPackageManager(): ProfilePnpmInvocation | undefined {
+  const entry = join(runtimeRoot, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
+  if (!existsSync(entry)) return undefined
+  return { command: process.execPath, args: [entry], env: {} }
+}
 
 const protocolWrite = process.stdout.write.bind(process.stdout)
 const write: ProtocolWriter = (frame) => {
@@ -56,6 +100,18 @@ interface LoaderEntry {
 interface RunningProfile {
   ctx: unknown
   shutdown: { shutdown(code: number): Promise<void> }
+}
+
+/** The profile boot exported by the `@deepseek-ai/dsh` installation in this deploy root. */
+interface ProfileBoot {
+  runProfile(options: {
+    environment: LaunchEnvironmentSnapshot
+    profile: string
+    resolvedProfile: { profile: Profile; installAnchor: string }
+    packageManager?: ProfilePnpmInvocation | undefined
+    patchFiles: readonly string[]
+    args: readonly string[]
+  }): Promise<RunningProfile>
 }
 
 function errorMessage(error: unknown): string {
@@ -96,28 +152,19 @@ async function handleRequest(
 
 async function serve(): Promise<void> {
   const appBoot = await import('@deepseek-ai/dsh-app-boot')
-  // The profile boot heals the CLI installation closure. Desktop also owns
-  // loader-visible packages from this deploy root, so seed that closure first.
-  await appBoot.healProfilesModuleFallback({ installAnchor: runtimeManifest })
-  const profileBoot = await import(new URL('./profile-boot.mjs', import.meta.url).href) as unknown as {
-    runProfile(options: {
-      environment: ReturnType<typeof appBoot.loadLayeredEnv>
-      profile: string
-      resolutionMode: 'link'
-      patchFiles: readonly string[]
-      args: readonly string[]
-    }): Promise<RunningProfile>
-  }
+  const profileBoot = await import(new URL('./profile-boot.mjs', import.meta.url).href) as ProfileBoot
+  // This carrier owns the deployed installation: the shared `web` profile loads
+  // against it, and profile boot installs that installation's runtime
+  // resolution — the harness closure plus the Desktop runtime packages — before
+  // any plugin import.
+  const profile = appBoot.loadProfile('dsh', 'web', runtimeManifest)
   const running = await profileBoot.runProfile({
     environment: appBoot.loadLayeredEnv('dsh'),
     profile: 'web',
-    // The shared `web` profile resolves loader-visible packages from the
-    // materialized fallback this sidecar seeds above; the enforcing runtime
-    // table describes the dsh installation alone and would not carry the
-    // desktop runtime packages.
-    resolutionMode: 'link',
+    resolvedProfile: { profile, installAnchor: runtimeManifest },
+    packageManager: bundledPackageManager(),
     patchFiles: [overlayPath],
-    args: ['--host', '127.0.0.1', '--port', '0', '--no-open'],
+    args: ['--host', '127.0.0.1', '--port', String(await webPort()), '--no-open'],
   })
   const ctx = running.ctx as DesktopRuntimeContext
   // Bounded boot with a diagnostic audit: a composition whose rows never

@@ -188,11 +188,27 @@ describe('web e2e: queue row actions', () => {
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
     await editor.fill(EDITED)
-    await page.getByRole('button', { name: 'Save queued message' }).hover()
-    await page.getByRole('tooltip', { name: 'Save queued message', exact: true }).waitFor()
+    const save = page.getByRole('button', { name: 'Save queued message' })
+    await save.hover()
+    const saveTooltip = page.getByRole('tooltip', { name: 'Save queued message', exact: true })
+    await saveTooltip.waitFor()
+    const tooltipGeometry = await page.evaluate(() => {
+      const element = document.querySelector<HTMLElement>('[role="tooltip"]')
+      if (element === null) return null
+      const tooltip = element.getBoundingClientRect()
+      return {
+        declaredLeft: Number.parseFloat(element.style.left),
+        declaredTop: Number.parseFloat(element.style.top),
+        tooltipCenter: tooltip.left + tooltip.width / 2,
+        tooltipTop: tooltip.top,
+      }
+    })
+    expect(tooltipGeometry).not.toBeNull()
+    expect(Math.abs(tooltipGeometry!.tooltipCenter - tooltipGeometry!.declaredLeft)).toBeLessThan(2)
+    expect(Math.abs(tooltipGeometry!.tooltipTop - tooltipGeometry!.declaredTop)).toBeLessThan(2)
     const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
-    await settleQueueAction(() => page.getByRole('button', { name: 'Save queued message' }).click(), EDITED)
+    await settleQueueAction(() => save.click(), EDITED)
     await page.getByText(EDITED, { exact: true }).waitFor()
 
     const removeRow = page.locator('[data-queue-dock] li', { hasText: REMOVE })

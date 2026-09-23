@@ -10,12 +10,14 @@ import {
 
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 
-const comboUrl = (ids: readonly string[], rev: string): string =>
-  `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
-const chunkUrl = (id: string, fileName: string, rev = '0'): string =>
-  `/plugins/${id}/${fileName}?rev=${rev}`
-const BOOTSTRAP_URL = comboUrl([MODULES_ID], 'bootstrap')
-const APPLICATION_URL = comboUrl(['a', 'b'], 'application')
+// The host composes graph rows and batch descriptors as app-directory-relative
+// browser references, so these fixtures carry the same form.
+const comboReference = (ids: readonly string[], rev: string): string =>
+  `plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
+const chunkReference = (id: string, fileName: string, rev = '0'): string =>
+  `plugins/${id}/${fileName}?rev=${rev}`
+const BOOTSTRAP_URL = comboReference([MODULES_ID], 'bootstrap')
+const APPLICATION_URL = comboReference(['a', 'b'], 'application')
 const win = globalThis as DshWindow
 const bootstrapExports = { apply, createClientModuleSystem }
 
@@ -30,7 +32,7 @@ afterEach(() => {
 const row = (id: string, fields: Partial<BootModuleRow> = {}): BootModuleRow =>
   ({
     id,
-    url: comboUrl([id], '0'),
+    url: comboReference([id], '0'),
     initialUrl: id === MODULES_ID ? BOOTSTRAP_URL : APPLICATION_URL,
     rev: '0',
     inject: [],
@@ -85,7 +87,7 @@ function bench(
     if (opts.gated?.includes(url) === true) {
       await new Promise<void>((resolve) => { gates.set(url, resolve) })
     }
-    const sibling = /^\/plugins\/(.+)\/(client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js)\?rev=[^&]+$/.exec(url)
+    const sibling = /^plugins\/(.+)\/(client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js)\?rev=[^&]+$/.exec(url)
     if (sibling !== null) {
       const id = sibling[1] as string
       const chunk = sibling[2] as string
@@ -248,7 +250,7 @@ describe('lazy CJS arrival', () => {
     const second = await entry.load()
     expect(first).toBe(second)
     expect(first).toEqual({ marker: 'terminal' })
-    expect(b.fetched).toEqual([APPLICATION_URL, chunkUrl('a', 'client.terminal.js')])
+    expect(b.fetched).toEqual([APPLICATION_URL, chunkReference('a', 'client.terminal.js')])
   })
 
   it('loads a package-local chunk with the revision that invalidated its entry', async () => {
@@ -265,9 +267,9 @@ describe('lazy CJS arrival', () => {
     await second.load()
     expect(b.fetched).toEqual([
       APPLICATION_URL,
-      chunkUrl('a', 'client.terminal.js'),
-      comboUrl(['a'], 'rebuilt'),
-      chunkUrl('a', 'client.terminal.js', 'rebuilt'),
+      chunkReference('a', 'client.terminal.js'),
+      comboReference(['a'], 'rebuilt'),
+      chunkReference('a', 'client.terminal.js', 'rebuilt'),
     ])
   })
 
@@ -292,7 +294,7 @@ describe('lazy CJS arrival', () => {
   })
 
   it('shares one in-flight package-local chunk transport', async () => {
-    const url = chunkUrl('a', 'client.terminal.js')
+    const url = chunkReference('a', 'client.terminal.js')
     const b = bench([row('a')], {
       a: req => ({ load: () => req.async('./client.terminal.js') }),
     }, {
@@ -318,11 +320,11 @@ describe('lazy CJS arrival', () => {
     const stale = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
     b.loader.invalidate('a', 'rebuilt')
     await stale.load()
-    expect(b.fetched.at(-1)).toBe(chunkUrl('a', 'client.terminal.js', 'rebuilt'))
+    expect(b.fetched.at(-1)).toBe(chunkReference('a', 'client.terminal.js', 'rebuilt'))
   })
 
   it('discards a chunk that arrives after its owner generation was invalidated', async () => {
-    const staleUrl = chunkUrl('a', 'client.terminal.js')
+    const staleUrl = chunkReference('a', 'client.terminal.js')
     const b = bench([row('a')], {
       a: req => ({ load: () => req.async('./client.terminal.js') }),
     }, {
@@ -337,7 +339,7 @@ describe('lazy CJS arrival', () => {
     b.gates.get(staleUrl)?.()
 
     await expect(staleLoad).resolves.toEqual({ marker: 'terminal' })
-    expect(b.fetched).toContain(chunkUrl('a', 'client.terminal.js', 'rebuilt'))
+    expect(b.fetched).toContain(chunkReference('a', 'client.terminal.js', 'rebuilt'))
   })
 })
 
@@ -472,7 +474,7 @@ describe('failure modes', () => {
   })
 
   it('rejects a graph row whose one-resource URL cannot address sibling chunks', async () => {
-    const b = bench([row('a', { url: '/plugins/a/client.js?rev=0' })], {
+    const b = bench([row('a', { url: 'plugins/a/client.js?rev=0' })], {
       a: req => ({ load: () => req.async('./client.terminal.js') }),
     })
     const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
@@ -529,14 +531,14 @@ describe('boot manifest wire', () => {
     const manifest = parseBootManifest({
       rev: 'graph',
       entries: [
-        { id: 'a', url: '/plugins/a/client.js', rev: '1', inject: ['b'] },
-        { id: 'b', url: '/plugins/b/client.js', rev: '2', external: ['react'] },
+        { id: 'a', url: 'plugins/a/client.js', rev: '1', inject: ['b'] },
+        { id: 'b', url: 'plugins/b/client.js', rev: '2', external: ['react'] },
       ],
-      batches: [{ phase: 'application', url: '/batch.js', rev: 'batch', entries: ['a', 'b'] }],
+      batches: [{ phase: 'application', url: 'batch.js', rev: 'batch', entries: ['a', 'b'] }],
     })
     expect(manifest.modules).toEqual([
-      { id: 'a', url: '/plugins/a/client.js', initialUrl: '/batch.js', rev: '1', inject: ['b'], external: [] },
-      { id: 'b', url: '/plugins/b/client.js', initialUrl: '/batch.js', rev: '2', inject: [], external: ['react'] },
+      { id: 'a', url: 'plugins/a/client.js', initialUrl: 'batch.js', rev: '1', inject: ['b'], external: [] },
+      { id: 'b', url: 'plugins/b/client.js', initialUrl: 'batch.js', rev: '2', inject: [], external: ['react'] },
     ])
   })
 
@@ -636,7 +638,7 @@ describe('HMR reset', () => {
     expect(b.loader.loadCache.has('a')).toBe(false)
     await b.loader.prefetch('a')
     const second = await b.loader.import('a', '', {})
-    expect(b.fetched).toEqual([APPLICATION_URL, comboUrl(['a'], '1')])
+    expect(b.fetched).toEqual([APPLICATION_URL, comboReference(['a'], '1')])
     expect((first as { generation: number }).generation).toBe(1)
     expect((second as { generation: number }).generation).toBe(2)
   })
@@ -666,7 +668,7 @@ describe('HMR reset', () => {
     await b.loader.import('a', '', {})
     b.loader.invalidate('a')
     await b.loader.prefetch('a')
-    expect(b.fetched).toEqual([APPLICATION_URL, comboUrl(['a'], '0')])
+    expect(b.fetched).toEqual([APPLICATION_URL, comboReference(['a'], '0')])
   })
 })
 

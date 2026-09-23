@@ -21,6 +21,7 @@ describe('Agent Teams profile bundle', () => {
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.dependencies).toMatchObject({
       '@deepseek-ai/dsh-experimental-agent-team': 'workspace:^',
+      '@deepseek-ai/dsh-experimental-client-ui-agent-team': 'workspace:^',
       '@deepseek-ai/dsh-experimental-tool-agent-team': 'workspace:^',
     })
 
@@ -47,6 +48,9 @@ describe('Agent Teams profile bundle', () => {
     expect(inserted.find(entry => entry.id === 'tool-agent-team')).toMatchObject({
       name: '@deepseek-ai/dsh-experimental-tool-agent-team',
       config: { freshProvider: 'spawn', forkProvider: 'fork' },
+    })
+    expect(inserted.find(entry => entry.id === 'ui-agent-team')).toMatchObject({
+      name: '@deepseek-ai/dsh-experimental-client-ui-agent-team',
     })
   })
 })

@@ -102,7 +102,7 @@ function kitFor(snapshot: SessionSnapshot, injected: Partial<QueueDockInjected> 
     sessionId: SID,
     t,
     usePanelInfo,
-    useSessions: (() => { throw new Error('unused') }) as unknown as SnapshotSelectorHook<SessionListState>,
+    useSessions: (() => { throw new Error('unused') }) as SnapshotSelectorHook<SessionListState>,
     useSessionRetainInfo: () => undefined,
     useResource,
     useSessionStatus: bindSnapshotSelector(

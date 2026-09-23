@@ -46,11 +46,18 @@ interface LinkMenuLabels {
   openIn(application: string): string
   readonly saveFileAs: string
   readonly copyPath: string
-  readonly copyFileContents: string
   readonly revealFile: string
 }
 
 const MACOS_TITLE_BAR_HEIGHT = 30
+/**
+ * Top inset the shared layout reserves for the window's own strip. The client
+ * declares it only for the Electron host's `data-platform="darwin"`, and
+ * Desktop owns the same overlay strip through Tauri, so entry pages that pad by
+ * this token and overlays that keep it as their viewport margin would otherwise
+ * collide with the traffic lights.
+ */
+const MACOS_FRAME_TOP_CLEARANCE = 48
 const TITLE_BAR_INTERACTIVE_SELECTOR = [
   'a',
   'button',
@@ -88,7 +95,6 @@ function linkMenuLabels(): LinkMenuLabels {
       openIn: application => `使用 ${application} 打开`,
       saveFileAs: '另存为…',
       copyPath: '复制路径',
-      copyFileContents: '复制文件内容',
       revealFile: navigator.userAgent.includes('Macintosh') ? '在 Finder 中显示' : '在文件资源管理器中显示',
     }
   }
@@ -101,7 +107,6 @@ function linkMenuLabels(): LinkMenuLabels {
     openIn: application => `Open in ${application}`,
     saveFileAs: 'Save as…',
     copyPath: 'Copy path',
-    copyFileContents: 'Copy file contents',
     revealFile: navigator.userAgent.includes('Macintosh') ? 'Reveal in Finder' : 'Show in File Explorer',
   }
 }
@@ -313,7 +318,6 @@ function installLinkInteractions(): void {
         menu.append(
           addAction(labels.saveFileAs, () => invoke('desktop_save_file_as', { path: target.path })),
           addAction(labels.copyPath, () => copyText(target.path)),
-          addAction(labels.copyFileContents, () => invoke('desktop_copy_file_contents', { path: target.path })),
           addAction(labels.revealFile, () => invoke('desktop_reveal_file', { path: target.path })),
         )
       } else {
@@ -359,6 +363,10 @@ function installLinkInteractions(): void {
 /** Restore native title-bar gestures over the macOS overlay title bar. */
 function installMacOSOverlayTitleBar(): void {
   if (!navigator.userAgent.includes('Macintosh')) return
+  document.documentElement.style.setProperty(
+    '--dsh-frame-top-clearance',
+    `${MACOS_FRAME_TOP_CLEARANCE}px`,
+  )
   window.addEventListener('mousedown', (event) => {
     if (event.buttons !== 1 || event.clientY > MACOS_TITLE_BAR_HEIGHT) return
     const target = event.target
@@ -373,10 +381,13 @@ function installMacOSOverlayTitleBar(): void {
 }
 
 const carrier: DownloadCarrier = {
+  // The shared carrier hands over a document-relative Host route; the Rust
+  // command downloads from the current loopback origin, so resolve it here
+  // against the page's own base.
   save: (url, filename) => invoke<DesktopSaveResult>('desktop_save_session', {
     request: {
       method: 'GET',
-      url,
+      url: new URL(url, document.baseURI).toString(),
       headers: {},
     },
     filename,

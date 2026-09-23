@@ -91,6 +91,7 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
   expect(waitingRow.querySelector('[data-state="warning"]')).not.toBeNull()
   expect(waitingRow.querySelector('[data-state="ongoing"]')).toBeNull()
   within(waitingRow).getByText('Waiting for answer')
+  within(waitingRow).getByText('Answer')
 
   // Opening a session reaches chat content through the RemoteMock transport.
   fireEvent.click(waitingTitle)
@@ -103,7 +104,12 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
   for (let index = 0; index < 3; index += 1) {
     fireEvent.click(await screen.findByRole('button', { name: 'Skip' }))
   }
-  fireEvent.click(await screen.findByRole('button', { name: 'Allow once' }))
+  const allowOnce = await screen.findByRole('button', { name: 'Allow once' })
+  await waitFor(() => {
+    within(waitingRow).getByText('Waiting for approval')
+    within(waitingRow).getByText('Approval')
+  })
+  fireEvent.click(allowOnce)
 
   // The fixture mirrors all three token-meter projections, so the assembled
   // ContextMeter reaches its composition panel instead of only the occupancy

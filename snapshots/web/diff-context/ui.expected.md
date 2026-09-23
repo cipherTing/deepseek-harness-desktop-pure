@@ -1,5 +1,4 @@
 - button "Edit config.txt +1 -1" [expanded]:
-  - img
   - text: Edit
   - button "config.txt"
   - text: +1 -1

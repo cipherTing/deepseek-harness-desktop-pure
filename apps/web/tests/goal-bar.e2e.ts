@@ -55,6 +55,25 @@ describe('web e2e: goal bar clear convergence', () => {
     await expect.poll(() => pause.count(), {
       timeout: 10_000,
     }).toBe(1)
+    await pause.hover()
+    const pauseTooltip = page.getByRole('tooltip', { name: 'Pause goal', exact: true })
+    await pauseTooltip.waitFor()
+    const tooltipGeometry = await page.evaluate(() => {
+      const element = document.querySelector<HTMLElement>('[role="tooltip"]')
+      if (element === null) return null
+      const tooltip = element.getBoundingClientRect()
+      return {
+        declaredLeft: Number.parseFloat(element.style.left),
+        declaredTop: Number.parseFloat(element.style.top),
+        tooltipCenter: tooltip.left + tooltip.width / 2,
+        tooltipTop: tooltip.top,
+      }
+    })
+    expect(tooltipGeometry).not.toBeNull()
+    expect(Math.abs(tooltipGeometry!.tooltipCenter - tooltipGeometry!.declaredLeft)).toBeLessThan(2)
+    expect(Math.abs(tooltipGeometry!.tooltipTop - tooltipGeometry!.declaredTop)).toBeLessThan(2)
+    await page.mouse.move(0, 0)
+    await pauseTooltip.waitFor({ state: 'hidden' })
     const snapshot = await captureStableAria(page, '[data-goal-bar]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(ACTIVE_EXPECTED, snapshot, MODE)
 

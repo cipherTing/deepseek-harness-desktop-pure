@@ -259,7 +259,7 @@ function createOutput(rawName: string, structuredSchema: JsonSchemaNode | undefi
       additionalProperties: false,
     },
     render(_args: unknown, value: JsonValue) {
-      const result = value as unknown as McpResult
+      const result = value as McpResult
       return [{ type: 'text', text: extractText(result.content, rawName) }]
     },
   }

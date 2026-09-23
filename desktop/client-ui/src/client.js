@@ -272,11 +272,19 @@ window.__ModuleLoader__.load({
         window.removeEventListener("dragend", reset);
       };
     }
+    /**
+     * Bounds one release lookup: without it a stalled connection leaves the
+     * check button disabled until the platform's own long default timeout.
+     */
+    const UPDATE_CHECK_TIMEOUT_MS = 15000;
     async function fetchLatest(repository) {
       const url = releasesUrl(repository);
       if (url === null) return null;
       try {
-        const response = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
+        const response = await fetch(url, {
+          headers: { Accept: "application/vnd.github+json" },
+          signal: AbortSignal.timeout(UPDATE_CHECK_TIMEOUT_MS),
+        });
         if (!response.ok) return null;
         const data = await response.json();
         if (typeof data?.tag_name !== "string" || typeof data?.html_url !== "string") return null;
@@ -310,9 +318,9 @@ window.__ModuleLoader__.load({
 
     // ── ignored release ────────────────────────────────────────────────────
     // One preference read by the badge: the release whose reminder the user
-    // skipped. It lives in the durable `desktop-ui` settings namespace this
-    // package's Host half registers, so it survives a restart.
-    const DESKTOP_UI_NAMESPACE = "desktop-ui";
+    // skipped. It lives in the `desktop-client-ui` entry form this package's
+    // Host half declares, so it survives a restart.
+    const DESKTOP_UI_ENTRY = "desktop-client-ui";
     const ignoredListeners = new Set();
     let ignoredVersion;
     // Published by `apply`; inert until the plugin body runs.
@@ -502,13 +510,13 @@ window.__ModuleLoader__.load({
 
     // ── plugin body ────────────────────────────────────────────────────────
     // Cordis must wait for these services before running this plugin.
-    const inject = ["locale", "slots", "settingsScope"];
+    const inject = ["locale", "slots", "configForms"];
 
     function apply(ctx) {
       const locale = ctx.locale;
       const slots = ctx.slots;
       ctx.effect(() => locale.register(NS, { zh, en }), "desktop-client-ui: dictionaries");
-      const ignoredScope = ctx.settingsScope.bind({ namespace: DESKTOP_UI_NAMESPACE });
+      const ignoredScope = ctx.configForms.get(DESKTOP_UI_ENTRY);
       ctx.effect(() => {
         const sync = () => { publishIgnoredVersion(ignoredScope.getSnapshot().value?.ignoredUpdateVersion); };
         sync();

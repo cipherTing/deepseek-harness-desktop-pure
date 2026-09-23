@@ -86,3 +86,5 @@ None.
 </details>
 
 **Runtime invariant:** No companion is published. Typert and the Agent/Session registries own the observed relationships.
+
+The Client assembly includes the account namespace for login commands and reconnectable account snapshots.

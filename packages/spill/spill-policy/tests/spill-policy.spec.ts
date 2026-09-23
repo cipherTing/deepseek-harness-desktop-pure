@@ -13,6 +13,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
@@ -27,6 +28,12 @@ import Subprocess from '@deepseek-ai/dsh-subprocess-local'
 import Sandbox from '@deepseek-ai/dsh-sandbox-local'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'test': { kind: 'test' } & ContextFormed
+  }
+}
 
 async function mountRuntime(ctx: Context, config: NodeRuntimeConfig = {}): Promise<void> {
   onTestFinished(async () => { await ctx.fiber.dispose() })
@@ -329,70 +336,82 @@ describe('the durable dispatch-log arm', () => {
     await ctx.plugin(StubStore)
     await ctx.plugin(SpillPolicy, { maxInlineBytes: 100 })
     await mountRuntime(ctx, {})
-    // A spill backend that hangs until released.
-    let releaseSave!: () => void
-    const gate = new Promise<void>((resolve) => { releaseSave = resolve })
+    const saveStarted = Promise.withResolvers<undefined>()
+    const saveGate = Promise.withResolvers<undefined>()
+    const smallStarted = Promise.withResolvers<undefined>()
     const store = ctx.spillStore as StubStore
     const realSave = store.saveText.bind(store)
     store.saveText = async (input) => {
-      await gate
+      saveStarted.resolve(undefined)
+      await saveGate.promise
       return realSave(input)
     }
     const events: { type: string; data: unknown }[] = []
-    const agent = observedAgent(ctx, 'dispatch-slow-spill', (type: string, data: unknown) => { events.push({ type, data }) })
+    const agent = observedAgent(ctx, 'dispatch-slow-spill', (type: string, data: unknown) => {
+      events.push({ type, data })
+      if (type === 'tool/ptc-dispatch-start' && (data as { name: string }).name === 'small_read') smallStarted.resolve(undefined)
+    })
     ctx.tools.register(textTool('huge_read', 'H'.repeat(2_000)))
     ctx.tools.register(textTool('small_read', 'tiny'))
-    let smallAfterHuge = false
     const runPromise = ctx.tools.execute({
       signal: testToolSignal,
       callId: ToolCallId('parent-3'),
       name: 'run_code',
       arguments: {
-        // The program takes BOTH values while the spill backend hangs: the
-        // huge read's binding resolves immediately (its logged copy is side
-        // work), so the small read proceeds without waiting.
+        // Both program values remain available while the durable spill is blocked.
         code: 'const big = await tools.huge_read({});\nconst small = await tools.small_read({});\nreturn big[0].text.length + small[0].text.length',
         description: 'Prove log shaping is off the program path',
       },
       agent: agent as never,
-    }).then((result) => {
-      return result
     })
-    // The run cannot COMPLETE while the settle append is gated (drain waits
-    // for logWork), but the program itself already ran both calls; release
-    // the backend and observe the settle events land inside the turn.
-    await vi.waitFor(() => {
-      // The second dispatch STARTED while the first one's spill hung.
-      smallAfterHuge = events.some(event => event.type === 'tool/ptc-dispatch-start'
-        && (event.data as { name: string }).name === 'small_read')
-      if (!smallAfterHuge) throw new Error('small_read not started yet')
-    })
-    releaseSave()
-    const result = await runPromise
-    expect(result.isError).toBe(false)
-    if (result.isError) throw new Error('expected success')
-    expect(result.value).toMatchObject({ result: 2_004 })
-    const settles = events.filter(event => event.type === 'tool/ptc-dispatch')
-    expect(settles).toHaveLength(2)
-    expect(smallAfterHuge).toBe(true)
+    onTestFinished(() => { saveGate.resolve(undefined) })
+    try {
+      await Promise.race([
+        Promise.all([saveStarted.promise, smallStarted.promise]),
+        runPromise.then(() => { throw new Error('run finished before the blocked save and later dispatch overlapped') }),
+      ])
+      saveGate.resolve(undefined)
+      const result = await runPromise
+      expect(result.isError).toBe(false)
+      if (result.isError) throw new Error('expected success')
+      expect(result.value).toMatchObject({ result: 2_004 })
+      expect(events.filter(event => event.type === 'tool/ptc-dispatch')).toHaveLength(2)
+    } finally {
+      saveGate.resolve(undefined)
+      await runPromise
+    }
   })
 
   it('a sustained slow backend backpressures the run instead of accumulating unbounded log tasks', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
-    // Cap 1: once the hung shaped-append backlog exceeds the cap, the ordered
-    // lane holds inside the second commit, so the THIRD dispatch cannot start
-    // until a pending save drains — the bound is observable as its missing
-    // start event.
     await ctx.plugin(ToolRuntime, { mode: 'ptc', maxParallelSubCalls: 1 })
     await ctx.plugin(StubStore)
     await ctx.plugin(SpillPolicy, { maxInlineBytes: 100 })
     await mountRuntime(ctx, {})
+    const secondSaveStarted = Promise.withResolvers<undefined>()
+    const thirdStarted = Promise.withResolvers<undefined>()
     const store = ctx.spillStore as StubStore
     const releases: (() => void)[] = []
-    store.gate = () => new Promise<void>((resolve) => { releases.push(resolve) })
+    let gateNewSaves = true
+    let saves = 0
+    store.gate = () => {
+      if (!gateNewSaves) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        releases.push(resolve)
+        if (++saves === 2) secondSaveStarted.resolve(undefined)
+      })
+    }
+    // Disabling future gates also releases a third save that has not reached the backend yet.
+    const releaseSaves = (): void => {
+      gateNewSaves = false
+      for (const release of releases.splice(0)) release()
+    }
     const events: { type: string; data: unknown }[] = []
-    const agent = observedAgent(ctx, 'dispatch-spill-bound', (type: string, data: unknown) => { events.push({ type, data }) })
+    const agent = observedAgent(ctx, 'dispatch-spill-bound', (type: string, data: unknown) => {
+      events.push({ type, data })
+      if (type === 'tool/ptc-dispatch-start' && (data as { subCallId: string }).subCallId.endsWith(':ptc:3')) thirdStarted.resolve(undefined)
+    })
     ctx.tools.register(textTool('huge_read', 'H'.repeat(2_000)))
     const started = (n: number): boolean => events.some(event => event.type === 'tool/ptc-dispatch-start'
       && (event.data as { subCallId: string }).subCallId.endsWith(`:ptc:${n}`))
@@ -401,32 +420,33 @@ describe('the durable dispatch-log arm', () => {
       callId: ToolCallId('parent-bound'),
       name: 'run_code',
       arguments: {
-        code: 'await tools.huge_read({}); await tools.huge_read({}); await tools.huge_read({}); return "done"',
+        // Queue all requests before waiting so the third is available to the bounded lane.
+        code: 'await Promise.all([tools.huge_read({}), tools.huge_read({}), tools.huge_read({})]); return "done"',
         description: 'Three oversized reads against a hung backend',
       },
       agent: agent as never,
     })
-    // Two hung saves = backlog above the cap: the lane must hold before
-    // starting dispatch 3.
-    await vi.waitFor(() => {
-      if (releases.length < 2) throw new Error('second hung save not reached yet')
-    })
-    expect(started(2)).toBe(true)
-    expect(started(3)).toBe(false)
-    releases.shift()!()
-    // Draining one pending save releases the lane; dispatch 3 starts.
-    await vi.waitFor(() => {
-      if (!started(3)) throw new Error('third dispatch not started yet')
-    })
-    while (releases.length > 0) releases.shift()!()
-    const result = await runPromise
-    expect(result.isError).toBe(false)
-    await vi.waitFor(() => {
-      if (releases.length > 0) { while (releases.length > 0) releases.shift()!() }
-      if (events.filter(event => event.type === 'tool/ptc-dispatch').length !== 3) {
-        throw new Error('settle events still pending')
-      }
-    })
+    onTestFinished(releaseSaves)
+    try {
+      await Promise.race([
+        secondSaveStarted.promise,
+        runPromise.then(() => { throw new Error('run finished before two spill saves were blocked') }),
+      ])
+      expect(started(2)).toBe(true)
+      expect(started(3)).toBe(false)
+      releases.shift()!()
+      await Promise.race([
+        thirdStarted.promise,
+        runPromise.then(() => { throw new Error('run finished before the third dispatch started') }),
+      ])
+      releaseSaves()
+      const result = await runPromise
+      expect(result.isError).toBe(false)
+      expect(events.filter(event => event.type === 'tool/ptc-dispatch')).toHaveLength(3)
+    } finally {
+      releaseSaves()
+      await runPromise
+    }
   })
 
   it('a saveText failure keeps the complete content in the durable log (best-effort)', async () => {
@@ -539,7 +559,7 @@ describe('composition', () => {
     const { ctx } = await setup({ maxInlineBytes: 200 })
     const context = createUserMessage({
       content: [{ type: 'text' as const, text: 'note' }],
-      source: { kind: 'plugin' as const, plugin: 'test' },
+      source: { kind: 'test' as const },
     })
     ctx.on('tools/post-execute', async (_e, _r, _next) =>
       ({ kind: 'accept', additionalContexts: [context] }))

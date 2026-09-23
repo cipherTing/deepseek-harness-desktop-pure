@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { DesktopUpdateIndicator } from '../src/client/DesktopUpdateIndicator.tsx'
-import type { DesktopUpdateBridge, DesktopUpdatePresentation } from '../src/client/desktop-update-bridge.ts'
+import type { DesktopUpdateBridge, DesktopUpdatePresentation } from '../src/types.ts'
 import { DesktopUpdateSource } from '../src/client/desktop-update-source.ts'
 import { en, zh } from '../src/client/locales.ts'
 

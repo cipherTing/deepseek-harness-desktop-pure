@@ -25,7 +25,7 @@ import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
 import { parseFileLink } from './file-link.ts'
 import { renderTexToReact } from './katex.tsx'
-import { LinkIcon, classifyLinkPath } from '../LinkIcon.tsx'
+import { LinkIconMedium, classifyLinkPath } from '../LinkIcon.tsx'
 import { useMarkdownDelegate } from './MarkdownDelegate.tsx'
 import type { PositionedBlock } from './incremental.ts'
 import css from './MarkdownText.module.css'
@@ -315,7 +315,7 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
               aria-label={mention.label}
               onClick={mention.open}
             >
-              <LinkIcon kind={classifyLinkPath(value)} className={css.linkIcon} />
+              <LinkIconMedium kind={classifyLinkPath(value)} className={css.linkIcon} />
               {value}
             </button>
           </code>
@@ -555,7 +555,7 @@ function MarkdownAnchor({ href, glyph, children }: {
         open(href)
       }}
     >
-      {glyph && <LinkIcon kind="url" href={href} className={css.linkIcon} />}
+      {glyph && <LinkIconMedium kind="url" href={href} className={css.linkIcon} />}
       {children}
     </a>
   )
@@ -584,7 +584,7 @@ function MarkdownFileLink({ file, glyph, children }: {
       title={file.path}
       onClick={() => { openFile(file.path, file.line === undefined ? undefined : { line: file.line }) }}
     >
-      {glyph && <LinkIcon kind={classifyLinkPath(file.path)} className={css.linkIcon} />}
+      {glyph && <LinkIconMedium kind={classifyLinkPath(file.path)} className={css.linkIcon} />}
       {children}
     </button>
   )

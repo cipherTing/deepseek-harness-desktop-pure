@@ -2,6 +2,7 @@
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SESSION_LOG_EXPORT_ROUTE } from '../routes.ts'
 
 /** Session export save result returned by the active surface carrier. */
 export type SessionLogDownloadSaveResult = 'download-started' | 'file-saved' | 'cancelled'
@@ -22,6 +23,7 @@ export interface SessionLogDownloadState {
   bySession: Record<string, SessionLogDownloadEntry | undefined>
 }
 
+/** HTTP carrier for the export route. */
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
 type Save = (url: string, filename: string) => SessionLogDownloadSaveResult | Promise<SessionLogDownloadSaveResult>
 
@@ -41,8 +43,9 @@ export function sessionLogZipFilename(sessionId: SessionId): string {
 }
 
 /**
- * Hand a Host download URL to the browser download manager.
- * @param url - same-origin Host download URL.
+ * Hand a Host download route to the browser download manager, which resolves it
+ * against the document's own base.
+ * @param url - document-relative Host download route.
  * @param filename - browser download filename.
  * @returns `download-started` after the browser receives the download action.
  */
@@ -58,12 +61,6 @@ export function downloadUrl(url: string, filename: string): SessionLogDownloadSa
 function defaultSave(url: string, filename: string): SessionLogDownloadSaveResult | Promise<SessionLogDownloadSaveResult> {
   const carrier = (globalThis as { __DSH_DOWNLOAD_CARRIER__?: DownloadCarrier }).__DSH_DOWNLOAD_CARRIER__
   return carrier?.save(url, filename) ?? downloadUrl(url, filename)
-}
-
-/** Resolve the browser's Host base with the connection carrier's null-origin fallback. */
-function hostBase(): string {
-  const origin = (globalThis as { location?: { origin?: string } }).location?.origin
-  return origin !== undefined && origin !== 'null' ? origin : 'http://dsh.internal'
 }
 
 function messageOf(error: unknown): string {
@@ -128,15 +125,17 @@ export class SessionLogDownloadController {
   private async run(sessionId: SessionId, signal: AbortSignal): Promise<void> {
     this.publish(sessionId, { open: true, status: 'downloading', error: null })
     try {
-      const url = new URL('/api/session.export', hostBase())
-      url.searchParams.set('sessionId', sessionId)
-      url.searchParams.set('includeDescendants', 'true')
-      const response = await this.fetcher(url, { method: 'HEAD', signal })
+      const query = new URLSearchParams({ sessionId, includeDescendants: 'true' })
+      const route = `${SESSION_LOG_EXPORT_ROUTE}?${query.toString()}`
+      const response = await this.fetcher(route, { method: 'HEAD', signal })
       if (!response.ok) {
         const detail = await response.text().catch(() => '')
         throw new Error(`Export failed: HTTP ${response.status}${detail === '' ? '' : ` ${detail}`}`)
       }
-      const result = await this.save(url.toString(), sessionLogZipFilename(sessionId))
+      // The carrier settles when the surface save does: the native Desktop
+      // carrier reports whether the user saved or cancelled, the browser
+      // carrier reports that the download started.
+      const result = await this.save(route, sessionLogZipFilename(sessionId))
       if (result === 'cancelled') {
         this.publish(sessionId, { open: false, status: 'cancelled', error: null })
         return

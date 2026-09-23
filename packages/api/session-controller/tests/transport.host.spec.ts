@@ -441,11 +441,26 @@ describe('SessionHistoryController', () => {
     const signal = new AbortController().signal
 
     await expect(transport.page({
-      address: { kind: 'subagent', parentSessionId, childSessionId, mode: 'continuable' },
+      address: {
+        kind: 'subagent',
+        parentSessionId,
+        childSessionId,
+        mode: 'continuable',
+      },
       throughSeq: 0,
     }, signal)).resolves.toMatchObject({
       records: [{ type: 'event', event: { type: 'subagent/descriptor' } }],
     })
+    await expect(transport.page({
+      address: { kind: 'subagent', parentSessionId, childSessionId, mode: 'unknown' },
+      throughSeq: 0,
+    }, signal)).resolves.toMatchObject({
+      records: [{ type: 'event', event: { type: 'subagent/descriptor' } }],
+    })
+    await expect(transport.page({
+      address: { kind: 'subagent', parentSessionId: SessionId('other-parent'), childSessionId, mode: 'unknown' },
+      throughSeq: 0,
+    }, signal)).rejects.toMatchObject({ code: 'subagent/unauthorized' })
     await expect(transport.page({
       address: {
         kind: 'subagent',
@@ -456,7 +471,12 @@ describe('SessionHistoryController', () => {
       throughSeq: 0,
     }, signal)).rejects.toMatchObject({ code: 'subagent/unauthorized' })
     await expect(transport.page({
-      address: { kind: 'subagent', parentSessionId, childSessionId, mode: 'one-shot' },
+      address: {
+        kind: 'subagent',
+        parentSessionId,
+        childSessionId,
+        mode: 'one-shot',
+      },
       throughSeq: 0,
     }, signal)).rejects.toMatchObject({ code: 'subagent/unauthorized' })
     await expect(transport.page({
@@ -659,7 +679,12 @@ describe('SessionHistoryController', () => {
     const history = new SessionHistoryController(ctx, vi.fn())
 
     await expect(history.page({
-      address: { kind: 'subagent', parentSessionId, childSessionId, mode: 'continuable' },
+      address: {
+        kind: 'subagent',
+        parentSessionId,
+        childSessionId,
+        mode: 'continuable',
+      },
       throughSeq: -1,
     }, signal())).rejects.toMatchObject({
       code: 'subagent/catalog-diagnostic', details: { reason: 'unsupported' },
@@ -690,7 +715,12 @@ describe('SessionHistoryController', () => {
     }))
     const childSnapshot = vi.spyOn(child.ctx.sessionProjections, 'snapshot')
     const page = await child.transport.page({
-      address: { kind: 'subagent', parentSessionId, childSessionId, mode: 'continuable' },
+      address: {
+        kind: 'subagent',
+        parentSessionId,
+        childSessionId,
+        mode: 'continuable',
+      },
       throughSeq: 0,
     }, signal())
     expect('projections' in page).toBe(false)
