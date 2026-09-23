@@ -8,7 +8,6 @@ fn main() {
             "desktop_copy_text",
             "desktop_reveal_file",
             "desktop_save_file_as",
-            "desktop_copy_file_contents",
             "desktop_save_session",
         ]),
     ))

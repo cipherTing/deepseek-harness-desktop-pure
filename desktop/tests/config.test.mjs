@@ -143,7 +143,6 @@ test('Desktop loads the loopback web host without custom protocols', () => {
     'allow-desktop-copy-text',
     'allow-desktop-reveal-file',
     'allow-desktop-save-file-as',
-    'allow-desktop-copy-file-contents',
     'allow-desktop-save-session',
   ]) {
     assert.ok(capability.permissions.includes(command))
@@ -160,7 +159,6 @@ test('Desktop loads the loopback web host without custom protocols', () => {
     'desktop_copy_text',
     'desktop_reveal_file',
     'desktop_save_file_as',
-    'desktop_copy_file_contents',
     'desktop_save_session',
   ]) {
     assert.match(buildScript, new RegExp(`"${command}"`))
@@ -179,7 +177,9 @@ test('Desktop loads the loopback web host without custom protocols', () => {
     '@deepseek-ai/dsh-brand',
     '@deepseek-ai/dsh-credentials',
     '@deepseek-ai/dsh-deepseek-account',
+    '@deepseek-ai/dsh-hook-protocol',
     '@deepseek-ai/dsh-jobs',
+    '@deepseek-ai/dsh-sdk-protocol',
     '@deepseek-ai/dsh-session-persistence',
     '@deepseek-ai/dsh-session-query',
     '@deepseek-ai/dsh-settings',
@@ -196,7 +196,14 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   assert.match(overlay, /openBrowser: !!js ctx\.webStartup\.openBrowser/)
   assert.match(overlay, /printUrl: false/)
   assert.match(overlay, /surfaceContext: false/)
-  assert.match(sidecar, /args: \['--host', '127\.0\.0\.1', '--port', '0', '--no-open'\]/)
+  // The sidecar asks for a stable loopback port so the WebView origin — and the
+  // client state stored under it — survives a restart, and hands the profile a
+  // package-manager invocation pointing at the pnpm it ships.
+  assert.match(sidecar, /const PREFERRED_WEB_PORT = 47_821/)
+  assert.match(sidecar, /args: \['--host', '127\.0\.0\.1', '--port', String\(await webPort\(\)\), '--no-open'\]/)
+  assert.match(sidecar, /packageManager: bundledPackageManager\(\)/)
+  assert.match(sidecar, /'node_modules', 'pnpm', 'bin', 'pnpm\.mjs'/)
+  assert.equal(runtimePackage.dependencies.pnpm, '11.7.0')
   assert.match(sidecar, /connection\.authenticatedUrl\(origin\)/)
   // The profile-boot facade re-exports the boot of `@deepseek-ai/dsh` inside
   // this deploy root. The sidecar anchors the shared `web` profile and that
@@ -206,6 +213,20 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   assert.match(sidecar, /loadProfile\('dsh', 'web', runtimeManifest\)/)
   assert.match(sidecar, /resolvedProfile: \{ profile, installAnchor: runtimeManifest \}/)
   assert.match(sidecar, /runProfile\(\{\n\s+environment: appBoot\.loadLayeredEnv\('dsh'\),\n\s+profile: 'web',/)
+  // The shell owns one window, so a window.open request must reach the system
+  // browser instead of disappearing.
+  assert.match(rust, /\.on_new_window\(move \|target, _features\|/)
+  assert.match(rust, /tauri::webview::NewWindowResponse::Deny/)
+  // The page is never granted path resolution, and no page-reachable command
+  // reads an arbitrary file into the clipboard.
+  assert.ok(capability.permissions.includes('core:path:deny-resolve'))
+  assert.ok(capability.permissions.includes('core:path:deny-resolve-directory'))
+  assert.doesNotMatch(rust, /desktop_copy_file_contents/)
+  assert.doesNotMatch(rust, /CLIPBOARD_FILE_LIMIT/)
+  // A GUI launch has no console: the failure dialog carries the stderr tail.
+  assert.match(rust, /fn note_stderr/)
+  assert.match(rust, /fn failure_message/)
+  assert.doesNotMatch(rust, /宿主进程多次重启失败/)
 })
 
 test('Desktop leaves image drops to the browser attachment flow', () => {
@@ -290,6 +311,21 @@ test('Desktop uses the generic async save carrier instead of patching anchor cli
   assert.match(bridge, /new URL\(url, document\.baseURI\)\.toString\(\)/)
   assert.doesNotMatch(bridge, /document\.cookie/)
   assert.doesNotMatch(bridge, /HTMLAnchorElement\.prototype\.click/)
+  // No page-reachable command may read an arbitrary file, and the macOS overlay
+  // strip declares the shared clearance token the Electron host sets instead.
+  assert.doesNotMatch(bridge, /desktop_copy_file_contents/)
+  assert.match(bridge, /--dsh-frame-top-clearance/)
+})
+
+test('Desktop injects its head rows through the web host index table', () => {
+  const surface = readFileSync(new URL('../runtime/src/surface.ts', import.meta.url), 'utf8')
+
+  // The host renders table rows right after the opening head tag and tolerates
+  // that tag's attributes; a raw string tap would silently vanish instead.
+  assert.match(surface, /ctx\.on\('webserver\/index-inject'/)
+  assert.match(surface, /\{ kind: 'style', text: 'html,body\{overscroll-behavior:none\}' \}/)
+  assert.match(surface, /\{ kind: 'script-src', placement: 'head', src: '\/desktop-bridge\.js' \}/)
+  assert.doesNotMatch(surface, /tapIndex/)
 })
 
 test('Desktop shell supervises the official Tauri Node sidecar without a native application menu', () => {

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-host-webserver'
+import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { bridgeScript } from './bridge-script.generated.ts'
 
@@ -102,9 +102,13 @@ export function apply(ctx: Context): void {
       res.end(JSON.stringify(info))
     },
   }), 'desktop-surface: desktop-info route')
-  ctx.effect(() => ctx.webServer.tapIndex(html => html.replace('<head>', [
-    '<head>',
-    '<style>html,body{overscroll-behavior:none}</style>',
-    '<script src="/desktop-bridge.js"></script>',
-  ].join(''))), 'desktop-surface: desktop head injection')
+  // Structured injection rows: the host renders them immediately after the
+  // served document's opening head tag and tolerates that tag's attributes,
+  // where a raw string tap silently disappears if the tag ever changes.
+  ctx.effect(() => ctx.on('webserver/index-inject', (table: IndexInjection[]) => {
+    table.push(
+      { kind: 'style', text: 'html,body{overscroll-behavior:none}' },
+      { kind: 'script-src', placement: 'head', src: '/desktop-bridge.js' },
+    )
+  }), 'desktop-surface: desktop head injection')
 }

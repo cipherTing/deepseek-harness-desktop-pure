@@ -2,7 +2,7 @@
 
 This independent distribution fork packages [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) with Tauri. It is not upstream, a second Harness implementation, or a place for new Harness features.
 
-A bundled Node.js sidecar starts the standard `web` profile on a random loopback port (`--host 127.0.0.1 --port 0`), and the WebView loads it directly. The upstream web host remains the source of the index, boot manifest, plugin bundles, `/api`, and event streams. Desktop adds no custom URI scheme, boot snapshot, or HTTP reimplementation; framed IPC carries only readiness, `graph-changed`, native dialogs/path opening, and shutdown.
+A bundled Node.js sidecar starts the standard `web` profile on a loopback port (`--host 127.0.0.1 --port 47821`), falling back to an ephemeral port when that one is taken, and the WebView loads it directly. The preferred port keeps the WebView origin — and the client state stored under it — stable across launches. The upstream web host remains the source of the index, boot manifest, plugin bundles, `/api`, and event streams. Desktop adds no custom URI scheme, boot snapshot, or HTTP reimplementation; framed IPC carries only readiness, `graph-changed`, native dialogs/path opening, and shutdown.
 
 ## Fork scope
 

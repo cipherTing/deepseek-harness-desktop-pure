@@ -33,8 +33,10 @@ const PROTOCOL_VERSION: u32 = 1;
 const RESPAWN_ATTEMPTS: u32 = 3;
 /** Total cap for one session-export download (10 minutes). */
 const EXPORT_TIMEOUT: Duration = Duration::from_secs(600);
-/** Upper bound for copying one text file into the system clipboard. */
-const CLIPBOARD_FILE_LIMIT: u64 = 8 * 1024 * 1024;
+/** Retained sidecar stderr, newest bytes last. */
+const STDERR_TAIL_LIMIT: usize = 4_096;
+/** Characters of that tail shown in a failure dialog. */
+const STDERR_DIALOG_LIMIT: usize = 1_200;
 #[derive(Default)]
 struct DesktopState {
     peer: RwLock<Option<Arc<SidecarPeer>>>,
@@ -45,7 +47,37 @@ struct DesktopState {
      * string captured when the window was built.
      */
     origin: RwLock<Option<String>>,
+    /**
+     * Bounded tail of the current generation's stderr. A Finder-launched or
+     * Windows GUI build has no console, so a repeated startup failure would
+     * otherwise reach the user as a cause-less dialog.
+     */
+    stderr_tail: Mutex<Vec<u8>>,
     exiting: AtomicBool,
+}
+
+impl DesktopState {
+    /** Retain the newest sidecar stderr bytes within the diagnostic bound. */
+    fn note_stderr(&self, bytes: &[u8]) {
+        let mut tail = self.stderr_tail.lock().unwrap();
+        tail.extend_from_slice(bytes);
+        if tail.len() > STDERR_TAIL_LIMIT {
+            let excess = tail.len() - STDERR_TAIL_LIMIT;
+            tail.drain(..excess);
+        }
+    }
+
+    /** Last stderr characters for a failure dialog, trimmed to the dialog bound. */
+    fn stderr_excerpt(&self) -> String {
+        let tail = self.stderr_tail.lock().unwrap();
+        let text = String::from_utf8_lossy(&tail);
+        let trimmed = text.trim();
+        let length = trimmed.chars().count();
+        if length <= STDERR_DIALOG_LIMIT {
+            return trimmed.to_string();
+        }
+        trimmed.chars().skip(length - STDERR_DIALOG_LIMIT).collect()
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -505,25 +537,6 @@ async fn desktop_save_file_as(app: AppHandle, path: String) -> Result<DesktopSav
     Ok(DesktopSaveResult::FileSaved)
 }
 
-#[tauri::command]
-async fn desktop_copy_file_contents(app: AppHandle, path: String) -> Result<(), String> {
-    let source = linked_regular_file_path(&path)?;
-    let contents = tokio::task::spawn_blocking(move || {
-        let metadata = std::fs::metadata(&source).map_err(|error| error.to_string())?;
-        if metadata.len() > CLIPBOARD_FILE_LIMIT {
-            return Err(format!(
-                "Desktop can copy text files up to {CLIPBOARD_FILE_LIMIT} bytes to the clipboard"
-            ));
-        }
-        std::fs::read_to_string(source).map_err(|error| error.to_string())
-    })
-    .await
-    .map_err(|error| error.to_string())??;
-    app.clipboard()
-        .write_text(contents)
-        .map_err(|error| error.to_string())
-}
-
 /** Validate that a save request targets the current sidecar's export endpoint. */
 fn validate_export_request(
     request: &DesktopHttpRequest,
@@ -597,6 +610,9 @@ async fn desktop_save_session(
         .clone()
         .ok_or_else(|| "Desktop web host is not ready".to_string())?;
     let url = validate_export_request(&request, &current_origin)?;
+    // The page supplies the download name; only its basename may reach the
+    // native dialog, so product content can never steer the save location.
+    let filename = linked_file_name(Path::new(&filename))?;
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "Desktop main window is unavailable".to_string())?;
@@ -715,7 +731,10 @@ fn spawn_sidecar_reader(
                         break;
                     }
                 },
-                SidecarEvent::Stderr(bytes) => eprint!("{}", String::from_utf8_lossy(&bytes)),
+                SidecarEvent::Stderr(bytes) => {
+                    eprint!("{}", String::from_utf8_lossy(&bytes));
+                    app.state::<DesktopState>().note_stderr(&bytes);
+                }
                 SidecarEvent::Error(error) => {
                     eprintln!("Desktop sidecar error: {error}");
                     peer.fail(format!("Desktop sidecar error: {error}"));
@@ -857,7 +876,7 @@ async fn supervise_sidecar(app: &AppHandle) {
                     clear_peer_if_current(&state, &peer);
                     show_error_and_exit(
                         app,
-                        format!("DeepDive failed to reconnect:\n{error}"),
+                        failure_message(&state, &format!("DeepDive failed to reconnect:\n{error}")),
                         1,
                     );
                     return;
@@ -876,9 +895,24 @@ async fn supervise_sidecar(app: &AppHandle) {
     }
     show_error_and_exit(
         app,
-        "DeepDive 宿主进程多次重启失败，应用即将退出。",
+        failure_message(
+            &state,
+            &format!(
+                "DeepDive could not start its Harness host after {RESPAWN_ATTEMPTS} attempts. The application will exit."
+            ),
+        ),
         1,
     );
+}
+
+/** Append the retained sidecar stderr to a failure summary when there is any. */
+fn failure_message(state: &DesktopState, summary: &str) -> String {
+    let excerpt = state.stderr_excerpt();
+    if excerpt.is_empty() {
+        summary.to_string()
+    } else {
+        format!("{summary}\n\n{excerpt}")
+    }
 }
 
 /** Show a modal error on the main thread, then exit with the given code. */
@@ -948,7 +982,6 @@ pub fn run() {
             desktop_copy_text,
             desktop_reveal_file,
             desktop_save_file_as,
-            desktop_copy_file_contents,
             desktop_save_session,
         ])
         .setup(|app| {
@@ -976,6 +1009,7 @@ pub fn run() {
                             Some(parsed.origin().ascii_serialization());
                         let nav_handle = handle.clone();
                         let opener_handle = handle.clone();
+                        let popup_handle = handle.clone();
                         let window = WebviewWindowBuilder::new(
                             &handle,
                             "main",
@@ -1008,6 +1042,19 @@ pub fn run() {
                                     .open_url(target.clone(), None::<&str>);
                             }
                             false
+                        })
+                        .on_new_window(move |target, _features| {
+                            // The shell owns exactly one window: a `window.open`
+                            // or `target="_blank"` request reaches the system
+                            // browser, and dropping it silently is why product
+                            // controls like the account "Contact us" link and the
+                            // sidebar browser's external button did nothing.
+                            if target.scheme() == "http" || target.scheme() == "https" {
+                                let _ = popup_handle
+                                    .opener()
+                                    .open_url(target, None::<&str>);
+                            }
+                            tauri::webview::NewWindowResponse::Deny
                         });
                         #[cfg(target_os = "macos")]
                         let window = window

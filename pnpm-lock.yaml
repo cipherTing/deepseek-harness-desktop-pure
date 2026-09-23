@@ -859,6 +859,9 @@ importers:
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../packages/util/home-paths
+      '@deepseek-ai/dsh-hook-protocol':
+        specifier: workspace:^
+        version: link:../../packages/hooks/hook-protocol
       '@deepseek-ai/dsh-host-directory-picker':
         specifier: workspace:^
         version: link:../../packages/host/directory-picker
@@ -886,6 +889,9 @@ importers:
       '@deepseek-ai/dsh-scope':
         specifier: workspace:^
         version: link:../../packages/core/scope
+      '@deepseek-ai/dsh-sdk-protocol':
+        specifier: workspace:^
+        version: link:../../packages/sdk/protocol
       '@deepseek-ai/dsh-session-persistence':
         specifier: workspace:^
         version: link:../../packages/session/session-persistence
@@ -928,6 +934,9 @@ importers:
       '@msgpack/msgpack':
         specifier: 3.1.3
         version: 3.1.3
+      pnpm:
+        specifier: 11.7.0
+        version: 11.7.0
 
   native/system:
     devDependencies:
