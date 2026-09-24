@@ -14,7 +14,7 @@ import {
   fixtureUserPrompts, launchWebScaffold, recordFixture, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { openSettings, connectFreshWorkspaceZh, ZH_BROWSER_LOCALE } from './support.ts'
+import { openSettings, connectFreshWorkspaceZh, expandOwningTurnProcess, ZH_BROWSER_LOCALE } from './support.ts'
 
 const DIR = fileURLToPath(new URL('../../../snapshots/web/changed-files-turn', import.meta.url))
 const FIXTURE = join(DIR, 'session.v3.jsonl')
@@ -62,6 +62,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
   let tripwire: ReturnType<typeof watchConsole>
   let cwd: string
   let replayRoot: string | undefined
+  let releasePreparations: (() => void) | undefined
 
   beforeAll(async () => {
     let replayOverride: string | undefined
@@ -92,6 +93,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
   })
 
   afterAll(async () => {
+    releasePreparations?.()
     try {
       await browser?.close()
     } finally {
@@ -106,10 +108,45 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
   it('records the edited, created, and shell-appended files with their line counts', async () => {
     if (MODE !== 'record') expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])
     const settled = scaffold.whenTurnSettled()
+    const preparations = ['edit', 'write'].map(name => ({
+      name, ready: Promise.withResolvers<{ callId: string; kilobytes: number }>(),
+      release: Promise.withResolvers<undefined>(), held: false,
+    }))
+    const names = new Map<string, string>()
+    const dispose = scaffold.ctx.on('llm/stream', async function* (_options, next) {
+      for await (const chunk of next()) {
+        yield chunk
+        if (chunk.type !== 'tool-call-delta') continue
+        if (chunk.name !== undefined) names.set(chunk.id, chunk.name)
+        const preparation = preparations.find(value => value.name === names.get(chunk.id))
+        if (preparation === undefined || preparation.held || chunk.argumentsDelta.length === 0) continue
+        preparation.held = true
+        preparation.ready.resolve({ callId: chunk.id, kilobytes: Math.ceil(chunk.argumentsDelta.length / 1024) })
+        await preparation.release.promise
+      }
+    }, { prepend: true })
+    releasePreparations = () => {
+      for (const preparation of preparations) preparation.release.resolve(undefined)
+      dispose()
+    }
     const input = page.locator('[data-composer-input]').first()
     await input.fill(PROMPT)
     await input.press('Enter')
-    const sessionId = await settled
+    const observations = preparations.map(async (preparation) => {
+      const { callId, kilobytes } = await Promise.race([
+        preparation.ready.promise,
+        settled.then(() => { throw new Error(`No ${preparation.name} argument prefix was streamed`) }),
+      ])
+      const row = page.locator(`[data-chat-call-id="${callId}"] [data-state="preparing"]`)
+      await row.waitFor({ state: 'attached' })
+      await expandOwningTurnProcess(page, row)
+      await row.getByText(`正在准备内容 ${kilobytes}KB`, { exact: true }).waitFor()
+      expect(await row.getByRole('button').count()).toBe(0)
+      expect(await row.locator('pre').count()).toBe(0)
+      await compareOrRefreshGolden(join(DIR, `preparing-${preparation.name}.expected.md`), await row.ariaSnapshot(), MODE)
+      preparation.release.resolve(undefined)
+    })
+    const [sessionId] = await Promise.all([settled, ...observations]).finally(() => { releasePreparations?.() })
     const session = scaffold.ctx.agents.get(sessionId)?.session
     if (session?.header.cwd === undefined) throw new Error('changed-files Session has no workspace')
     cwd = session.header.cwd
@@ -343,6 +380,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
         for (const element of elements) element.scrollLeft = 0
       })
     }
+    const primaryTextColour = await review.evaluate(element => getComputedStyle(element).color)
     const addedLine = review.locator('[data-diff-side="right"] [data-diff-line="add"]')
     const rightContextLine = review.locator('[data-diff-side="right"] [data-diff-line="context"]')
     const addedRule = await addedLine.evaluate((line) => {
@@ -351,7 +389,8 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       if (number === undefined || text === null) throw new Error('added diff line is incomplete')
       const left = line.getBoundingClientRect().left
       return {
-        shadow: getComputedStyle(line).boxShadow,
+        shadow: getComputedStyle(number).boxShadow,
+        markerColour: getComputedStyle(number).color,
         textColour: getComputedStyle(text).color,
         numberLeft: number.getBoundingClientRect().left - left,
         textLeft: text.getBoundingClientRect().left - left,
@@ -367,7 +406,8 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
         textLeft: text.getBoundingClientRect().left - left,
       }
     })
-    expect(addedRule.shadow).toContain(addedRule.textColour)
+    expect(addedRule.shadow).toContain(addedRule.markerColour)
+    expect(addedRule.textColour).toBe(primaryTextColour)
     expect(addedRule.numberLeft).toBeCloseTo(rightContextRule.numberLeft, 1)
     expect(addedRule.textLeft).toBeCloseTo(rightContextRule.textLeft, 1)
     // The ignored file has no snapshot; its comparison comes from the copies captured around the write call.
@@ -402,7 +442,8 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       if (number === undefined || text === null) throw new Error('deleted diff line is incomplete')
       const left = line.getBoundingClientRect().left
       return {
-        shadow: getComputedStyle(line).boxShadow,
+        shadow: getComputedStyle(number).boxShadow,
+        markerColour: getComputedStyle(number).color,
         textColour: getComputedStyle(text).color,
         numberLeft: number.getBoundingClientRect().left - left,
         textLeft: text.getBoundingClientRect().left - left,
@@ -418,7 +459,8 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
         textLeft: text.getBoundingClientRect().left - left,
       }
     })
-    expect(deletedRule.shadow).toContain(deletedRule.textColour)
+    expect(deletedRule.shadow).toContain(deletedRule.markerColour)
+    expect(deletedRule.textColour).toBe(primaryTextColour)
     expect(deletedRule.numberLeft).toBeCloseTo(leftContextRule.numberLeft, 1)
     expect(deletedRule.textLeft).toBeCloseTo(leftContextRule.textLeft, 1)
     await compareTool.click()
@@ -470,14 +512,68 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     await expect.poll(() => drawn(review)).toEqual(['del:1# 示例项目1# 项目说明', 'context:22', 'context:3一个用于演示的仓库。3一个用于演示的仓库。'])
     const wrappedAddition = review.locator('[data-diff-line="del"] > span').nth(1)
     const wrappedAdditionRule = await wrappedAddition.evaluate((cell) => {
+      const number = cell.children[0]
       const text = cell.querySelector<HTMLElement>('[data-diff-code]')
-      if (text === null) throw new Error('wrapped addition has no text')
-      return { shadow: getComputedStyle(cell).boxShadow, textColour: getComputedStyle(text).color }
+      if (number === undefined || text === null) throw new Error('wrapped addition is incomplete')
+      return {
+        shadow: getComputedStyle(number).boxShadow,
+        markerColour: getComputedStyle(number).color,
+        textColour: getComputedStyle(text).color,
+      }
     })
-    expect(wrappedAdditionRule.shadow).toContain(wrappedAdditionRule.textColour)
+    expect(wrappedAdditionRule.shadow).toContain(wrappedAdditionRule.markerColour)
+    expect(wrappedAdditionRule.textColour).toBe(primaryTextColour)
     // No desktop, so the tools offer the sidebar file but no native open.
     expect(await review.locator('[data-review-tool="open-file"]').count()).toBe(1)
     expect(await review.locator('[data-review-tool="open-native"]').count()).toBe(0)
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  })
+
+  it.skipIf(MODE === 'record')('keeps the file menu aligned while dragging the floating review', async () => {
+    const column = page.locator('[data-rightbar-col]')
+    const tab = column.locator('[data-dockkit-tab]').filter({ hasText: '第 1 轮改动' })
+    const tabBox = await tab.boundingBox()
+    if (tabBox === null) throw new Error('review tab is not rendered')
+    await page.mouse.move(tabBox.x + 6, tabBox.y + tabBox.height / 2)
+    await page.mouse.down()
+    try {
+      await page.mouse.move(360, 140, { steps: 8 })
+    } finally {
+      await page.mouse.up()
+    }
+    const floating = page.locator('[data-dockkit-float]').filter({ has: page.locator('[data-changes-review]') })
+    await floating.waitFor({ state: 'visible' })
+    const selector = floating.getByRole('button', { name: '选择要查看的文件' })
+    await selector.click()
+    const menu = page.getByRole('menu')
+    await menu.waitFor({ state: 'visible' })
+    const grip = floating.locator('[data-dockkit-float-grip]')
+    for (const delta of [{ x: 120, y: 60 }, { x: -60, y: -30 }]) {
+      const handle = await grip.boundingBox()
+      const before = await selector.boundingBox()
+      if (handle === null || before === null) throw new Error('floating review controls are not rendered')
+      const start = { x: handle.x + 12, y: handle.y + handle.height / 2 }
+      await page.mouse.move(start.x, start.y)
+      await page.mouse.down()
+      try {
+        await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 8 })
+        await expect.poll(async () => {
+          const anchor = await selector.boundingBox()
+          const list = await menu.boundingBox()
+          if (anchor === null || list === null) throw new Error('review file menu disappeared during drag')
+          return Math.max(
+            Math.abs(anchor.x - before.x - delta.x), Math.abs(anchor.y - before.y - delta.y),
+            Math.abs(list.x - anchor.x), Math.abs(list.y - anchor.y - anchor.height - 4),
+          )
+        }).toBeLessThanOrEqual(1)
+      } finally {
+        await page.mouse.up()
+      }
+    }
+    await page.keyboard.press('Escape')
+    await floating.locator('[data-dockkit-float-dock]').click()
+    await floating.waitFor({ state: 'detached' })
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })

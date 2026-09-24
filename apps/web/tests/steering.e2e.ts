@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { expandAssistantStream } from '@deepseek-ai/dsh-llm'
+import { parseRemoteStreamServerMessage } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
 import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
   compareOrRefreshGolden, fixtureUserPrompts,
@@ -191,13 +192,21 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
   })
 })
 
-describe('web e2e: composer shortcut steers directly', () => {
+describe.each(['reconnect', 'delayed-inbox'] as const)('web e2e: composer shortcut steers directly (%s)', (handoff) => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   let remoteSocket: WebSocketRoute | undefined
   const sessionEvents: SessionEvent[] = []
+  let holdInbox = false
+  let heldStream: string | undefined
+  let heldControl: (() => void)[] = []
+  const releaseInbox = (): void => {
+    holdInbox = false
+    for (const send of heldControl) send()
+    heldControl = []
+  }
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: REPLAY_PACE_MS, compareReplaySession: false })
@@ -206,7 +215,17 @@ describe('web e2e: composer shortcut steers directly', () => {
     page = await newEnglishPage(browser)
     await page.routeWebSocket('**/api/remote.mux', (route) => {
       remoteSocket = route
-      route.connectToServer()
+      const server = route.connectToServer()
+      server.onMessage((message) => {
+        const frame = parseRemoteStreamServerMessage(String(message))
+        if (holdInbox && frame.type === 'item') {
+          const value = frame.value as { type?: string; key?: string }
+          if (value.type === 'projection' && value.key === 'inbox') heldStream = frame.streamId
+        }
+        // Hold the remaining control stream in FIFO order, while history keeps flowing.
+        if (holdInbox && frame.streamId === heldStream) heldControl.push(() => { route.send(message) })
+        else route.send(message)
+      })
     })
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
@@ -251,6 +270,7 @@ describe('web e2e: composer shortcut steers directly', () => {
       return next()
     })
     try {
+      holdInbox = handoff === 'delayed-inbox'
       await composer.getByRole('radio', { name: 'Yes' }).click()
       await composer.getByRole('radio', { name: 'Yes' }).press('Enter')
       await expect.poll(() => claimed, { timeout: 10_000 }).toBe(true)
@@ -259,16 +279,25 @@ describe('web e2e: composer shortcut steers directly', () => {
       }))
       expect(await page.getByText(STEER, { exact: true }).count()).toBe(1)
       expect(await page.locator('[data-submission-echo]').filter({ hasText: STEER }).count()).toBe(1)
-      const socket = remoteSocket
-      if (socket === undefined) throw new Error('steering page has no Remote connection')
-      const warningStart = tripwire.warnings.length
-      await socket.close({ code: 1012, reason: 'steering reconnect checkpoint' })
-      await expect.poll(() => remoteSocket !== socket, { timeout: 10_000 }).toBe(true)
-      await expect.poll(() => page.locator('[data-submission-echo]').count(), { timeout: 10_000 }).toBe(0)
-      expect(await page.getByText(STEER, { exact: true }).count()).toBe(0)
-      acknowledgeReloadConnectionLoss(tripwire, warningStart)
+      if (handoff === 'reconnect') {
+        const socket = remoteSocket
+        if (socket === undefined) throw new Error('steering page has no Remote connection')
+        const warningStart = tripwire.warnings.length
+        await socket.close({ code: 1012, reason: 'steering reconnect checkpoint' })
+        await expect.poll(() => remoteSocket !== socket, { timeout: 10_000 }).toBe(true)
+        await expect.poll(() => page.locator('[data-submission-echo]').count(), { timeout: 10_000 }).toBe(0)
+        expect(await page.getByText(STEER, { exact: true }).count()).toBe(0)
+        acknowledgeReloadConnectionLoss(tripwire, warningStart)
+      } else {
+        await expect.poll(() => heldControl.length, { timeout: 10_000 }).toBeGreaterThan(0)
+        admission.resolve(undefined)
+        await page.locator('[data-chat-flow-kind="steering"]').filter({ hasText: STEER }).waitFor({ timeout: 10_000 })
+        expect(await page.getByText(STEER, { exact: true }).count()).toBe(1)
+        expect(await pendingSteering.count()).toBe(0)
+      }
     } finally {
       admission.resolve(undefined)
+      releaseInbox()
       stopHolding()
       await settled
     }

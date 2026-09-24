@@ -411,12 +411,12 @@ describe('workspace browser rows', () => {
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />)
       const row = screen.getByRole('treeitem')
       expect(row.querySelector('[data-state="ongoing"]')).not.toBeNull()
-      expect(screen.getByText('2 个子代理运行中')).toBeTruthy()
+      expect(screen.getByText('2 个子智能体运行中')).toBeTruthy()
       expect(screen.queryByText('进行中')).toBeNull()
 
       fireEvent.pointerEnter(row.parentElement as HTMLElement)
       act(() => { vi.advanceTimersByTime(800) })
-      expect(screen.getAllByText('2 个子代理运行中')).toHaveLength(2)
+      expect(screen.getAllByText('2 个子智能体运行中')).toHaveLength(2)
     } finally {
       vi.useRealTimers()
     }
@@ -433,12 +433,12 @@ describe('workspace browser rows', () => {
       const row = screen.getByRole('treeitem')
       expect(row.querySelectorAll('[data-state="ongoing"]')).toHaveLength(1)
       expect(screen.getByText('进行中')).toBeTruthy()
-      expect(screen.getByText('1 个子代理运行中')).toBeTruthy()
+      expect(screen.getByText('1 个子智能体运行中')).toBeTruthy()
 
       fireEvent.pointerEnter(row.parentElement as HTMLElement)
       act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getAllByText('进行中')).toHaveLength(2)
-      expect(screen.getAllByText('1 个子代理运行中')).toHaveLength(2)
+      expect(screen.getAllByText('1 个子智能体运行中')).toHaveLength(2)
     } finally {
       vi.useRealTimers()
     }
@@ -454,7 +454,7 @@ describe('workspace browser rows', () => {
     expect(row.querySelector('[data-state="warning"]')).not.toBeNull()
     expect(row.querySelector('[data-state="ongoing"]')).toBeNull()
     expect(screen.getByText('等待回答')).toBeTruthy()
-    expect(screen.getByText('1 个子代理运行中')).toBeTruthy()
+    expect(screen.getByText('1 个子智能体运行中')).toBeTruthy()
   })
 
   it('shows the green done dot on a finished search result row', () => {

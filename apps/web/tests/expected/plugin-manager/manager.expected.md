@@ -7,11 +7,11 @@
 - list:
   - listitem:
     - button "查看 智能体团队": 智能体团队
-    - text: Beta 启用团队协作、团队工具、成员列表和共享任务看板。
+    - text: 实验性 启用团队协作、团队工具、成员列表和共享任务看板。
     - switch "启用 智能体团队"
   - listitem:
     - button "查看 语音输入": 语音输入
-    - text: Beta 在本机使用 SenseVoice 转写录音；首次使用需安装依赖
+    - text: 实验性 在本机使用 SenseVoice 转写录音；首次使用需安装依赖
     - switch "启用 语音输入"
   - listitem:
     - button "查看 终端": 终端

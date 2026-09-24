@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/client-ui-voice-input/README.md
-README.md: 4d859f4d9837c249c564abfbba0682f1493502d9
-README.zh.md: 84a02e4f620feb35706de5b3bc10ec291f32c423
+README.md: 764962ff496c9fdd91073c2aa391ebceeec23608
+README.zh.md: 105cb641684eb2920c04294e74f1b5389f564c0c

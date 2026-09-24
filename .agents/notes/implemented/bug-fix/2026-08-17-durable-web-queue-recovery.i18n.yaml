@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-17-durable-web-queue-recovery.md
-2026-08-17-durable-web-queue-recovery.md: 5fbfdf0e62c1034fbea138016cc2979489de474f
-2026-08-17-durable-web-queue-recovery.zh.md: 2aaffd6bc571aab449d9429758fdf45bb4dd8d4c
+2026-08-17-durable-web-queue-recovery.md: 0f18cd7a2b9491d6a8bdfa960409d97a5338f95d
+2026-08-17-durable-web-queue-recovery.zh.md: 476c1b2fe88156ba8c34e281ff1d1e5663c7913c

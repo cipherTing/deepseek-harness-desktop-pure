@@ -11,7 +11,7 @@ import {
   acknowledgeReloadConnectionLoss, launchWebScaffold,
   seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, saveFailureShot, scrollIntoView } from './support.ts'
 
 // Borrowed read-only: this scenario needs any settled assistant message to
 // address, not a new recording (message-actions / sidebar-scrollbar pattern).
@@ -67,7 +67,7 @@ describe('web e2e: durable per-message feedback', () => {
     await page.getByText('DONE', { exact: true }).waitFor({ timeout: 30_000 })
     const like = page.getByRole('button', { name: 'Good response' }).first()
     await like.waitFor({ timeout: 30_000 })
-    await like.scrollIntoViewIfNeeded()
+    await scrollIntoView(like)
     await like.hover()
     await like.click()
     const dialog = page.getByRole('dialog', { name: 'Submit feedback' })
@@ -111,12 +111,12 @@ describe('web e2e: durable per-message feedback', () => {
     // the unrated control is what triggers the authoritative re-read.
     const cold = page.getByRole('button', { name: 'Good response' }).first()
     await cold.waitFor({ timeout: 30_000 })
-    await cold.scrollIntoViewIfNeeded()
+    await scrollIntoView(cold)
     await cold.hover()
 
     const restored = page.getByRole('button', { name: 'Remove rating' }).first()
     await restored.waitFor({ timeout: 30_000 })
-    await restored.scrollIntoViewIfNeeded()
+    await scrollIntoView(restored)
     await restored.hover()
     await expect.poll(() => restored.getAttribute('aria-pressed'), { timeout: 15_000 }).toBe('true')
     // The retract label sits on the Dislike side: the Like stays unpressed.

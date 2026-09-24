@@ -7,5 +7,7 @@
 - Escape restores focus to the warning: true
 - Closing details preserves the warning and document position: true
 - Fit width, presets, and pinch resize the Office PDF continuously: true
+- Settled zoom redraws the Office PDF at device resolution: true
+- Continuous pinch to 400% redraws the page after horizontal panning: true
 - Pinch updates the displayed percentage during the gesture: 166%
 - Document top inset: 0px

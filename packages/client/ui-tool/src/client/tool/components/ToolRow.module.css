@@ -324,12 +324,6 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* In-row code renders at the smaller code size (12/18) via each primitive's
-   rebindable content-font seam; standalone markdown code blocks keep 13/22. */
-.codeBody {
-  --dsl-code-block-content-font: var(--dsw-font-markdown-code-block-small);
-}
-
 /* The terminal card scrolls its OUTPUT inside its own surface (same l1
    hairline as the IN/OUT card): the banner stays pinned and the scrollbar
    never rides over it. 224px = the 260px card cap minus the ~36px banner. */

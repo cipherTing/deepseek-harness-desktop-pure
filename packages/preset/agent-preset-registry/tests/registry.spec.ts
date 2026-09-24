@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import { entryListProblem, livePresetMounts } from '../src/index.ts'
-import { currentKey, harness, declare, contribution, agentOn, liveRegistries } from './harness.ts'
+import { currentKey, harness, declare, contribution, agentOn, liveRegistries, plugin } from './harness.ts'
 import { omitsGeneratedPage } from '../../../settings/settings/tests/live-config.ts'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -120,6 +120,27 @@ describe('declarative preset revisions', () => {
       expect.objectContaining({ id: 'standard', name: 'Standard', isDefault: true, rows: expect.any(Array) as unknown[] }),
       expect.objectContaining({ id: 'empty', rows: [expect.objectContaining({ moduleName: 'missing', enabled: false })] }),
     ]))
+  })
+
+  it('renders a declaration as entry-list YAML for reading, conditions included', async () => {
+    const ctx = await setup()
+    await declare(ctx, {
+      ...contribution('standard'), name: 'Standard', description: 'General',
+      plugins: [
+        { id: 'contribute', name: plugin('contribute'), config: { tool: 'standard' } },
+        { id: 'windows-only', name: 'missing', disabled: { __jsExpr: "process.platform !== 'win32'" } },
+      ],
+    })
+    const document = await ctx.agentPresets.readDocument('standard')
+    expect(document).toMatchObject({ agentPreset: 'standard', name: 'Standard', description: 'General' })
+    expect(document.content.startsWith('- id: contribute\n  name: ')).toBe(true)
+    expect(document.content).toContain("\n  config:\n    tool: standard\n- id: windows-only\n  name: missing\n  disabled: !!js process.platform !== 'win32'\n")
+    expect(document.content).not.toContain('__jsExpr')
+    await declare(ctx, contribution('minimal'))
+    expect(await ctx.agentPresets.readDocument('minimal')).toEqual({
+      agentPreset: 'minimal', content: expect.any(String) as string,
+    })
+    await expect(ctx.agentPresets.readDocument('absent')).rejects.toThrow('Unknown agent preset: absent')
   })
 })
 

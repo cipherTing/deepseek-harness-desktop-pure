@@ -1,11 +1,66 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 
-afterEach(cleanup)
+let bubbleSize: ResizeObserverSize
+let automaticResize: boolean
+const observers: TooltipResizeObserver[] = []
+
+class TooltipResizeObserver implements ResizeObserver {
+  private target: Element | undefined
+  constructor(private readonly callback: ResizeObserverCallback) { observers.push(this) }
+  observe(target: Element): void {
+    this.target = target
+    if (automaticResize) this.deliver()
+  }
+  unobserve(): void { this.target = undefined }
+  disconnect(): void { this.target = undefined }
+  deliver(): void {
+    if (this.target === undefined) return
+    this.callback([{
+      target: this.target, borderBoxSize: [bubbleSize], contentBoxSize: [bubbleSize],
+      devicePixelContentBoxSize: [bubbleSize],
+      contentRect: new DOMRect(0, 0, bubbleSize.inlineSize, bubbleSize.blockSize),
+    }], this)
+  }
+}
+
+beforeEach(() => {
+  bubbleSize = { inlineSize: 0, blockSize: 0 }
+  automaticResize = true
+  observers.length = 0
+  vi.stubGlobal('ResizeObserver', TooltipResizeObserver)
+})
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('Tooltip', () => {
+  it('fits from observed sizes without synchronously measuring the bubble', () => {
+    automaticResize = false
+    const measured = vi.spyOn(Element.prototype, 'getBoundingClientRect')
+    const view = render(<Tooltip label="Observed" side="bottom"><button>anchor</button></Tooltip>)
+    const anchor = screen.getByText('anchor')
+    fireEvent.mouseEnter(anchor)
+    const bubble = view.container.querySelector<HTMLElement>('[role="tooltip"]')!
+    expect(measured.mock.contexts).toEqual([anchor])
+    expect(bubble.style.visibility).toBe('hidden')
+    fireEvent(window, new Event('resize'))
+    expect(bubble.style.visibility).toBe('hidden')
+    expect(measured.mock.contexts).toEqual([anchor])
+    bubbleSize = { inlineSize: 100, blockSize: 20 }
+    act(() => { observers[0]!.deliver() })
+    expect(screen.getByRole('tooltip').style.left).toBe('62px')
+    fireEvent(window, new Event('resize'))
+    expect(measured.mock.contexts).toEqual([anchor])
+    const disconnect = vi.spyOn(observers[0]!, 'disconnect')
+    view.unmount()
+    expect(disconnect).toHaveBeenCalledOnce()
+  })
+
   it('resolves lazy labels only after the bubble becomes visible', () => {
     vi.useFakeTimers()
     try {
@@ -64,9 +119,7 @@ describe('Tooltip', () => {
     const bubble = screen.getByRole('tooltip')
     expect(bubble.textContent).toBe('Open sidebar')
     expect(bubble.getAttribute('data-side')).toBe('right')
-    // jsdom rects are all-zero: right placement lands at the +10 gutter, then
-    // the zero-width measured rect clamps to the 12px edge margin (10 + 12).
-    expect(bubble.style.left).toBe('22px')
+    expect(bubble.style.left).toBe('12px')
     expect(bubble.style.top).toBe('0px')
     fireEvent.mouseLeave(anchor)
     expect(screen.queryByRole('tooltip')).toBeNull()
@@ -89,13 +142,12 @@ describe('Tooltip', () => {
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
 
-  // jsdom's default rects are all-zero, so the clamp tests stub the measured
-  // rect (anchor and bubble share the prototype stub) and derive expectations
-  // from it: pos.x = anchor center, then shifted by the measured overflow.
+  // Anchor geometry and observed bubble sizes are independent browser inputs.
   const rect = (left: number, right: number): DOMRect =>
     ({ left, right, top: 0, bottom: 20, width: right - left, height: 20, x: left, y: 0, toJSON: () => ({}) })
 
   it('aligns the end of a bottom tooltip with the anchor right edge', () => {
+    bubbleSize = { inlineSize: 100, blockSize: 20 }
     const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect(100, 200))
     try {
       render(
@@ -125,6 +177,7 @@ describe('Tooltip', () => {
   })
 
   it('clamps a bubble overflowing the right viewport edge back inside', () => {
+    bubbleSize = { inlineSize: 200, blockSize: 20 }
     const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect(900, 1100))
     try {
       render(
@@ -144,10 +197,8 @@ describe('Tooltip', () => {
 
   it('reclamps after label and viewport width changes', () => {
     const originalWidth = window.innerWidth
-    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
-      if (this.getAttribute('role') !== 'tooltip') return rect(900, 1000)
-      return this.textContent === 'Wide' ? rect(900, 1100) : rect(850, 950)
-    })
+    bubbleSize = { inlineSize: 200, blockSize: 20 }
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect(900, 1000))
     try {
       const view = render(
         <Tooltip label="Wide" side="bottom">
@@ -155,18 +206,22 @@ describe('Tooltip', () => {
         </Tooltip>,
       )
       fireEvent.mouseEnter(screen.getByText('anchor'))
-      expect(screen.getByRole('tooltip').style.left).toBe('862px')
+      expect(screen.getByRole('tooltip').style.left).toBe('912px')
 
       view.rerender(
         <Tooltip label="Short" side="bottom">
           <button type="button">anchor</button>
         </Tooltip>,
       )
+      bubbleSize = { inlineSize: 100, blockSize: 20 }
+      act(() => { observers[0]!.deliver() })
       expect(screen.getByRole('tooltip').style.left).toBe('950px')
 
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: 900 })
       fireEvent(window, new Event('resize'))
-      expect(screen.getByRole('tooltip').style.left).toBe('888px')
+      expect(screen.getByRole('tooltip').style.left).toBe('838px')
+      expect(observers).toHaveLength(1)
+      expect(spy).toHaveBeenCalledOnce()
     } finally {
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
       spy.mockRestore()
@@ -174,6 +229,7 @@ describe('Tooltip', () => {
   })
 
   it('clamps a bubble past the left viewport edge back inside', () => {
+    bubbleSize = { inlineSize: 100, blockSize: 20 }
     const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect(-20, 80))
     try {
       render(
@@ -190,16 +246,12 @@ describe('Tooltip', () => {
     }
   })
 
-  /** Anchor and bubble rects, so a placement test measures real room rather than jsdom's all-zero boxes. */
-  const placed = (anchorTop: number, anchorBottom: number, bubbleHeight: number) =>
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
-      const [top, bottom] = this.getAttribute('role') === 'tooltip'
-        ? [0, bubbleHeight]
-        : [anchorTop, anchorBottom]
-      return {
-        left: 100, right: 200, top, bottom, width: 100, height: bottom - top, x: 100, y: top, toJSON: () => ({}),
-      }
+  const placed = (top: number, bottom: number, bubbleHeight: number) => {
+    bubbleSize = { inlineSize: 100, blockSize: bubbleHeight }
+    return vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 100, right: 200, top, bottom, width: 100, height: bottom - top, x: 100, y: top, toJSON: () => ({}),
     })
+  }
 
   it('supports top placement for anchors at the viewport bottom', () => {
     const spy = placed(700, 720, 20)
@@ -252,6 +304,23 @@ describe('Tooltip', () => {
       const bubble = screen.getByRole('tooltip')
       expect(bubble.getAttribute('data-side')).toBe('bottom')
       expect(bubble.style.top).toBe('48px')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it.each(['bottom', 'top'] as const)('uses a custom gap to position and flip a %s tooltip', (side) => {
+    const anchorBottom = side === 'bottom' ? window.innerHeight - 36 : 56
+    const spy = placed(anchorBottom - 20, anchorBottom, 20)
+    try {
+      const view = render(<Tooltip label="Gap" side={side} gap={4}><button type="button">anchor</button></Tooltip>)
+      fireEvent.mouseEnter(screen.getByText('anchor'))
+      const bubble = screen.getByRole('tooltip')
+      expect(bubble.getAttribute('data-side')).toBe(side)
+      expect(bubble.style.top).toBe(`${side === 'bottom' ? anchorBottom + 4 : anchorBottom - 24}px`)
+      view.rerender(<Tooltip label="Gap" side={side} gap={12}><button type="button">anchor</button></Tooltip>)
+      expect(bubble.getAttribute('data-side')).toBe(side === 'bottom' ? 'top' : 'bottom')
+      expect(bubble.style.top).toBe(`${side === 'bottom' ? anchorBottom - 32 : anchorBottom + 12}px`)
     } finally {
       spy.mockRestore()
     }

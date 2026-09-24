@@ -25,7 +25,7 @@ import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@d
 import { rowConfigKey, type OfficialItem } from './config-ledger.ts'
 import type { PluginManagerLocaleKey } from './locales.ts'
 import {
-  isInstallPending, offeredRegistries, rowKey,
+  githubRecoveryRegistry, isInstallPending, offeredRegistries, rowKey,
   type InstallInputError, type InstallState, type InstallSubject, type PackageRow, type PackageView,
   type PluginManagerFace, type RegistryChoice,
 } from './manager-store.ts'
@@ -700,6 +700,10 @@ function registryOption(registry: Registry, t: Translate, resolved: string | nul
  */
 function failureText(failure: InstallState['failure'], t: Translate, install?: Pick<InstallState, 'attempts' | 'subject' | 'registries'>): string {
   if (failure === null) return t('installFailureGeneric')
+  // A compatibility refusal is the package's own answer, whatever pnpm's exit classified the run as.
+  if (failure.code === 'incompatible-version') {
+    return managementText({ code: failure.code, ...failure.incompatible === undefined ? {} : { incompatible: failure.incompatible } }, t)
+  }
   // Blocked scripts the Host could not name leave the person to allow them in the profile's pnpm settings by hand.
   if (failure.kind === 'build-blocked' && !failure.pendingBuilds?.length) return t('installFailureBuildBlockedManual')
   const host = install?.subject?.host
@@ -734,7 +738,7 @@ function SubjectCard({ subject, t }: { readonly subject: InstallSubject; readonl
  */
 function InstallDialog({
   install, t, onClose, onEditSpec, onRun, onCancel, onReconcile, onToggleDetails, onEnableNow, onApproveBuilds,
-  onToggleRegistry, onChooseRegistry, onChangeRegistry,
+  onToggleRegistry, onChooseRegistry, onChangeRegistry, onUseGithubMirror,
 }: {
   readonly install: InstallState
   readonly t: Translate
@@ -750,6 +754,7 @@ function InstallDialog({
   readonly onChooseRegistry: (choice: RegistryChoice) => void
   /** From the failed screen: back to the spec with the registry options unfolded. */
   readonly onChangeRegistry: () => void
+  readonly onUseGithubMirror: () => void
 }): ReactNode {
   const errorId = useId()
   const guideId = useId()
@@ -779,6 +784,23 @@ function InstallDialog({
     document.addEventListener('keydown', onKeyDown, true)
     return () => { document.removeEventListener('keydown', onKeyDown, true) }
   }, [registryShown, onToggleRegistry])
+  if (githubRecoveryRegistry(install) !== undefined) {
+    return (
+      <Modal
+        open={install.open}
+        onClose={onClose}
+        title={t(install.failure?.kind === 'timeout' ? 'installGithubTimeoutTitle' : 'installGithubFailedTitle')}
+        closeLabel={t('close')}
+        description={t('installGithubFailedDescription')}
+        footer={(
+          <>
+            <Button variant="outline" onClick={onClose}>{t('cancel')}</Button>
+            <Button variant="primary" autoFocus onClick={onUseGithubMirror}>{t('installUseGithubMirror')}</Button>
+          </>
+        )}
+      />
+    )
+  }
   if (phase === 'idle' || phase === 'checking') {
     const checking = phase === 'checking'
     const empty = install.spec.trim() === ''
@@ -799,7 +821,7 @@ function InstallDialog({
         onClose={onClose}
         title={t('installTitle')}
         closeLabel={t('close')}
-        description={t('installDescription')}
+        {...install.mirrorRecovery ? {} : { description: t('installDescription') }}
         className={css.installDialog as string}
         contentClassName={css.installContent as string}
         footer={(
@@ -813,10 +835,11 @@ function InstallDialog({
           <div className={css.installField}>
             <input
               type="text"
+              autoFocus={install.mirrorRecovery === true}
               value={install.spec}
               placeholder={t('installSpecPlaceholder')}
               disabled={checking}
-              aria-label={t('installSpecLabel')}
+              aria-label={t(install.mirrorRecovery ? 'installPackageLabel' : 'installSpecLabel')}
               aria-invalid={install.inputError !== null}
               aria-describedby={install.inputError === null ? undefined : errorId}
               onChange={(event) => { onEditSpec(event.currentTarget.value) }}
@@ -1321,6 +1344,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         onToggleRegistry={props.toggleRegistryOptions}
         onChooseRegistry={props.chooseRegistry}
         onChangeRegistry={props.changeRegistry}
+        onUseGithubMirror={props.useGithubMirror}
       />
       {state.confirm === null
         ? null

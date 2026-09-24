@@ -63,6 +63,41 @@ it('keeps one worker warm across recordings and joins its exit on disposal', asy
   await expect(worker.transcribe({ audio, language: 'en' }, signal())).rejects.toThrow('disposed')
 })
 
+it('pins a manual source to one preparation without changing deployment defaults', async () => {
+  const { worker } = await fixture()
+  expect(worker.downloadSources).toEqual(['https://huggingface.co', 'https://hf-mirror.com'])
+  worker.prepare({ downloadSource: 'https://hf-mirror.com' })
+  await vi.waitFor(() => { expect(worker.snapshot().phase).toBe('ready') })
+  expect(prepareRuntime).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ modelOrigin: 'https://hf-mirror.com' }),
+    expect.any(AbortSignal), expect.any(Function))
+})
+
+it('rejects unadvertised sources and preserves private and offline deployments', async () => {
+  const { worker } = await fixture({ modelOrigin: 'https://private.example/' })
+  expect(worker.downloadSources).toEqual(['https://private.example'])
+  expect(() => { worker.prepare({ downloadSource: 'https://hf-mirror.com' }) }).toThrow('unavailable')
+  expect(prepareRuntime).not.toHaveBeenCalled()
+  const offline = await fixture({ modelDirectory: process.cwd(), vadModelPath: process.cwd() })
+  expect(offline.worker.downloadSources).toEqual([])
+  expect(() => { offline.worker.prepare({ downloadSource: 'https://huggingface.co' }) }).toThrow('unavailable')
+})
+
+it('joins matching requests and refuses to change the source of active preparation', async () => {
+  const { worker } = await fixture(), entered = Promise.withResolvers<undefined>()
+  vi.mocked(prepareRuntime).mockImplementation(async (_ctx, _config, signal) => {
+    entered.resolve(undefined)
+    await new Promise((_resolve, reject) => { signal.addEventListener('abort', () => { reject(new Error('preparation cancelled')) }, { once: true }) })
+    throw new Error('unreachable')
+  })
+  worker.prepare({ downloadSource: 'https://hf-mirror.com' })
+  await entered.promise
+  worker.prepare({ downloadSource: 'https://hf-mirror.com' })
+  expect(() => { worker.prepare({ downloadSource: 'https://huggingface.co' }) }).toThrow('Cancel preparation')
+  expect(prepareRuntime).toHaveBeenCalledOnce()
+  await worker.cancel()
+  expect(worker.snapshot().phase).toBe('cancelled')
+})
+
 it('wakes verified caches on the first recording without preparing them again', async () => {
   const { worker, spawn, root } = await fixture()
   const paths = { tokens: root, model: root, vad: root, worker: fileURLToPath(new URL('./worker.fixture.mjs', import.meta.url)) }
@@ -295,18 +330,26 @@ it('reclaims the process range after an unexpected idle exit before replacing th
 it('retains a worker whose idle cleanup cannot observe exit until that range is joined', async () => {
   const { worker, spawn, ctx } = await fixture({ idleTimeoutMs: 100 })
   await prepare(worker)
-  const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
   await worker.transcribe({ audio, language: 'en' }, signal())
   const handle = spawn.mock.results[0]!.value as SubprocessHandle
-  const joined = vi.spyOn(handle, 'waitForExit').mockRejectedValueOnce(new Error('range observation failed'))
-  await vi.waitFor(() => { expect(joined).toHaveBeenCalledOnce() }, { timeout: 10000 })
-  expect(warn).toHaveBeenCalledWith('Speech worker idle cleanup failed', expect.any(Error))
-  await expect(worker.transcribe({ audio, language: 'zh' }, signal())).rejects.toThrow('range observation failed')
-  expect(spawn).toHaveBeenCalledOnce()
-  expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
-  expect(await joined.mock.results.at(-1)!.value).toBe(true)
-  expect(spawn).toHaveBeenCalledTimes(2)
-  warn.mockRestore()
+  const failure = new Error('range observation failed')
+  const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+  const joined = vi.spyOn(handle, 'waitForExit').mockRejectedValueOnce(failure)
+  try {
+    // Subprocess ownership also calls waitForExit after the direct process exits.
+    await handle.done
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith('Speech worker idle cleanup failed', failure)
+    }, { timeout: 10000 })
+    await expect(worker.transcribe({ audio, language: 'zh' }, signal())).rejects.toBe(failure)
+    expect(spawn).toHaveBeenCalledOnce()
+    expect((await worker.transcribe({ audio, language: 'zh' }, signal())).text).toBe('zh')
+    expect(await joined.mock.results.at(-1)!.value).toBe(true)
+    expect(spawn).toHaveBeenCalledTimes(2)
+  } finally {
+    joined.mockRestore()
+    warn.mockRestore()
+  }
 })
 
 it('retains completed preparation steps when cancellation settles the active step', async () => {

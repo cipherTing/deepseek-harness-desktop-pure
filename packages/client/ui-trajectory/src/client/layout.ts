@@ -168,6 +168,7 @@ export function deriveTrajectoryLayout(
     if (startedAt !== null) callStartById.set(result.callId, startedAt)
   }
   for (const call of runningCalls) {
+    if (call.phase === 'preparing') continue
     const startedAt = finiteTime(call.time)
     if (startedAt !== null) callStartById.set(call.callId, startedAt)
   }
@@ -503,7 +504,7 @@ export function deriveTrajectoryLayout(
 
   const seenCalls = collectCallIds(turns)
   for (const call of runningCalls) {
-    if (seenCalls.has(call.callId)) continue
+    if (call.phase === 'preparing' || seenCalls.has(call.callId)) continue
     const laidList: LaidCell[] = [{
       absTime: null,
       toolName: call.name,
@@ -1020,6 +1021,7 @@ function expandSubCalls(
   const out: LaidCell[] = []
   let index = startIndex
   for (const sub of subs) {
+    if (!('kind' in sub) && sub.phase === 'preparing') continue
     const settled = 'kind' in sub
     const resultPreview = settled ? summarizeResult(sub, t) : undefined
     const laid: LaidCell = {

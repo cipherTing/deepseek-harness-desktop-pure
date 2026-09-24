@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Excel preview lifecycle and read-only renderer settings. */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { Config } from '../src/config.ts'
@@ -17,7 +17,31 @@ const props = { content: { kind: 'bytes', data: new Uint8Array([1]) }, limits: C
 const loadedProps = { ...props, format: 'xlsx' } as LoadedExcelBodyProps
 const value = { sheets: [{ name: 'Budget', celldata: [] }], missingResults: 0, unsupportedFeatures: [] }
 const formulaValue = { sheets: [{ name: 'Budget', celldata: [{ r: 0, c: 0, v: { f: '=SUM(1,2)', m: '' } }] }], missingResults: 1, unsupportedFeatures: [] }
-afterEach(() => { cleanup(); vi.resetAllMocks() })
+afterEach(() => { cleanup(); vi.resetAllMocks(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+it('refreshes the existing workbook on pane resize and disconnects on file replacement and unmount', async () => {
+  const observers: { callback: ResizeObserverCallback; observe: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }[] = []
+  vi.stubGlobal('ResizeObserver', class {
+    observe = vi.fn()
+    disconnect = vi.fn()
+    constructor(callback: ResizeObserverCallback) { observers.push({ callback, observe: this.observe, disconnect: this.disconnect }) }
+  })
+  const dispatch = vi.spyOn(window, 'dispatchEvent')
+  mocked.parse.mockResolvedValue(value)
+  const view = render(<ExcelBody {...loadedProps} />)
+  await waitFor(() => { expect(observers).toHaveLength(1) })
+  const first = observers[0]!
+  expect(first.observe).toHaveBeenCalledWith(view.container.querySelector('[data-excel-preview] > div'))
+  act(() => { first.callback([], {} as ResizeObserver) })
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'resize' }))
+  expect(mocked.workbook).toHaveBeenCalledOnce()
+  expect(mocked.parse).toHaveBeenCalledOnce()
+  view.rerender(<ExcelBody {...loadedProps} content={{ kind: 'bytes', data: new Uint8Array([2]) }} />)
+  await waitFor(() => { expect(observers).toHaveLength(2) })
+  expect(first.disconnect).toHaveBeenCalledOnce()
+  view.unmount()
+  expect(observers[1]!.disconnect).toHaveBeenCalledOnce()
+})
 
 it('shows loading then a workbook with editing and recalculation disabled', async () => {
   mocked.parse.mockResolvedValue(formulaValue)

@@ -14,16 +14,18 @@ class RestartableServer {
   private child: ChildProcess | undefined
   private closed: Promise<void> | undefined
   private output = ''
+  readonly startupBlocked = Promise.withResolvers<undefined>()
 
   constructor(private readonly world: string, private readonly modelUrl: string) {}
 
-  async start(port: number): Promise<string> {
+  async start(port: number, holdStartup = false): Promise<string> {
     if (this.child !== undefined) throw new Error('Server is already running')
     this.output = ''
     const ready = Promise.withResolvers<string>()
     const child = spawn(process.execPath, [
       join(REPO_ROOT, 'apps/cli/lib/bin.js'), '--profile', 'web',
       '--patch', fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
+      '--patch', fileURLToPath(new URL('./fixtures/restart-startup.overlay.yml', import.meta.url)),
       '--no-open', '--port', String(port),
     ], {
       cwd: this.world,
@@ -32,8 +34,9 @@ class RestartableServer {
         DSH_HOME: join(this.world, 'home'), DSH_AGENTS_HOME: join(this.world, 'agents'),
         DSH_TELEMETRY_DISABLED: '1', DEEPSEEK_API_KEY: 'keyless-server-restart-fixture',
         DEEPSEEK_BASE_URL: this.modelUrl,
+        DSH_WEB_RESTART_HOLD_STARTUP: holdStartup ? '1' : '0',
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     })
     this.child = child
     const receive = (data: Buffer): void => {
@@ -43,6 +46,9 @@ class RestartableServer {
     }
     child.stdout?.on('data', receive)
     child.stderr?.on('data', receive)
+    child.on('message', (message) => {
+      if (message === 'startup-blocked') this.startupBlocked.resolve(undefined)
+    })
     child.once('error', (error) => { ready.reject(error) })
     this.closed = new Promise((resolve) => {
       child.once('close', (code, signal) => {
@@ -58,6 +64,7 @@ class RestartableServer {
   async stop(): Promise<void> {
     const child = this.child
     if (child === undefined) return
+    this.resumeStartup()
     let forced = false
     const timer = setTimeout(() => { forced = true; child.kill('SIGKILL') }, 15_000)
     try {
@@ -70,10 +77,14 @@ class RestartableServer {
     if (forced) throw new Error('Server did not stop after SIGTERM\n' + this.logs())
   }
 
+  resumeStartup(): void {
+    if (this.child?.connected) this.child.send('resume-startup')
+  }
+
   logs(): string { return this.output.replace(/([?&]token=)[A-Za-z0-9_-]+/gu, '$1<redacted>') }
 }
 
-it('keeps an opened Session and draft when the server restarts on the same port', async () => {
+it.each([false, true])('keeps the same revision, Session and page across a server restart (delayed startup: %s)', async (holdStartup) => {
   const world = await mkdtemp(join(tmpdir(), 'dsh-server-restart-'))
   onTestFinished(() => rm(world, { recursive: true, force: true }))
   const model = createServer((request, response) => {
@@ -126,6 +137,7 @@ it('keeps an opened Session and draft when the server restarts on the same port'
   onTestFinished(() => browser.close())
   const page = await newEnglishPage(browser)
   const errors: string[] = []
+  const streamErrors: unknown[] = []
   const graphs: { rev: string; entries: { id: string; rev: string }[] }[] = []
   let readyFrames = 0
   let sessionBaselines = 0
@@ -140,7 +152,8 @@ it('keeps an opened Session and draft when the server restarts on the same port'
     })
     socket.on('framereceived', ({ payload }) => {
       if (typeof payload !== 'string') return
-      const message = JSON.parse(payload) as { type?: string; streamId: string; value?: { type?: string } }
+      const message = JSON.parse(payload) as { type?: string; streamId: string; value?: { type?: string }; error?: unknown }
+      if (message.type === 'error') streamErrors.push(message.error)
       if (message.type === 'item' && message.value?.type === 'ready') readyFrames++
       if (message.type === 'item' && endpoints.get(message.streamId) === 'session/follow'
         && message.value?.type === 'snapshot') sessionBaselines++
@@ -154,7 +167,7 @@ it('keeps an opened Session and draft when the server restarts on the same port'
   })
   onTestFailed(async () => {
     await saveFailureShot(page, 'web-server-restart-' + scenarioId)
-    await writeFile(join(REPO_ROOT, '.artifacts', 'server-restart-' + scenarioId + '.json'), JSON.stringify({ errors, graphs, server: server.logs() }, null, 2))
+    await writeFile(join(REPO_ROOT, '.artifacts', 'server-restart-' + scenarioId + '.json'), JSON.stringify({ errors, streamErrors, graphs, server: server.logs() }, null, 2))
   })
   await page.goto(url, { waitUntil: 'load' })
   await page.locator('[data-slot="root"]').waitFor({ state: 'attached', timeout: 20_000 })
@@ -177,7 +190,29 @@ it('keeps an opened Session and draft when the server restarts on the same port'
   page.on('framenavigated', () => { navigations++ })
 
   await server.stop()
-  const restarted = await server.start(port)
+  let restarted: string
+  const restarting = server.start(port, holdStartup)
+  try {
+    if (holdStartup) {
+      await Promise.race([
+        server.startupBlocked.promise,
+        restarting.then(() => { throw new Error('the restarted Host did not hold controller startup') }),
+      ])
+      const opened = await page.evaluate(() => new Promise<boolean>((resolve) => {
+        const endpoint = new URL('api/remote.mux', location.href)
+        endpoint.protocol = 'ws:'
+        const socket = new WebSocket(endpoint)
+        let accepted = false
+        socket.addEventListener('open', () => { accepted = true; socket.close() })
+        socket.addEventListener('close', () => { resolve(accepted) })
+      }))
+      expect(opened).toBe(false)
+      expect(readyFrames).toBe(beforeReady)
+    }
+  } finally {
+    server.resumeStartup()
+    restarted = await restarting
+  }
   expect(new URL(restarted).origin).toBe(new URL(url).origin)
   await expect.poll(() => readyFrames, { timeout: 30_000 }).toBeGreaterThan(beforeReady)
   await expect.poll(() => sessionBaselines, { timeout: 30_000 }).toBeGreaterThan(beforeBaseline)
@@ -187,7 +222,8 @@ it('keeps an opened Session and draft when the server restarts on the same port'
   }))
 
   expect(errors).toEqual([])
-  expect(graphs.at(-1)).toEqual(graphs[beforeGraphs - 1])
+  expect(streamErrors).toEqual([])
+  for (const graph of graphs.slice(beforeGraphs)) expect(graph).toEqual(graphs[beforeGraphs - 1])
   expect(await originalRoot!.evaluate(element => element.isConnected)).toBe(true)
   expect(await composer.textContent()).toBe(draft)
   expect(await response.isVisible()).toBe(true)
@@ -195,5 +231,6 @@ it('keeps an opened Session and draft when the server restarts on the same port'
   await composer.press('Enter')
   await expect.poll(() => response.count(), { timeout: 20_000 }).toBe(2)
   expect(errors).toEqual([])
+  expect(streamErrors).toEqual([])
   expect(navigations).toBe(0)
 })

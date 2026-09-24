@@ -23,7 +23,7 @@ const device = z.object({ id: z.uuid() })
 export interface Config {
   /** Platform origin serving auth-api and browser pages. */
   platformOrigin?: string
-  /** Native desktop identity for Host API and embedded Platform requests; null omits the client platform header. */
+  /** Native desktop identity for Host API and embedded Platform requests; null identifies the client as web. */
   desktopPlatform?: 'darwin' | 'win32' | null
   /** Optional frontend deployment selector for embedded Usage and Top-up pages. */
   embeddedPageDist?: string
@@ -112,7 +112,7 @@ export class PlatformAccount extends DeepSeekAccount {
     }
     this.inferenceOrigin = inference.origin
     this.rewriteBrowserOrigin = resolved.rewriteBrowserOrigin
-    this.clientHeaders = desktopClientHeaders(resolved.desktopPlatform)
+    this.clientHeaders = { 'x-client-platform': 'web', ...desktopClientHeaders(resolved.desktopPlatform) }
     this.requestHeaders = platformHeaders(resolved.requestHeaders)
     const accountHeaders = platformHeaders(resolved.accountRequestHeaders)
     this.accountRequestHeaders = { ...this.requestHeaders, ...accountHeaders }
@@ -207,7 +207,7 @@ export class PlatformAccount extends DeepSeekAccount {
     const requestHeaders = { ...this.accountRequestHeaders, ...this.clientHeaders }
     return { origin: this.origin, token: stored.token,
       ...(this.embeddedPageDist ? { embeddedPageDist: this.embeddedPageDist } : {}),
-      ...(Object.keys(requestHeaders).length ? { requestHeaders } : {}) }
+      requestHeaders }
   }
 
   private async readCurrentGrant(lifetime: AbortController): Promise<z.infer<typeof grant> | null> {

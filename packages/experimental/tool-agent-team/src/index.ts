@@ -193,7 +193,15 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
           name: args.name,
           description: args.description,
           prompt: [
-            { type: 'text', text: `<system-reminder>\nYou are teammate "${args.name.trim()}".\n</system-reminder>\n\n` },
+            { type: 'text', text: `<system-reminder>
+You are teammate "${args.name.trim()}".
+Your Team Lead is named "lead".
+Use list_agents({}) to find your teammates and their names.
+To message your Team Lead, use send_message({ target: "lead", message: "..." }).
+To message another teammate, use send_message({ target: "<teammate name>", message: "..." }).
+</system-reminder>
+
+` },
             { type: 'text', text: args.prompt },
           ],
           context,

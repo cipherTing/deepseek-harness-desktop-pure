@@ -4,7 +4,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { OpenFileOptions } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { markdownLabels } from '../models/primitive-labels.ts'
+import { codeToolbarLabels, markdownLabels } from '../models/primitive-labels.ts'
 import css from './ToolDetails.module.css'
 
 /** One recorded entity, receipt, or collapsible group of related values. */
@@ -89,6 +89,7 @@ function DetailItem({ item, t, onOpenFile }: { item: ToolDetailItem } & DetailCo
       {item.markdown !== undefined && <div className={css.prose}><MarkdownText text={item.markdown} labels={markdownLabels(t)} /></div>}
       {item.code !== undefined && (
         <CodeBlock
+          toolbarLabels={codeToolbarLabels(t)}
           className={css.code} code={item.code.text} lang={item.code.language}
           copyLabel={t('copy')} copiedLabel={t('copied')}
         />

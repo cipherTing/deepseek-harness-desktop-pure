@@ -842,7 +842,8 @@ def smoke_sdk_authoring(base_url: str, executable: Path, update_snapshots: bool)
             dependencies = json.loads(message_text(tool_result["content"]))
             python = Path(dependencies["python"])
             assert python.is_relative_to(resources), dependencies
-            assert "node" not in dependencies and "pnpm" not in dependencies, dependencies
+            assert Path(dependencies["node"]).is_relative_to(resources), dependencies
+            assert Path(dependencies["pnpm"]).is_relative_to(resources), dependencies
             assert dependencies["pythonDistributions"] == manifest["pythonPackages"], dependencies
             assert not (home / "dsh-runtimes").exists()
             if mode == "default":
@@ -854,7 +855,8 @@ def smoke_sdk_authoring(base_url: str, executable: Path, update_snapshots: bool)
                     env={name: value for name, value in os.environ.items()
                          if not re.search(r"KEY|SECRET|TOKEN|PASSWORD", name, re.I)})
                 schema = next(tool for tool in requests[0]["tools"] if tool.get("name") == "load_workspace_dependencies")
-                visible = {"tool": schema, "result": {**dependencies, "python": "{{python}}", "pythonPackages": "{{site-packages}}"}}
+                visible = {"tool": schema, "result": {**dependencies, "python": "{{python}}", "pythonPackages": "{{site-packages}}",
+                           **{name: "{{" + name + "}}" for name in ("node", "nodePackages", "pnpm")}}}
                 compare_snapshot_files(
                     {"model-visible.json": json.dumps(visible, indent=2, ensure_ascii=False) + "\n"},
                     update_snapshots, Path(__file__).parent / "snapshots/python-sdk-single-exe/authoring",
@@ -904,6 +906,7 @@ def smoke_sdk_office(executable: Path) -> None:
         patch = root / f"{mode}.patch.yml"
         patch.write_text(json.dumps([{"insert": [{
             "id": "python-sdk-office-smoke",
+            "inject": ["skills"],
             "name": plugin.as_uri(),
             "config": {"input": str(document), "output": str(output), "result": str(result_path)},
         }]}]))

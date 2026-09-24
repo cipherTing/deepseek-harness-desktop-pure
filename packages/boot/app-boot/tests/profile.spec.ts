@@ -15,9 +15,11 @@ import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
   composeEntries,
   createRuntimeResolution,
+  getDshRuntimeVersion,
   initProfile,
   loadProfile,
   loadProfileDirectory,
+  PROFILE_COMPATIBILITY_FILENAME,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   readProfileManifest,
@@ -426,6 +428,28 @@ describe('loadProfile', () => {
         .toEqual(['before', 'broken', 'after'])
     },
   )
+
+  it('skips a bundle whose own dsh peers are incompatible until the profile exempts that exact pair', () => {
+    const anchor = stageInstallation({
+      guarded: { patch: '- insert: [{ id: a, name: pkg-a }]\n' },
+      kept: { patch: '- insert: [{ id: b, name: pkg-b }]\n' },
+    })
+    const manifestPath = join(anchor, '..', 'node_modules', 'guarded', 'package.json')
+    writeFileSync(manifestPath, JSON.stringify({
+      ...JSON.parse(readFileSync(manifestPath, 'utf8')) as object, peerDependencies: { '@deepseek-ai/dsh': '999.0.0' },
+    }))
+    const dir = resolveProfileDir('demo', tmp())
+    initProfile(dir, ['guarded', 'kept'])
+    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+    onTestFinished(() => { warn.mockRestore() })
+
+    expect(loadProfileDirectory('dsh', dir, anchor).layers.map(layer => layer.packageName)).toEqual(['kept'])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(
+      `skipping profile bundle "guarded": Error: Plugin guarded@0.0.0 is incompatible with dsh ${getDshRuntimeVersion()}`,
+    ))
+    writeFileSync(join(dir, PROFILE_COMPATIBILITY_FILENAME), JSON.stringify({ 'guarded@0.0.0': [getDshRuntimeVersion()] }))
+    expect(loadProfileDirectory('dsh', dir, anchor).layers.map(layer => layer.packageName)).toEqual(['guarded', 'kept'])
+  })
 
   it('still rejects invalid profile manifests and user patches', () => {
     const anchor = stageInstallation({})

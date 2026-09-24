@@ -30,6 +30,9 @@
       "path": "../ui-slots"
     },
     {
+      "path": "../ui-theme/tsconfig.client.json"
+    },
+    {
       "path": "../../credentials/deepseek-account"
     },
     {

@@ -121,24 +121,27 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
   within(contextPanel).getByText('Tool definitions')
   within(contextPanel).getByText('Messages')
 
-  // The write/edit turns render a real diff card through the assembled graph
-  // (the keyed FileMutationRow composing ToolRow + DiffBlock), not just the
-  // fixture's raw text. The card is collapsed by default, so expand each edit/
-  // write row first. The write turn's `hello fixture\n` proves the terminator
-  // rule end to end: a trailing newline terminates its line, so the footer reads
-  // `+1` (not a phantom `+2`) and one distinct file. The `+ ` prefix is a CSS
-  // ::before, so it is absent from textContent — assert on the line body and the
-  // footer.
-  const mutationRows = [...document.querySelectorAll('[data-variant="write"],[data-variant="edit"]')]
+  // The built ToolRow and DiffBlock share the write fixture's trailing-newline
+  // semantics: `hello fixture\n` contributes one addition. Counts belong to the
+  // tool row; the diff's line markers are CSS pseudo-elements, absent from textContent.
+  const mutationRows = [...document.querySelectorAll<HTMLElement>('[data-variant="write"],[data-variant="edit"]')]
   expect(mutationRows.length).toBeGreaterThan(0)
+  const writeRow = mutationRows.find(row => row.getAttribute('data-variant') === 'write'
+    && row.textContent?.includes('new-demo.txt'))
+  if (writeRow === undefined) throw new Error('fixture write row missing')
+  expect(within(writeRow).getAllByText('+1 -0', { exact: true })).toHaveLength(1)
+  expect(writeRow.querySelector('[data-diff]')).toBeNull()
   for (const row of mutationRows) {
     const toggle = row.querySelector('[data-expandable]')
     if (toggle !== null) act(() => { fireEvent.click(toggle) })
   }
   const diffCards = [...document.querySelectorAll('[data-diff]')]
   expect(diffCards.length).toBeGreaterThan(0)
-  const footers = diffCards.map(card => card.textContent ?? '')
-  expect(footers.some(text => text.includes('hello fixture') && text.includes('+1 -0 · 1 file'))).toBe(true)
+  const writeDiff = writeRow.querySelector<HTMLElement>('[data-diff]')
+  if (writeDiff === null) throw new Error('expanded fixture write diff missing')
+  within(writeDiff).getByText('hello fixture', { exact: true })
+  expect(within(writeRow).getAllByText('+1 -0', { exact: true })).toHaveLength(1)
+  expect(writeDiff.textContent).not.toContain('+1 -0')
 
   // The web render intent reaches the assembled boot graph: the fixture's
   // web_search / web_fetch turns render their keyed WebRow cards, proving the

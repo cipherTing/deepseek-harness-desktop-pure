@@ -124,7 +124,8 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 36px;
+  /* Grows with the inline editor's content; the other rows stay 36px. */
+  min-height: 36px;
   padding: 4px 5px 4px 12px;
   border-radius: 8px;
 }
@@ -211,13 +212,17 @@
 
 .editor {
   box-sizing: border-box;
-  height: 28px;
-  padding: 0 8px;
+  min-height: 28px;
+  /* Six 20px text lines plus padding and border, then the editor scrolls. */
+  max-height: 127px;
+  padding: 3px 8px;
   border: 0.5px solid var(--dsw-alias-border-l4);
   border-radius: 6px;
   outline: none;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
+  overflow-y: auto;
+  resize: none;
 }
 
 .editor:focus {

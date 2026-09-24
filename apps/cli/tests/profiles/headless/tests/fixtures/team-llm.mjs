@@ -189,9 +189,9 @@ class TeamFixtureAdapter extends LlmAdapter {
     }
     const chunks = identity === 'TEAM_WORKFLOW_CHILD'
       ? textChunks('Fresh workflow child complete.')
-      : identity === '<system-reminder>\nYou are teammate "researcher".\n</system-reminder>'
+      : identity === '<system-reminder>\nYou are teammate "researcher".\nYour Team Lead is named "lead".\nUse list_agents({}) to find your teammates and their names.\nTo message your Team Lead, use send_message({ target: "lead", message: "..." }).\nTo message another teammate, use send_message({ target: "<teammate name>", message: "..." }).\n</system-reminder>'
       ? researcher(options.messages)
-      : identity === '<system-reminder>\nYou are teammate "implementer".\n</system-reminder>'
+      : identity === '<system-reminder>\nYou are teammate "implementer".\nYour Team Lead is named "lead".\nUse list_agents({}) to find your teammates and their names.\nTo message your Team Lead, use send_message({ target: "lead", message: "..." }).\nTo message another teammate, use send_message({ target: "<teammate name>", message: "..." }).\n</system-reminder>'
         ? implementer(options.messages)
         : lead(options.messages)
     for (const chunk of chunks) {

@@ -32,26 +32,30 @@ afterEach(() => {
 })
 
 it('fits without upscaling, follows resize, and leaves fixed zoom unchanged', () => {
+  const onRenderZoom = vi.fn()
   function View() {
     const [preference, setPreference] = useState<ZoomPreference>(FIT_WIDTH)
     return <ZoomViewport preference={preference} intrinsicWidth={1000} horizontalInset={20}
       labels={{ controls: 'Zoom controls', menu: 'Choose zoom', out: 'Zoom out', into: 'Zoom in',
         fitWidth: 'Fit width', value: percent => `${String(percent)}%` }} signal={new AbortController().signal}
-      scrollportRef={() => {}} onPreference={setPreference}>
+      scrollportRef={() => {}} onPreference={setPreference} onRenderZoom={onRenderZoom}>
       <div className={zoomSurfaceClass} style={{ '--document-zoom-width': '1000px' } as CSSProperties} />
     </ZoomViewport>
   }
   const view = render(<View />)
   expect(screen.getByRole('button', { name: 'Choose zoom' }).textContent).toContain('48%')
+  expect(onRenderZoom).toHaveBeenLastCalledWith(0.48)
   expect(view.container.querySelector('[data-document-zoom-mode]')?.getAttribute('data-document-zoom-mode')).toBe('fit-width')
   width = 320
   act(() => { resize?.([], {} as ResizeObserver) })
   expect(screen.getByRole('button', { name: 'Choose zoom' }).textContent).toContain('30%')
+  expect(onRenderZoom).toHaveBeenLastCalledWith(0.3)
   fireEvent.click(screen.getByRole('button', { name: 'Choose zoom' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '100%' }))
   width = 220
   act(() => { resize?.([], {} as ResizeObserver) })
   expect(screen.getByRole('button', { name: 'Choose zoom' }).textContent).toContain('100%')
+  expect(onRenderZoom).toHaveBeenLastCalledWith(1)
   fireEvent.click(screen.getByRole('button', { name: 'Choose zoom' }))
   fireEvent.click(screen.getByRole('menuitem', { name: 'Fit width' }))
   expect(screen.getByRole('button', { name: 'Choose zoom' }).textContent).toContain('20%')
@@ -64,6 +68,23 @@ it('resolves missing and small content to 100 percent', () => {
   expect(fitWidthZoom(200, undefined, 24)).toBe(1)
   expect(fitWidthZoom(200, 0, 24)).toBe(1)
   expect(fitWidthZoom(200, 100, 24)).toBe(1)
+})
+
+it('fits the initial pane and allows fixed zoom without resize observation', () => {
+  vi.stubGlobal('ResizeObserver', undefined)
+  const onPreference = vi.fn()
+  render(<ZoomViewport preference={FIT_WIDTH} intrinsicWidth={1000} horizontalInset={20}
+    labels={{ controls: 'Zoom controls', menu: 'Choose zoom', out: 'Zoom out', into: 'Zoom in',
+      fitWidth: 'Fit width', value: percent => `${String(percent)}%` }} signal={new AbortController().signal}
+    scrollportRef={() => {}} onPreference={onPreference}>
+    <div className={zoomSurfaceClass} />
+  </ZoomViewport>)
+  const menu = screen.getByRole('button', { name: 'Choose zoom' })
+  expect(menu.textContent).toContain('48%')
+  fireEvent.click(menu)
+  fireEvent.click(screen.getByRole('menuitem', { name: '100%' }))
+  expect(onPreference).toHaveBeenCalledExactlyOnceWith({ kind: 'fixed', scale: 1 })
+  expect(menu.textContent).toContain('100%')
 })
 
 it('keeps a centred surface point under the pointer while crossing into overflow', () => {

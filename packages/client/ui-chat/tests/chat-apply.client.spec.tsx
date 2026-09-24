@@ -114,7 +114,7 @@ describe('Chat apply wiring', () => {
       .find(entry => entry.options.id === 'transcript-view')!
     const face = (row.inject as unknown as () => TranscriptViewRowInjected)()
 
-    expect(face.hooks.transcriptView.getSnapshot()).toBe('compact')
+    expect(face.hooks.transcriptView.getSnapshot()).toBe('standard')
     face.setTranscriptView('detailed')
     expect(face.hooks.transcriptView.getSnapshot()).toBe('detailed')
     expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', 'detailed')

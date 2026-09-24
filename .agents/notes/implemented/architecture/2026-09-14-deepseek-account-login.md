@@ -36,7 +36,7 @@ The account plugin supplies choice, waiting, failure and timeout dialogs through
 
 Platform embedding transfers a grant from Host to Electron over private Node IPC and then once to the trusted Platform main frame through a sandboxed preload. Preload performs one synchronous IPC before page scripts execute; the main process only validates the sender and returns prepared memory. Platform reads the token synchronously thereafter without a readiness API. A failed initialization retains embedded mode and a throwing getter. Account UI projections remain credential-free. The Platform document can read this credential, so its script security is part of account protection; context isolation protects native capabilities, not a token intentionally returned to the document. Replacing or removing the grant destroys the document and its temporary session.
 
-Support questionnaires receive only the Platform UID and available environment metadata through explicit prefill fields. Account tokens and masked contact details stay out of questionnaire URLs. The account provider projects the current-user UID for this purpose; the UI uses the latest account snapshot so sign-out cannot reuse a previous UID.
+Support questionnaires receive only available environment metadata through explicit prefill fields. Account UIDs, tokens and masked contact details stay out of questionnaire URLs.
 
 Private proxy development can explicitly map authorization and completion URLs to platformOrigin with rewriteBrowserOrigin. Both pages retain their fixed paths and full query strings; allowing a remote origin without mapping it would send the browser outside the configured environment. Shipped configuration requires same-origin URLs.
 

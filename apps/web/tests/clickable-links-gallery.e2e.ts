@@ -454,8 +454,8 @@ describe('web e2e: clickable links gallery', () => {
     await expect.poll(() => browserAddress.inputValue()).toBe(HTTP_URL)
 
     await openSettings(page, 'en')
-    await page.getByRole('button', { name: 'Built-in browser', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'New browser tab', exact: true }).click()
+    await page.getByRole('button', { name: 'In-App Sidebar', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Default Browser', exact: true }).click()
     await expect.poll(() => scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ linkOpening: 'new-tab' })
     await page.keyboard.press('Escape')
     const popupPromise = page.waitForEvent('popup')
@@ -471,8 +471,8 @@ describe('web e2e: clickable links gallery', () => {
 
     await page.reload()
     await openSettings(page, 'en')
-    await page.getByRole('button', { name: 'New browser tab', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Built-in browser', exact: true }).click()
+    await page.getByRole('button', { name: 'Default Browser', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'In-App Sidebar', exact: true }).click()
     await expect.poll(() => scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ linkOpening: 'sidebar' })
     await page.keyboard.press('Escape')
     await guideLink.click()

@@ -49,3 +49,5 @@ Client coverage pins generic Inbox projection delivery, reconnect invalidation f
 Pending Queue and steering input recover after Host process restart without resuming an Agent. Live Inbox reads, cold history, reconnect, and projection caching use the same domain-owned fold and registry state. Operations on a restored row do resume its ordinary Agent, preserving preset composition and ownership checks.
 
 Clients receive the raw two-list Inbox value and decide which messages their surface presents. The projection state version invalidates cached rows whenever its serialized state or fold semantics change.
+
+The [input echo admission decision](2026-09-22-input-echo-admission-ownership.md) owns local Chat/Dock handoff and suppression of delayed Inbox rows without replacing this recovery model.

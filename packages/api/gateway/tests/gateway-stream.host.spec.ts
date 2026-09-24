@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
+import { queryObjects } from 'node:v8'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket, { type RawData } from 'ws'
 import { Context, symbols } from '@deepseek-ai/cordis'
 import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import type { AppReady } from '@deepseek-ai/dsh-cmdline'
 import {
   Remote,
   remoteErrorOf,
@@ -55,6 +57,7 @@ class FeedService extends TypertRemoteService {
   readonly peeked: unknown[] = []
   readonly peers: PeerScope[] = []
   leftover: AsyncIterator<string> | undefined
+  source: Iterable<string> = []
   returns = 0
 
   constructor(ctx: Context) {
@@ -79,6 +82,11 @@ class FeedService extends TypertRemoteService {
   *sync(label: string): Iterable<string> {
     yield `${label}:one`
     yield `${label}:two`
+  }
+
+  @Remote({ mode: 'stream' })
+  items(): Iterable<string> {
+    return this.source
   }
 
   @Remote({ mode: 'stream' })
@@ -229,6 +237,30 @@ class FeedService extends TypertRemoteService {
 
 const roots: Context[] = []
 
+class StartupProbe implements AppReady {
+  private ready = false
+  private readonly listeners = new Set<() => void>()
+  lastListener: (() => void) | undefined
+
+  get pending(): number { return this.listeners.size }
+
+  onReady(listener: () => void): () => void {
+    this.lastListener = listener
+    if (this.ready) {
+      listener()
+      return () => {}
+    }
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  commit(): void {
+    this.ready = true
+    for (const listener of this.listeners) listener()
+    this.listeners.clear()
+  }
+}
+
 class RemoteEventSourceProbe {
   readonly source = (signal: AbortSignal): AsyncIterable<TypertRemoteEventDispatch> => {
     this.signal = signal
@@ -307,6 +339,30 @@ afterEach(async () => {
 })
 
 describe('Typert Remote streams', () => {
+  it.each([false, true])('accepts WebSockets only after application readiness (already ready: %s)', async (alreadyReady) => {
+    const startup = new StartupProbe()
+    if (alreadyReady) startup.commit()
+    const { ctx } = await setup(true, {}, startup)
+    if (!alreadyReady) {
+      expect(startup.pending).toBe(1)
+      expect(await acceptsSocket(ctx)).toBe(false)
+      startup.commit()
+    }
+    expect(await acceptsSocket(ctx)).toBe(true)
+    expect(startup.pending).toBe(0)
+  })
+
+  it('withdraws a pending WebSocket startup subscription when the Gateway unloads', async () => {
+    const startup = new StartupProbe()
+    const { ctx } = await setup(true, {}, startup)
+    expect(startup.pending).toBe(1)
+    await ctx.fiber.dispose()
+    expect(startup.pending).toBe(0)
+    // A launcher commit can already hold a copy of the cancelled listener.
+    expect(() => { startup.lastListener?.() }).not.toThrow()
+    expect(() => { startup.commit() }).not.toThrow()
+  })
+
   it('validates the WebSocket heartbeat timer range and the stream inbox bound', () => {
     expect(TypertGatewayService.Config({})).toEqual({ websocketHeartbeatIntervalMs: 2_000, streamInboxBytes: 262_144 })
     expect(TypertGatewayService.Config({ websocketHeartbeatIntervalMs: MAX_TIMER_DELAY_MS, streamInboxBytes: 1 }))
@@ -490,6 +546,110 @@ describe('Typert Remote streams', () => {
     const iterator = source[Symbol.asyncIterator]()
     await expect(iterator.next()).resolves.toEqual({ done: false, value: 'ready' })
     await expect(iterator.return?.()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('finishes every pending uplink read when the downlink returns', async () => {
+    const { ctx, service } = await setup(false)
+    const reads = [
+      Promise.withResolvers<IteratorResult<string>>(),
+      Promise.withResolvers<IteratorResult<string>>(),
+    ]
+    let index = 0
+    const returned = vi.fn(async (): Promise<IteratorResult<string>> => ({ done: true, value: undefined }))
+    const source = await ctx.typertGateway.stream({
+      namespace: 'feed', method: 'hold', args: {},
+      uplink: { [Symbol.asyncIterator]: () => ({ next: () => reads[index++]!.promise, return: returned }) },
+    })
+    const iterator = source[Symbol.asyncIterator]()
+    const completed: IteratorResult<string>[] = []
+    const pending: Promise<void>[] = []
+    try {
+      await expect(iterator.next()).resolves.toEqual({ done: false, value: 'held' })
+      const uplink = service.leftover!
+      pending.push(...reads.map(() => uplink.next().then((result) => { completed.push(result) })))
+      await iterator.return?.()
+      expect(completed).toEqual([
+        { done: true, value: undefined },
+        { done: true, value: undefined },
+      ])
+      expect(returned).toHaveBeenCalledOnce()
+    } finally {
+      for (const read of reads) read.resolve({ done: true, value: undefined })
+      await Promise.all(pending)
+      await iterator.return?.()
+    }
+  })
+
+  it.each(['downlink', 'uplink'] as const)('releases consumed %s read results while the stream stays open', async (direction) => {
+    class ReadResult implements IteratorYieldResult<string> {
+      readonly done = false
+      readonly value = 'item'
+    }
+    const { ctx, service } = await setup(false)
+    service.source = { [Symbol.iterator]: () => ({ next: () => new ReadResult() }) }
+    const source = await ctx.typertGateway.stream(direction === 'downlink'
+      ? { namespace: 'feed', method: 'items', args: {} }
+      : {
+        namespace: 'feed', method: 'echo', args: { prefix: '' },
+        uplink: { [Symbol.asyncIterator]: () => ({ next: async () => new ReadResult() }) },
+      })
+    const iterator = source[Symbol.asyncIterator]()
+    try {
+      for (const count of [64, 256]) {
+        for (let index = 0; index < count; index++) {
+          await expect(iterator.next()).resolves.toEqual({ done: false, value: 'item' })
+        }
+        // queryObjects collects garbage; the suspended read can retain its last result, not the history.
+        expect(queryObjects(ReadResult, { format: 'count' })).toBeLessThanOrEqual(2)
+      }
+    } finally {
+      await iterator.return?.()
+    }
+  })
+
+  it('does not read another downlink item after cancellation between reads', async () => {
+    const { ctx, service } = await setup(false)
+    const abort = new AbortController()
+    const next = vi.fn((): IteratorResult<string> => ({ done: false, value: 'item' }))
+    service.source = { [Symbol.iterator]: () => ({ next }) }
+    const source = await ctx.typertGateway.stream({
+      namespace: 'feed', method: 'items', args: {}, signal: abort.signal,
+    })
+    const iterator = source[Symbol.asyncIterator]()
+    try {
+      await expect(iterator.next()).resolves.toEqual({ done: false, value: 'item' })
+      abort.abort(new Error('caller cancelled between reads'))
+      await expect(iterator.next()).rejects.toMatchObject({ code: 'gateway/cancelled' })
+      expect(next).toHaveBeenCalledOnce()
+    } finally {
+      await iterator.return?.()
+    }
+  })
+
+  it.each(['downlink', 'uplink'] as const)('handles a synchronous %s read that aborts and throws', async (direction) => {
+    const { ctx, service } = await setup(false)
+    const abort = new AbortController()
+    const failure = new Error('source aborted and threw')
+    const next = (): never => {
+      abort.abort(failure)
+      throw failure
+    }
+    service.source = { [Symbol.iterator]: () => ({ next }) }
+    const source = await ctx.typertGateway.stream(direction === 'downlink'
+      ? { namespace: 'feed', method: 'items', args: {}, signal: abort.signal }
+      : {
+        namespace: 'feed', method: 'hold', args: {}, signal: abort.signal,
+        uplink: { [Symbol.asyncIterator]: () => ({ next }) },
+      })
+    const iterator = source[Symbol.asyncIterator]()
+    try {
+      if (direction === 'uplink') {
+        await expect(iterator.next()).resolves.toEqual({ done: false, value: 'held' })
+      }
+      await expect((direction === 'downlink' ? iterator : service.leftover!).next()).rejects.toBe(failure)
+    } finally {
+      await iterator.return?.()
+    }
   })
 
   it('reports done on every read after the uplink ended', async () => {
@@ -1341,9 +1501,11 @@ describe('Typert Remote streams', () => {
 async function setup(
   transport: boolean,
   gatewayConfig: GatewayConfig = {},
+  ready?: AppReady,
 ): Promise<{ readonly ctx: Context; readonly service: FeedService }> {
   const ctx = new Context()
   roots.push(ctx)
+  if (ready !== undefined) ctx.provide('appReady', ready)
   if (transport) {
     await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
     provideBrowserCredentials(ctx)
@@ -1363,6 +1525,17 @@ async function setup(
   })
   const receiver = ctx.get('feed') as unknown as FeedService & { [symbols.original]?: FeedService }
   return { ctx, service: receiver[symbols.original] ?? receiver }
+}
+
+async function acceptsSocket(ctx: Context): Promise<boolean> {
+  const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
+    headers: { cookie: browserCookie(ctx) },
+  })
+  const closed = new Promise<void>((resolve) => { socket.once('close', () => { resolve() }) })
+  const opened = await once(socket, 'open').then(() => true, () => false)
+  if (opened) socket.close()
+  await closed
+  return opened
 }
 
 function descriptors(): InvocationDescriptor[] {
@@ -1399,6 +1572,7 @@ function descriptors(): InvocationDescriptor[] {
     stream('context', [label], z.string()),
     { ...stream('follow', [label], z.string()), cancellation: { parameter: 'signal' } },
     stream('sync', [label], z.string()),
+    stream('items', [], z.string()),
     stream('invalid', [], z.string()),
     stream('nonJson', [], z.unknown()),
     stream('missing', [], z.string()),

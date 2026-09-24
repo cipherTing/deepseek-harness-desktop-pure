@@ -184,7 +184,7 @@ test('Desktop loads the loopback web host without custom protocols', () => {
     '@deepseek-ai/dsh-session-query',
     '@deepseek-ai/dsh-settings',
   ]) {
-    assert.equal(runtimePackage.dependencies[dependency], 'workspace:^')
+    assert.equal(runtimePackage.dependencies[dependency], 'workspace:*')
   }
   // The overlay keeps the standard web transport rows enabled.
   assert.doesNotMatch(overlay, /- id: webserver\n\s+disabled: true/)

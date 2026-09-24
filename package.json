@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-root",
-  "version": "0.1.7-alpha.1",
+  "version": "0.1.7-rc.1",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -195,18 +195,19 @@
     "postinstall": "node scripts/install-lefthook.mjs"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "workspace:^",
-    "@deepseek-ai/dsh-browser-use": "workspace:^",
-    "@deepseek-ai/dsh-experimental-browser-use-runtime": "workspace:^",
-    "@deepseek-ai/dsh-experimental-browser-use-playwright-mcp": "workspace:^",
-    "@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp": "workspace:^",
-    "@deepseek-ai/dsh-experimental-browser-use-stagehand-native": "workspace:^",
-    "@deepseek-ai/dsh-computer-use": "workspace:^",
-    "@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp": "workspace:^",
-    "@deepseek-ai/dsh-experimental-computer-use-cua-driver-native": "workspace:^",
-    "@deepseek-ai/dsh-llm-replay": "workspace:^",
-    "@deepseek-ai/dsh-tool-session-query": "workspace:^",
-    "@deepseek-ai/dsh-web-fetch-http": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-browser-use": "workspace:*",
+    "@deepseek-ai/dsh-experimental-browser-use-runtime": "workspace:*",
+    "@deepseek-ai/dsh-experimental-browser-use-playwright-mcp": "workspace:*",
+    "@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp": "workspace:*",
+    "@deepseek-ai/dsh-experimental-browser-use-stagehand-native": "workspace:*",
+    "@deepseek-ai/dsh-computer-use": "workspace:*",
+    "@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp": "workspace:*",
+    "@deepseek-ai/dsh-experimental-computer-use-cua-driver-native": "workspace:*",
+    "@deepseek-ai/dsh-llm-replay": "workspace:*",
+    "@deepseek-ai/dsh-mcp-client": "workspace:*",
+    "@deepseek-ai/dsh-tool-session-query": "workspace:*",
+    "@deepseek-ai/dsh-web-fetch-http": "workspace:*",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
@@ -245,7 +246,7 @@
     "typescript": "^6.0.3",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.8",
-    "@deepseek-ai/dsh-skill-office": "workspace:^",
-    "@deepseek-ai/dsh-tool-workspace-dependencies": "workspace:^"
+    "@deepseek-ai/dsh-skill-office": "workspace:*",
+    "@deepseek-ai/dsh-tool-workspace-dependencies": "workspace:*"
   }
 }

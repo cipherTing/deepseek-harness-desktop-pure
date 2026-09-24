@@ -12,6 +12,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { estimateContent } from '@deepseek-ai/dsh-token-meter/estimate'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -118,7 +119,7 @@ function textOf(content: ContentBlock[]): string {
 }
 
 describe('disabled mode', () => {
-  it('registers no post-execute listener when maxInlineBytes is omitted', async () => {
+  it('registers no post-execute listener when maxInlineTokens is omitted', async () => {
     const { ctx, spill } = await setup({})
     ctx.tools.register(textTool('big', 'x'.repeat(1000)))
     const result = await ctx.tools.execute(exec('big'))
@@ -143,19 +144,19 @@ describe('loader export shape', () => {
 })
 
 describe('config validation', () => {
-  it('rejects a negative maxInlineBytes at load', async () => {
-    await expect(setup({ maxInlineBytes: -1 })).rejects.toThrow(/non-negative integer/)
+  it('rejects a negative maxInlineTokens at load', async () => {
+    await expect(setup({ maxInlineTokens: -1 })).rejects.toThrow(/non-negative integer/)
   })
 
-  it('rejects a fractional maxInlineBytes at load', async () => {
-    await expect(setup({ maxInlineBytes: 1.5 })).rejects.toThrow(/non-negative integer/)
+  it('rejects a fractional maxInlineTokens at load', async () => {
+    await expect(setup({ maxInlineTokens: 1.5 })).rejects.toThrow(/non-negative integer/)
   })
 
 })
 
 describe('oversized plain-text replacement', () => {
   it('spills the full text and replaces the result with a preview + locator within the cap', async () => {
-    const { ctx, spill } = await setup({ maxInlineBytes: 200 })
+    const { ctx, spill } = await setup({ maxInlineTokens: 64 })
     const body = 'HEAD'.repeat(200) + 'TAIL'.repeat(200) // 1600 bytes > 200
     ctx.tools.register(textTool('big', body))
     const result = await ctx.tools.execute(exec('big'))
@@ -175,14 +176,14 @@ describe('oversized plain-text replacement', () => {
     expect(text).toContain('Omitted')
     // The replacement (preview + blank line + notice) stays within the cap and
     // is smaller than the original — the whole point of spilling.
-    expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(200)
+    expect(estimateContent(result.content)).toBeLessThanOrEqual(64)
     expect(Buffer.byteLength(text, 'utf8')).toBeLessThan(body.length)
   })
 
   it('keeps the inline result when the notice-only replacement would exceed the cap', async () => {
     // A body just over a tiny cap: the notice alone is larger than the cap, so
     // there is no within-cap replacement — the policy keeps the inline result.
-    const { ctx } = await setup({ maxInlineBytes: 4 })
+    const { ctx } = await setup({ maxInlineTokens: 4 })
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     const body = 'xxxxx' // 5 bytes > 4, but far shorter than the notice
     ctx.tools.register(textTool('big', body))
@@ -192,7 +193,7 @@ describe('oversized plain-text replacement', () => {
   })
 
   it('leaves a small plain-text result unchanged', async () => {
-    const { ctx, spill } = await setup({ maxInlineBytes: 1000 })
+    const { ctx, spill } = await setup({ maxInlineTokens: 1000 })
     ctx.tools.register(textTool('small', 'tiny'))
     const result = await ctx.tools.execute(exec('small'))
     expect(textOf(result.content)).toBe('tiny')
@@ -200,7 +201,7 @@ describe('oversized plain-text replacement', () => {
   })
 
   it('leaves a result with a non-text block unchanged', async () => {
-    const { ctx, spill } = await setup({ maxInlineBytes: 5 })
+    const { ctx, spill } = await setup({ maxInlineTokens: 5 })
     ctx.tools.register(defineContentToolFixture({
       name: 'mixed',
       description: 'mixed',
@@ -221,7 +222,7 @@ describe('outer PTC mode failure capture', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     await ctx.plugin(StubStore)
-    await ctx.plugin(SpillPolicy, { maxInlineBytes: 200 })
+    await ctx.plugin(SpillPolicy, { maxInlineTokens: 64 })
     await mountRuntime(ctx, { maxOutputBytes: 500 })
     const events: unknown[] = []
     const agent = observedAgent(ctx, 'code-spill', (_type: string, data: unknown) => { events.push(data) })
@@ -250,7 +251,7 @@ describe('outer PTC mode failure capture', () => {
 
 describe('read skip', () => {
   it('never spills the read tool result (avoids a read → spill → read loop)', async () => {
-    const { ctx, spill } = await setup({ maxInlineBytes: 10 })
+    const { ctx, spill } = await setup({ maxInlineTokens: 10 })
     ctx.tools.register(textTool('read', 'x'.repeat(1000)))
     const result = await ctx.tools.execute(exec('read'))
     expect(textOf(result.content)).toBe('x'.repeat(1000))
@@ -260,12 +261,12 @@ describe('read skip', () => {
 
 describe('the durable dispatch-log arm', () => {
   /** Boot code mode + the policy + the Node runtime; run one program via the real bridge. */
-  async function runCodeWith(program: string, maxInlineBytes: number, extraTools: ToolDefinition[] = []) {
+  async function runCodeWith(program: string, maxInlineTokens: number, extraTools: ToolDefinition[] = []) {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     await ctx.plugin(StubStore)
-    await ctx.plugin(SpillPolicy, { maxInlineBytes })
+    await ctx.plugin(SpillPolicy, { maxInlineTokens })
     await mountRuntime(ctx, {})
     const events: { type: string; data: unknown }[] = []
     const agent = observedAgent(ctx, 'dispatch-spill', (type: string, data: unknown) => { events.push({ type, data }) })
@@ -295,7 +296,7 @@ describe('the durable dispatch-log arm', () => {
     const logged = (settle!.data as { content: { type: string; text: string }[] }).content
     expect(logged).toHaveLength(1)
     const loggedText = logged[0]!.text
-    expect(Buffer.byteLength(loggedText, 'utf8')).toBeLessThanOrEqual(200)
+    expect(estimateContent([{ type: 'text', text: loggedText }])).toBeLessThanOrEqual(200)
     expect(loggedText).toContain('Full formatted result stored at: /spill/huge_read.txt')
     // The artifact holds the full text under the dispatch label and sub-call id.
     const save = spill.saves.find(entry => entry.source.label === 'dispatch')
@@ -334,7 +335,7 @@ describe('the durable dispatch-log arm', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     await ctx.plugin(StubStore)
-    await ctx.plugin(SpillPolicy, { maxInlineBytes: 100 })
+    await ctx.plugin(SpillPolicy, { maxInlineTokens: 40 })
     await mountRuntime(ctx, {})
     const saveStarted = Promise.withResolvers<undefined>()
     const saveGate = Promise.withResolvers<undefined>()
@@ -387,7 +388,7 @@ describe('the durable dispatch-log arm', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime, { mode: 'ptc', maxParallelSubCalls: 1 })
     await ctx.plugin(StubStore)
-    await ctx.plugin(SpillPolicy, { maxInlineBytes: 100 })
+    await ctx.plugin(SpillPolicy, { maxInlineTokens: 40 })
     await mountRuntime(ctx, {})
     const secondSaveStarted = Promise.withResolvers<undefined>()
     const thirdStarted = Promise.withResolvers<undefined>()
@@ -454,7 +455,7 @@ describe('the durable dispatch-log arm', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     await ctx.plugin(StubStore)
-    await ctx.plugin(SpillPolicy, { maxInlineBytes: 100 })
+    await ctx.plugin(SpillPolicy, { maxInlineTokens: 40 })
     await mountRuntime(ctx, {})
     ;(ctx.spillStore as StubStore).fail = true
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
@@ -477,7 +478,7 @@ describe('the durable dispatch-log arm', () => {
 
 describe('nested-call skip', () => {
   it('leaves nested composite results complete and spillable only through their outer call', async () => {
-    const { ctx, spill } = await setup({ maxInlineBytes: 10 })
+    const { ctx, spill } = await setup({ maxInlineTokens: 10 })
     const body = 'x'.repeat(1000)
     ctx.tools.register(textTool('nested', body))
     const nested = {
@@ -492,7 +493,7 @@ describe('nested-call skip', () => {
 
 describe('best-effort fallback', () => {
   it('keeps the original result when saveText fails', async () => {
-    const { ctx, spill } = await setup({ maxInlineBytes: 10 })
+    const { ctx, spill } = await setup({ maxInlineTokens: 10 })
     spill!.fail = true
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     ctx.tools.register(textTool('big', 'x'.repeat(1000)))
@@ -503,7 +504,7 @@ describe('best-effort fallback', () => {
   })
 
   it('keeps the original result when no spill backend is loaded', async () => {
-    const { ctx } = await setup({ maxInlineBytes: 10 }, false)
+    const { ctx } = await setup({ maxInlineTokens: 10 }, false)
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     ctx.tools.register(textTool('big', 'x'.repeat(1000)))
     const result = await ctx.tools.execute(exec('big'))
@@ -512,7 +513,7 @@ describe('best-effort fallback', () => {
   })
 
   it('keeps the original result when the call has no session owner', async () => {
-    const { ctx, spill } = await setup({ maxInlineBytes: 10 })
+    const { ctx, spill } = await setup({ maxInlineTokens: 10 })
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     ctx.tools.register(textTool('big', 'x'.repeat(1000)))
     const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c'), name: 'big', arguments: {} })
@@ -525,7 +526,7 @@ describe('best-effort fallback', () => {
 describe('composition', () => {
   it('wraps an earlier tool-owned projection before applying the generic cap', async () => {
     let downstreamDecision: PostToolDecision | undefined
-    const { ctx, spill } = await setup({ maxInlineBytes: 200 }, true, (target) => {
+    const { ctx, spill } = await setup({ maxInlineTokens: 64 }, true, (target) => {
       target.on('tools/post-execute', async (_exec, _result, next): Promise<PostToolDecision> => {
         downstreamDecision = await next()
         return {
@@ -544,7 +545,7 @@ describe('composition', () => {
   })
 
   it('bounds content a downstream post-execute listener replaced', async () => {
-    const { ctx, spill } = await setup({ maxInlineBytes: 200 })
+    const { ctx, spill } = await setup({ maxInlineTokens: 64 })
     // A later-registered listener replaces the (small) tool result with a big one;
     // the policy delegated via next(), so it bounds the replacement.
     ctx.on('tools/post-execute', async (_e, _r, _next) =>
@@ -556,7 +557,7 @@ describe('composition', () => {
   })
 
   it('preserves downstream accept-decision contexts when spilling', async () => {
-    const { ctx } = await setup({ maxInlineBytes: 200 })
+    const { ctx } = await setup({ maxInlineTokens: 64 })
     const context = createUserMessage({
       content: [{ type: 'text' as const, text: 'note' }],
       source: { kind: 'test' as const },
@@ -570,7 +571,7 @@ describe('composition', () => {
   })
 
   it('passes a downstream value replacement through for registry rendering', async () => {
-    const { ctx, spill } = await setup({ maxInlineBytes: 10 })
+    const { ctx, spill } = await setup({ maxInlineTokens: 10 })
     const replacement = [{ type: 'text' as const, text: 'z'.repeat(500) }]
     ctx.on('tools/post-execute', async () => ({ kind: 'accept' as const, value: replacement }))
     ctx.tools.register(textTool('small', 'tiny'))
@@ -589,8 +590,8 @@ describe('cap invariant', () => {
   it('keeps the inline result when the notice alone exceeds the cap, even for a large original', async () => {
     // A large body (so it is well over the cap) but a cap smaller than the
     // notice itself: there is no within-cap replacement, so the policy must keep
-    // the inline result rather than emit content over maxInlineBytes.
-    const { ctx } = await setup({ maxInlineBytes: 8 })
+    // the inline result rather than emit content over maxInlineTokens.
+    const { ctx } = await setup({ maxInlineTokens: 8 })
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     const body = 'x'.repeat(5000)
     ctx.tools.register(textTool('big', body))
@@ -602,7 +603,7 @@ describe('cap invariant', () => {
 
 describe('disposal (HMR safety)', () => {
   it('stops transforming oversized results after the plugin fiber is disposed', async () => {
-    const { ctx, spill, fiber } = await setup({ maxInlineBytes: 200 })
+    const { ctx, spill, fiber } = await setup({ maxInlineTokens: 64 })
     const body = 'HEAD'.repeat(200) + 'TAIL'.repeat(200)
     ctx.tools.register(textTool('big', body))
 

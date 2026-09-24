@@ -16,9 +16,10 @@ export type AccountMenuProps = PropsRuntime<'settings.launcher'> & PropsLocale<'
  * @returns account menu launcher.
  */
 export function AccountMenu({
-  wide, openSettings, openOnboarding, useAccount, signOut, contactUs, showLogin, start, cancel, t,
+  wide, openSettings, openOnboarding, useAccount, useTheme, signOut, contactUs, showLogin, start, cancel, t,
 }: AccountMenuProps) {
   const account = useAccount(state => state)
+  const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
   const signedIn = account.view?.status === 'credential-stored'
   const profile = account.details?.profile
   const label = profile === undefined ? null : profile.status === 'ready'
@@ -55,7 +56,8 @@ export function AccountMenu({
         else if (id === 'signin') beginSignIn()
         else void logout()
       }} />
-    {account.loginVisible && !account.onboarding && <SignInDialog account={account} start={start} cancel={cancel} t={t}
+    {account.loginVisible && !account.onboarding && <SignInDialog account={account} colorScheme={colorScheme}
+      start={start} cancel={cancel} t={t}
       close={() => { showLogin(false) }} useApiKey={() => { showLogin(false); openOnboarding('deepseek-official') }} />}
     {logoutFailed && <span className={css.error} role="alert">{t('failed')}</span>}
   </div>

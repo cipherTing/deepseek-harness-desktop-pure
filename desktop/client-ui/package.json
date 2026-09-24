@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-desktop-client-ui",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "private": true,
   "license": "MIT",
   "description": "Desktop-only client UI: the About settings section (versions, repository, author, update check) and the update badge below the settings trigger.",
@@ -30,6 +30,6 @@
     "lib/client.js"
   ],
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:~"
   }
 }

@@ -64,7 +64,7 @@
 | spawn | spawn | | | |
 | steering | steering | steering（中途引导） | | |
 | job id | job id | | 任务 id | 保留英文 |
-| subagent | subagent | | | |
+| subagent | subagent | | | 文档正文保留英文；中文 UI 中译作「子智能体」，不使用「子代理」 |
 | transcript | transcript | transcript（文本记录） | | 指会话渲染给用户或编辑器的完整文本，区别于事件日志 |
 | Typert | Typert | | TypeRT、typeRT、Type RT | DeepSeek Harness 类型图、生成器、loader 与运行时 registry 的产品拼写 |
 | waterfall | waterfall | waterfall（瀑布式事件） | | |

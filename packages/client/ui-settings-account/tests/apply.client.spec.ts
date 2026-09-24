@@ -5,6 +5,7 @@ import { ok } from '@deepseek-ai/dsh-remote-mock'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import type { AccountDetails, AccountView, AccountUserId, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
+import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountSectionInjected } from '../src/client/AccountSection.tsx'
 import { CONTACT_CONFIG_GLOBAL } from '../src/contact-config.ts'
@@ -40,6 +41,16 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
   const c = await start()
   const actions = operations(c)
   expect(c.ctx.slots.entries('settings.models.sign-in')[0]!.inject!()).toBe(actions)
+  // The account UI follows the live theme service through the framework hook channel.
+  const theme = c.ctx.get('theme') as ThemeRuntime
+  const onTheme = vi.fn()
+  const offTheme = actions.hooks.theme.subscribe(onTheme)
+  expect(actions.hooks.theme.getSnapshot()).toBe(theme.getTheme())
+  const probe = theme.register({ id: 'probe', colorScheme: 'dark', tokens: {} })
+  expect(onTheme).toHaveBeenCalledOnce()
+  probe()
+  offTheme()
+  expect(theme.getTheme().themes.map(candidate => candidate.id)).toEqual(['light', 'dark'])
   await actions.refresh()
   expect(c.mock.remote.account.getProfile).not.toHaveBeenCalled()
   const listener = vi.fn()
@@ -52,7 +63,9 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
   actions.showLogin(false)
   expect(listener).toHaveBeenCalledTimes(2)
   actions.contactUs()
-  expect(new URL(String(open.mock.calls.at(-1)![0])).searchParams.has('prefill_uid')).toBe(false)
+  const signedOut = new URL(String(open.mock.calls.at(-1)![0]))
+  expect(signedOut.searchParams.has('prefill_uid')).toBe(false)
+  expect(signedOut.searchParams.has('hide_uid')).toBe(false)
   c.mock.remote.account.getProfile.mockResolvedValue(ok(profile))
   c.mock.streams.push('account/watch', stored)
   await vi.waitFor(() => { expect(actions.hooks.account.getSnapshot().details?.profile).toEqual(profile) })
@@ -62,7 +75,8 @@ it('shares account actions across seats, publishes dialog ownership, and opens c
   vi.spyOn(c.ctx.locale, 'getSnapshot').mockReturnValue({ ...c.ctx.locale.getSnapshot(), active: 'zh' })
   actions.contactUs()
   const support = new URL(String(open.mock.calls.at(-1)![0]))
-  expect(support.searchParams.get('prefill_uid')).toBe('account-user')
+  expect(support.searchParams.has('prefill_uid')).toBe(false)
+  expect(support.searchParams.has('hide_uid')).toBe(false)
   expect(support.searchParams.get('prefill_app_locale')).toBe('zh-CN')
   await c.unload(SELF)
   expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(0)

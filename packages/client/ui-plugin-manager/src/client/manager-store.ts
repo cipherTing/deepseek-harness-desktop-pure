@@ -11,6 +11,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
   BundleInfo,
   ChangeResult,
+  IncompatiblePlugin,
   ManagementError,
   PluginEntryId,
   PluginInfo,
@@ -24,7 +25,7 @@ import type {
   ReadOnlyReason,
   Registry,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import { REGISTRY_URL } from '@deepseek-ai/dsh-plugin-manager/registry'
+import { normalizeRegistry, NPMMIRROR_REGISTRY, OFFICIAL_NPM_REGISTRY, REGISTRY_URL } from '@deepseek-ai/dsh-plugin-manager/registry'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocalizedText, PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
@@ -49,6 +50,8 @@ export type ManagerNotice =
     readonly code?: ManagementError['code']
     /** The Host's diagnostic or the transport's words, shown verbatim; empty when the code says it all. */
     readonly reason: string
+    /** The packages an `incompatible-version` refusal names. */
+    readonly incompatible?: readonly IncompatiblePlugin[]
     readonly packageName?: string
     readonly seq: number
   }
@@ -147,6 +150,8 @@ export interface InstallState {
   readonly open: boolean
   /** The package spec as typed. */
   readonly spec: string
+  /** The spec form was reopened after switching away from a failed GitHub address. */
+  readonly mirrorRecovery?: boolean
   /** The registries the Host configured, read when the dialog opens; null until the Host answered. */
   readonly registries: PluginRegistries | null
   /** The registry this install asks first: the one last used, else the Host's first. */
@@ -183,6 +188,8 @@ export interface InstallState {
   readonly failure: {
     readonly reason: string
     readonly code?: ManagementError['code']
+    /** The packages an `incompatible-version` refusal names. */
+    readonly incompatible?: readonly IncompatiblePlugin[]
     readonly kind?: PluginInstallFailureKind
     /** What the last failed run could not reach, as the Host attributed it: the registry, or the spec's own host. */
     readonly failedAt?: 'registry' | 'spec-host'
@@ -202,6 +209,20 @@ export interface InstallState {
  */
 export function isInstallPending(phase: InstallState['phase']): boolean {
   return phase === 'starting' || phase === 'running' || phase === 'cancelling' || phase === 'applying' || phase === 'unconfirmed'
+}
+
+/**
+ * Offer the configured mainland mirror after a confirmed GitHub connection failure.
+ * @param install - the installation and the Host's failure attribution.
+ * @returns the offered mirror URL, or undefined when this recovery does not apply.
+ */
+export function githubRecoveryRegistry(install: InstallState): string | undefined {
+  if (install.phase !== 'failed' || install.failure?.failedAt !== 'spec-host'
+    || (install.failure.kind !== 'network' && install.failure.kind !== 'timeout')) return undefined
+  const host = install.subject?.host?.toLowerCase().split(':')[0]
+  if (host !== 'github.com' && !host?.endsWith('.github.com')) return undefined
+  return offeredRegistries(install.registries).find((registry): registry is string =>
+    registry !== null && new URL(registry).hostname === 'registry.npmmirror.com')
 }
 
 /** A destructive action waiting for the user's confirmation: a package's uninstall. */
@@ -254,6 +275,8 @@ export interface PluginManagerFace {
   chooseRegistry: (choice: RegistryChoice) => void
   /** From the failed screen: back to the spec with the registry options unfolded. */
   changeRegistry: () => void
+  /** Return from a GitHub connection failure to an empty spec with the offered mainland mirror selected. */
+  useGithubMirror: () => void
   /** Allow the install scripts the failed run left pending, saved for this profile, and run the same spec again. */
   approveBuildsAndRetry: () => void
   /** Leave the check or the failed screen for the spec, or ask the Host to stop the run and wait for its cleanup. */
@@ -283,7 +306,9 @@ type Answer<T> =
 
 /** A refused answer or a change the Host could not apply, carrying what it said and, for a refusal, its code. */
 class RemoteAnswerError extends Error {
-  constructor(readonly reason: string, readonly code?: ManagementError['code']) {
+  constructor(
+    readonly reason: string, readonly code?: ManagementError['code'], readonly incompatible?: readonly IncompatiblePlugin[],
+  ) {
     super(reason)
     this.name = 'RemoteAnswerError'
   }
@@ -297,6 +322,7 @@ function failureOf(
   return {
     reason: error?.diagnostic ?? '',
     ...error === undefined ? {} : { code: error.code },
+    ...error?.incompatible === undefined ? {} : { incompatible: error.incompatible },
     ...kind === undefined ? {} : { kind },
     ...failedAt === undefined ? {} : { failedAt },
     ...pendingBuilds === undefined || pendingBuilds.length === 0 ? {} : { pendingBuilds },
@@ -306,7 +332,11 @@ function failureOf(
 /** The notice a thrown failure becomes: a refusal keeps its code, anything else its words. */
 function failedNotice(error: unknown, subject: { action: FailedAction; packageName?: string }, seq: number): ManagerNotice {
   const code = error instanceof RemoteAnswerError ? error.code : undefined
-  return { kind: 'failed', reason: reasonOf(error), ...code === undefined ? {} : { code }, ...subject, seq }
+  const incompatible = error instanceof RemoteAnswerError ? error.incompatible : undefined
+  return {
+    kind: 'failed', reason: reasonOf(error), ...code === undefined ? {} : { code },
+    ...incompatible === undefined ? {} : { incompatible }, ...subject, seq,
+  }
 }
 
 /** The runs with every one still open settled at `exitCode`. */
@@ -374,8 +404,8 @@ const IDLE_INSTALL: InstallState = {
 
 /** The dialog back at its spec: the run and its outcome forgotten, the spec and the registries kept. */
 function specAgain(install: InstallState): InstallState {
-  const { open, spec, registries, registry } = install
-  return { ...IDLE_INSTALL, open, spec, registries, registry }
+  const { open, spec, registries, registry, mirrorRecovery } = install
+  return { ...IDLE_INSTALL, open, spec, registries, registry, ...mirrorRecovery === undefined ? {} : { mirrorRecovery } }
 }
 
 /**
@@ -387,6 +417,26 @@ function reconciled(remembered: RegistryChoice | null, registries: PluginRegistr
   return remembered.kind === 'offered' && remembered.registry !== null && !offeredRegistries(registries).includes(remembered.registry)
     ? { kind: 'custom', url: remembered.registry }
     : remembered
+}
+
+interface RegistryRead {
+  /** Last automatically assigned choice; a different object belongs to a manual selection. */
+  choice: RegistryChoice
+  /** Pending initial registry list and response probes; an untouched installation waits until it settles. */
+  done?: Promise<void>
+}
+
+/** Only the shipped public mirror can replace an unconfigured official npm default. */
+function eligibleMirror(registries: PluginRegistries): string | undefined {
+  if (registries.registry !== null || registries.resolved === null) return undefined
+  let resolved: string
+  try { resolved = normalizeRegistry(registries.resolved) }
+  catch (_error) {
+    // An invalid pnpm registry cannot receive a public mirror recommendation.
+    return undefined
+  }
+  if (resolved !== OFFICIAL_NPM_REGISTRY) return undefined
+  return registries.fallbackRegistries.find(registry => registry === NPMMIRROR_REGISTRY)
 }
 
 /** One installation owns acceptance, response recovery, and every cancellation attempt. */
@@ -410,6 +460,7 @@ export class PluginManagerController {
   private inspectAbort: AbortController | undefined
   private request: InstallRequest | undefined
   private noticeSeq = 0
+  private registryRead: RegistryRead | undefined
   /** The registry last used from this browser, kept across dialogs and page loads; null until one was used. */
   private readonly registryMemory: SnapshotStore<RegistryChoice | null> = createSnapshotStore<RegistryChoice | null>(null, {
     persist: { name: 'dsh.plugin-manager.install-registry' },
@@ -438,6 +489,7 @@ export class PluginManagerController {
   /** Stop publishing and drop every late settlement. */
   dispose(): void {
     this.disposed = true
+    this.registryRead = undefined
     this.request = undefined
     this.generation += 1
   }
@@ -460,7 +512,9 @@ export class PluginManagerController {
         if (install.requestId === undefined) {
           // A new dialog starts from the registry last used here and reads what the Host offers; a hidden install reopens as it is.
           this.patch({ install: { ...IDLE_INSTALL, open: true, registry: this.registryMemory.getSnapshot() ?? OFFICIAL_REGISTRY } })
-          void this.readRegistries()
+          const read: RegistryRead = { choice: this.getSnapshot().install.registry }
+          this.registryRead = read
+          read.done = this.readRegistries(read).finally(() => { delete read.done })
         } else {
           this.patchInstall({ open: true })
         }
@@ -473,6 +527,7 @@ export class PluginManagerController {
           return
         }
         this.abortInspect()
+        this.registryRead = undefined
         this.patch({ install: IDLE_INSTALL })
       },
       editInstallSpec: (text) => {
@@ -489,6 +544,14 @@ export class PluginManagerController {
       changeRegistry: () => {
         const install = this.getSnapshot().install
         if (install.phase === 'failed') this.patch({ install: { ...specAgain(install), registryOpen: true } })
+      },
+      useGithubMirror: () => {
+        const install = this.getSnapshot().install
+        const mirror = githubRecoveryRegistry(install)
+        if (mirror === undefined) return
+        const registry: RegistryChoice = { kind: 'offered', registry: mirror }
+        this.registryMemory.set(registry)
+        this.patch({ install: { ...specAgain(install), spec: '', mirrorRecovery: true, registry } })
       },
       approveBuildsAndRetry: () => { void this.approveBuildsAndRetry() },
       cancelInstall: () => { void this.cancelInstall() },
@@ -543,12 +606,27 @@ export class PluginManagerController {
     })
   }
 
+  private currentRegistryRead(read: RegistryRead): boolean {
+    return !this.disposed && this.registryRead === read
+  }
+
   /** Read the registries the Host offers, for the dialog just opened; a refused read leaves pnpm's own and a typed one. */
-  private async readRegistries(): Promise<void> {
+  private async readRegistries(read: RegistryRead): Promise<void> {
     const answer = await this.ctx.remote.pluginManager.registries()
     const install = this.getSnapshot().install
-    if (this.disposed || !install.open || !answer.ok) return
-    this.patchInstall({ registries: answer.value, registry: reconciled(this.registryMemory.getSnapshot(), answer.value) })
+    if (!this.currentRegistryRead(read) || !install.open || !answer.ok) return
+    const remembered = this.registryMemory.getSnapshot()
+    const untouched = install.registry === read.choice && (install.phase === 'idle' || install.phase === 'checking')
+    if (untouched) read.choice = reconciled(remembered, answer.value)
+    this.patchInstall({ registries: answer.value, ...untouched ? { registry: read.choice } : {} })
+    const mirror = eligibleMirror(answer.value)
+    if (!untouched || remembered !== null || mirror === undefined) return
+    const fastest = await this.ctx.remote.pluginRegistryProbe.fastest()
+    const current = this.getSnapshot().install
+    if (!this.currentRegistryRead(read) || !current.open || (current.phase !== 'idle' && current.phase !== 'checking')
+      || current.registry !== read.choice || !fastest.ok || fastest.value !== mirror) return
+    read.choice = { kind: 'offered', registry: mirror }
+    this.patchInstall({ registry: read.choice })
   }
 
   /**
@@ -669,8 +747,6 @@ export class PluginManagerController {
       this.patchInstall({ phase: 'idle', registryError: true })
       return
     }
-    const registry: Registry = typed ?? (choice as Extract<RegistryChoice, { kind: 'offered' }>).registry
-    this.registryMemory.set(typed === undefined ? choice : { kind: 'custom', url: typed })
     this.abortInspect()
     const controller = new AbortController()
     this.inspectAbort = controller
@@ -678,6 +754,15 @@ export class PluginManagerController {
       phase: 'checking', inputError: null, subject: null, runs: [], detailsOpen: false, attempts: null, registryOpen: false,
       installed: null, restartRequired: false, failure: null, approvedBuilds: [],
     })
+    const read = this.registryRead
+    if (read !== undefined && choice === read.choice && read.done !== undefined) {
+      await read.done
+      if (this.gone(controller.signal) || this.registryRead !== read) return
+    }
+    const currentChoice = this.getSnapshot().install.registry
+    const selected = currentChoice.kind === 'custom' ? { ...currentChoice, url: currentChoice.url.trim() } : currentChoice
+    const registry: Registry = selected.kind === 'custom' ? selected.url : selected.registry
+    this.registryMemory.set(selected)
     const inspected = await this.ctx.remote.pluginManager.inspect(spec, { registry }, controller.signal)
     if (this.gone(controller.signal)) return
     this.inspectAbort = undefined
@@ -919,7 +1004,7 @@ export class PluginManagerController {
     const result = answer.value
     switch (result.application) {
       case 'failed':
-        throw new RemoteAnswerError(result.error?.diagnostic ?? '', result.error?.code)
+        throw new RemoteAnswerError(result.error?.diagnostic ?? '', result.error?.code, result.error?.incompatible)
       case 'cancelled':
         this.patch({ notice: { kind: 'cancelled', seq: ++this.noticeSeq } })
         return

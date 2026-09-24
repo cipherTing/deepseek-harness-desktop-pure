@@ -5,7 +5,7 @@ import z from '@deepseek-ai/schemastery'
 // entry and `loader/volatile-update` merges.
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import type { SpeechProvider, SpeechProviderId, SpeechProviderInfo, SpeechSnapshot, SpeechSelectionPatch, SpeechRequest, SpeechSpec, Transcript } from './types.ts'
+import type { SpeechPreparationOptions, SpeechProvider, SpeechProviderId, SpeechProviderInfo, SpeechSnapshot, SpeechSelectionPatch, SpeechRequest, SpeechSpec, Transcript } from './types.ts'
 
 export type * from './types.ts'
 
@@ -41,12 +41,12 @@ export default class SpeechToText extends Service {
   private readonly providers = new Map<SpeechProviderId, Registration>()
   private readonly listeners = new Set<() => void>()
   private readonly lifetime = new AbortController()
-  /** Profile entry `configure()` writes to; absent when the plugin was mounted without Loader. */
+  /** Profile-local entry id used by Settings; absent when the plugin was mounted without Loader. */
   private readonly entryId: string | undefined
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'speechToText')
-    this.entryId = ctx.fiber.entry?.id
+    this.entryId = ctx.fiber.entry?.options.id
     ctx.on('loader/volatile-update', () => { this.changed() })
     ctx.effect(() => async () => {
       this.lifetime.abort(new Error('Speech service disposed'))
@@ -153,11 +153,12 @@ export default class SpeechToText extends Service {
   /**
    * Start or join provider-owned preparation.
    * @param id - exact registered provider identity.
+   * @param options - task-local source selection validated by the provider.
    */
-  prepare(id: SpeechProviderId): void {
+  prepare(id: SpeechProviderId, options?: SpeechPreparationOptions): void {
     const registration = this.providers.get(id)
     if (!registration) throw new Error(`Speech provider is unavailable: ${id}`)
-    registration.provider.preparation?.prepare()
+    registration.provider.preparation?.prepare(options)
   }
 
   /**

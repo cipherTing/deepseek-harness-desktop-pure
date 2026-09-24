@@ -9,12 +9,12 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { realOfficeBytes } from './office-fixture.ts'
-import { excelFixture, excelHtmlFixture, excelHtmlText, meetingMinutesFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-fixture.ts'
+import { excelFixture, excelFreezeFixture, excelHtmlFixture, excelHtmlText, meetingMinutesFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-fixture.ts'
 import { excelDrawingFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/excel-drawing-fixture.ts'
 import { xlsFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/xls-fixture.ts'
 import { pdfFixture, selectionPdfFixture } from '../../../packages/client/ui-sidebar-documentpreview/tests/pdf-fixture.ts'
 import { assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold } from './scaffold.ts'
-import { openSettings, connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { openSettings, connectFreshWorkspace, connectFreshWorkspaceZh, newEnglishPage, saveFailureShot, scrollIntoView } from './support.ts'
 
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v3.jsonl', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/document-preview', import.meta.url))
@@ -77,6 +77,18 @@ async function canvasColor(canvas: Locator): Promise<string> {
   })
 }
 
+/** Wait for device resolution, subject to the page bitmap allocation limit. */
+async function expectPdfResolution(canvas: Locator): Promise<void> {
+  await expect.poll(() => canvas.evaluate((node) => {
+    const bitmap = node as HTMLCanvasElement
+    const width = Number.parseFloat(bitmap.style.getPropertyValue('--pdf-page-width'))
+    const height = Number.parseFloat(bitmap.style.getPropertyValue('--pdf-page-height'))
+    const expected = Math.min(bitmap.getBoundingClientRect().width * window.devicePixelRatio,
+      Math.sqrt(16_777_216 * width / height))
+    return Math.abs(bitmap.width - expected)
+  })).toBeLessThanOrEqual(1)
+}
+
 /** Select a workspace file through the Files tab and wait for its preview identity. */
 async function openPreviewFile(column: Locator, filesTab: Locator, preview: Locator, name: string): Promise<void> {
   await filesTab.click()
@@ -103,6 +115,355 @@ async function hideDocumentZoom(page: Page, preview: Locator): Promise<void> {
   await page.mouse.move(bounds.x + 8, bounds.y + 8)
   await expect.poll(() => preview.locator('[data-document-zoom-controls]').getAttribute('data-document-zoom-visible')).toBeNull()
 }
+
+/** The canvas fills the space between the formula bar and sheet tabs without a statistics row. */
+async function expectExcelLayout(excel: Locator): Promise<void> {
+  await expect.poll(() => excel.locator('.fortune-stat-area').isVisible()).toBe(false)
+  expect(await excel.locator('.luckysheet-sheets-item-function:visible').count()).toBe(0)
+  await expect.poll(() => excel.evaluate((node) => {
+    const pane = node.getBoundingClientRect()
+    const canvas = node.querySelector('canvas')!.getBoundingClientRect()
+    const formula = node.querySelector('.fortune-workarea')!.getBoundingClientRect()
+    const tabs = node.querySelector('.luckysheet-sheet-area')!.getBoundingClientRect()
+    const scroller = node.querySelector('.fortune-sheettab-container')!.getBoundingClientRect()
+    const controls = [...node.querySelectorAll('.fortune-sheettab-scroll, .fortune-zoom-button')]
+      .map(control => control.getBoundingClientRect())
+    return Math.max(Math.abs(canvas.left - pane.left), Math.abs(canvas.width - pane.width),
+      Math.abs(canvas.top - formula.bottom), Math.abs(canvas.bottom - tabs.top), Math.abs(tabs.bottom - pane.bottom),
+      Math.abs(scroller.left - tabs.left), scroller.right - controls[0]!.left,
+      ...controls.map((control, index) => control.right - (controls[index + 1]?.left ?? tabs.right)))
+  })).toBeLessThanOrEqual(1)
+  expect(await excel.locator('.fortune-sheettab-scroll, .fortune-zoom-button').evaluateAll(controls => controls.every((control) => {
+    const rect = control.getBoundingClientRect()
+    return control.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+  }))).toBe(true)
+}
+
+it.skipIf(MODE === 'record').each(['en-US', 'zh-CN'])('fills the spreadsheet pane with read-only controls in %s', async (locale) => {
+  const scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false })
+  let browser: Browser | undefined
+  try {
+    browser = await chromium.launch()
+    const page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale, timezoneId: 'Asia/Shanghai' })
+    const consoleErrors = watchConsole(page)
+    onTestFailed(async () => { await saveFailureShot(page, `screenshots/0908-document-preview/excel-resize-${locale}-${process.pid}`) })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    await (locale === 'zh-CN' ? connectFreshWorkspaceZh : connectFreshWorkspace)(page, scaffold.workspaceCwd)
+    const settled = scaffold.whenTurnSettled()
+    const input = page.locator('[data-composer-input]').first()
+    await input.fill(PROMPT)
+    await input.press('Enter')
+    const sessionId = await settled
+    const cwd = scaffold.ctx.agents.get(sessionId)?.session.header.cwd
+    if (cwd === undefined) throw new Error('settled Session has no workspace cwd')
+    const longCellText = 'Monthly export/import matrix and category comparison. 各商品类别分月出口/进口矩阵与结构对比图（公式汇总） '.repeat(3)
+    await Promise.all([
+      writeFile(join(cwd, 'budget.xlsx'), await excelFixture()),
+      writeFile(join(cwd, 'meeting.xlsx'), await meetingMinutesFixture()),
+      writeFile(join(cwd, 'legacy.xls'), xlsFixture()),
+      writeFile(join(cwd, 'values.csv'), `${longCellText},2\n3,4\n`),
+      writeFile(join(cwd, 'values.tsv'), '1\t2\n3\t4\n'),
+    ])
+    await page.getByText('LIGHTHOUSE', { exact: true }).waitFor()
+    const column = page.locator('[data-rightbar-col]')
+    await page.locator('[data-sidebar-right-expand]').click()
+    await column.locator('[data-sidebar-right-guide-entry="files"]').click()
+    await column.locator('[data-files-state="tree"]').waitFor({ state: 'visible' })
+    await column.locator('[data-files-entry="file"]').getByRole('button', { name: 'budget.xlsx', exact: true }).click()
+    const excel = column.locator('[data-excel-preview]')
+    await excel.locator('.luckysheet-sheets-item-name').getByText('公式与格式', { exact: true }).click()
+    await excel.locator('.fortune-sheet-overlay').click({ position: { x: 140, y: 30 } })
+    const formula = excel.locator('.fortune-fx-input')
+    await expect.poll(() => formula.innerText()).toBe('46281')
+    await page.keyboard.press('Shift+ArrowLeft')
+    const selection = excel.locator('.fortune-name-box')
+    await expect.poll(() => selection.innerText()).toBe('A1:B1')
+    await expectExcelLayout(excel)
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin })
+    await page.keyboard.press('ControlOrMeta+C')
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('42\t2026-09-16')
+    const arrow = excel.locator('.luckysheet-sheets-item-function').first()
+    await arrow.evaluate((node) => { (node as HTMLElement).focus() })
+    expect(await arrow.evaluate(node => document.activeElement === node)).toBe(false)
+    const canvas = excel.locator('canvas').first()
+    const originalCanvas = await canvas.elementHandle()
+    const original = await canvas.boundingBox()
+    if (original === null || originalCanvas === null) throw new Error('spreadsheet canvas is unavailable')
+    const panel = page.locator('[data-sidebar-right-panel]')
+    const panelBounds = await panel.boundingBox()
+    if (panelBounds === null) throw new Error('sidebar panel is unavailable')
+    const viewport = page.viewportSize()
+    const layout = await page.addStyleTag({ content: `[data-sidebar-right-panel] { width: ${panelBounds.width + 160}px !important; }` })
+    await expect.poll(async () => Math.round((await canvas.boundingBox())!.width - original.width)).toBe(160)
+    await expect.poll(() => formula.innerText()).toBe('46281')
+    expect(await originalCanvas.evaluate(node => node.isConnected)).toBe(true)
+    expect(page.viewportSize()).toEqual(viewport)
+    await expectExcelLayout(excel)
+    await successShot(page, `excel-resize-wide-${locale}`)
+    await layout.evaluate((node) => { node.textContent = '[data-sidebar-right-panel] { width: 360px !important; }' })
+    await expect.poll(async () => Math.round((await panel.boundingBox())!.width)).toBe(360)
+    await expectExcelLayout(excel)
+    expect(await excel.locator('.fortune-sheettab-container').evaluate((node) => {
+      const selected = node.querySelector('.luckysheet-sheets-item-active')!.getBoundingClientRect()
+      return selected.right - node.getBoundingClientRect().right
+    })).toBeLessThanOrEqual(1)
+    await page.setViewportSize({ width: 1680, height: 600 })
+    await expect.poll(async () => Math.round(original.height - (await canvas.boundingBox())!.height)).toBe(400)
+    await expectExcelLayout(excel)
+    expect(await selection.innerText()).toBe('A1:B1')
+    await successShot(page, `excel-resize-narrow-${locale}`)
+    await page.setViewportSize(viewport!)
+    await layout.evaluate((node) => { node.textContent = '' })
+    await expect.poll(async () => Math.round((await canvas.boundingBox())!.width)).toBe(Math.round(original.width))
+    expect(await formula.innerText()).toBe('46281')
+    expect(await selection.innerText()).toBe('A1:B1')
+    expect(await originalCanvas.evaluate(node => node.isConnected)).toBe(true)
+    await expectExcelLayout(excel)
+    await successShot(page, `excel-resize-restored-${locale}`)
+    const zoom = excel.locator('.fortune-zoom-ratio-current')
+    await excel.locator('.fortune-zoom-button').first().click()
+    await expect.poll(() => zoom.innerText()).toBe('90%')
+    await excel.locator('.fortune-zoom-button').last().click()
+    await expect.poll(() => zoom.innerText()).toBe('100%')
+    await zoom.click()
+    await excel.locator('.fortune-zoom-ratio-item').getByText('150%', { exact: true }).click()
+    await expect.poll(() => zoom.innerText()).toBe('150%')
+    await zoom.click()
+    await excel.locator('.fortune-zoom-ratio-item').getByText('100%', { exact: true }).click()
+    const filesTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText(locale === 'zh-CN' ? '文件' : 'Files', { exact: true }) })
+    const preview = column.locator('[data-textpreview-url]')
+    await openPreviewFile(column, filesTab, preview, 'meeting.xlsx')
+    const tabScroller = excel.locator('.fortune-sheettab-container-c')
+    const activeSheet = excel.locator('.luckysheet-sheets-item-active .luckysheet-sheets-item-name')
+    await expect.poll(() => activeSheet.innerText()).toBe('会议信息')
+    const meetingCanvas = await canvas.elementHandle()
+    if (meetingCanvas === null) throw new Error('meeting spreadsheet canvas is unavailable')
+    await expectExcelLayout(excel)
+    await excel.locator('.fortune-sheet-overlay').click({ position: { x: 60, y: 40 } })
+    await expect.poll(() => formula.innerText()).toBe('会议纪要')
+    await expect.poll(() => selection.innerText()).toBe('A1')
+    for (const width of [1000, 360, 1000, 360]) {
+      await layout.evaluate((node, width) => { node.textContent = `[data-sidebar-right-panel] { width: ${width}px !important; }` }, width)
+      await expect.poll(async () => Math.round((await panel.boundingBox())!.width)).toBe(width)
+      await expectExcelLayout(excel)
+      expect(await meetingCanvas.evaluate(node => node.isConnected)).toBe(true)
+      expect(await selection.innerText()).toBe('A1')
+      await expect.poll(() => excel.locator('.fortune-sheettab-scroll').count()).toBe(width === 360 ? 2 : 0)
+    }
+    const gridOffset = await excel.locator('.luckysheet-scrollbar-x').evaluate(node => node.scrollLeft)
+    await tabScroller.hover()
+    await page.mouse.wheel(180, 0)
+    await expect.poll(() => tabScroller.evaluate(node => node.scrollLeft)).toBeGreaterThan(0)
+    await page.mouse.wheel(-1000, 0)
+    await expect.poll(() => tabScroller.evaluate(node => node.scrollLeft)).toBe(0)
+    expect(await activeSheet.innerText()).toBe('会议信息')
+    expect(await selection.innerText()).toBe('A1')
+    expect(await zoom.innerText()).toBe('100%')
+    expect(await excel.locator('.luckysheet-scrollbar-x').evaluate(node => node.scrollLeft)).toBe(gridOffset)
+    for (const direction of ['right', 'left'] as const) {
+      const arrow = excel.locator(`#fortune-sheettab-${direction}scroll`)
+      for (let step = 0; step < 8; step += 1) {
+        const { offset, maximum } = await tabScroller.evaluate(node => ({
+          offset: node.scrollLeft, maximum: node.scrollWidth - node.clientWidth,
+        }))
+        const target = direction === 'right' ? Math.min(offset + 150, maximum) : Math.max(offset - 150, 0)
+        if (Math.abs(target - offset) <= 1) break
+        await arrow.click()
+        await expect.poll(() => tabScroller.evaluate(node => node.scrollLeft)).toBeCloseTo(target, 0)
+      }
+      const sheetName = direction === 'right' ? '填写说明' : '会议信息'
+      await excel.locator('.luckysheet-sheets-item-name').getByText(sheetName, { exact: true }).click()
+      await expect.poll(() => activeSheet.innerText()).toBe(sheetName)
+      await expectExcelLayout(excel)
+      await successShot(page, `excel-navigation-${direction}-${locale}`)
+    }
+    expect(await tabScroller.evaluate(node => Math.abs(
+      node.firstElementChild!.getBoundingClientRect().left - node.getBoundingClientRect().left,
+    ))).toBeLessThanOrEqual(1)
+    await excel.locator('.fortune-zoom-button').first().click()
+    await expect.poll(() => zoom.innerText()).toBe('90%')
+    await excel.locator('.fortune-zoom-button').last().click()
+    await expect.poll(() => zoom.innerText()).toBe('100%')
+    await zoom.click()
+    await excel.locator('.fortune-zoom-ratio-item').getByText('150%', { exact: true }).click()
+    await expect.poll(() => zoom.innerText()).toBe('150%')
+    expect(await activeSheet.innerText()).toBe('会议信息')
+    await expectExcelLayout(excel)
+    await successShot(page, `excel-navigation-zoom-${locale}`)
+    await layout.evaluate((node) => { node.textContent = '' })
+    await meetingCanvas.dispose()
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme })
+      await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBe(colorScheme === 'dark' ? '' : null)
+      for (const name of ['budget.xlsx', 'meeting.xlsx', 'legacy.xls', 'values.csv', 'values.tsv']) {
+        await openPreviewFile(column, filesTab, preview, name)
+        await excel.locator('.fortune-sheet-overlay').waitFor()
+        await expectExcelLayout(excel)
+        expect(await selection.evaluate(node => ({
+          text: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor,
+        }))).toEqual({ text: 'rgb(0, 0, 0)', background: 'rgb(255, 255, 255)' })
+        if (name === 'values.csv') {
+          await excel.locator('.fortune-sheet-overlay').click({ position: { x: 70, y: 30 } })
+          await expect.poll(() => formula.textContent()).toBe(longCellText)
+          await layout.evaluate((node) => { node.textContent = '[data-sidebar-right-panel] { width: 360px !important; }' })
+          await expectExcelLayout(excel)
+          await expect.poll(() => formula.evaluate((node) => {
+            const range = document.createRange()
+            range.selectNodeContents(node)
+            return range.getClientRects().length
+          })).toBe(1)
+          expect(await formula.evaluate(node => node.scrollHeight <= node.clientHeight)).toBe(true)
+          expect(await formula.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true)
+          await formula.hover()
+          await page.mouse.wheel(400, 0)
+          await expect.poll(() => formula.evaluate(node => node.scrollLeft)).toBeGreaterThan(0)
+          await successShot(page, `excel-formula-single-line-${locale}-${colorScheme}`)
+          await layout.evaluate((node) => { node.textContent = '' })
+          await expectExcelLayout(excel)
+        }
+        await successShot(page, `excel-controls-${name}-${locale}-${colorScheme}`)
+      }
+    }
+    expect(consoleErrors.pageErrors).toEqual([])
+    await originalCanvas.dispose()
+  } finally {
+    try { await browser?.close() } finally { await scaffold.close() }
+  }
+})
+
+/** Pan with native pixel wheel input in every direction and along the sheet edges. */
+async function expectExcelPanning(page: Page, excel: Locator): Promise<void> {
+  // Chromium's CDP wheel distances scale with the emulated device pixel ratio.
+  const scale = await page.evaluate(() => window.devicePixelRatio)
+  const wheel = async (x: number, y: number) => { await page.mouse.wheel(x * scale, y * scale) }
+  const offset = async () => await excel.evaluate(node => ({
+    x: node.querySelector('.luckysheet-scrollbar-x')!.scrollLeft,
+    y: node.querySelector('.luckysheet-scrollbar-y')!.scrollTop,
+  }))
+  const selection = await excel.locator('.fortune-name-box').innerText()
+  await excel.evaluate((node) => {
+    node.querySelector('.luckysheet-scrollbar-x')!.scrollLeft = 240
+    node.querySelector('.luckysheet-scrollbar-y')!.scrollTop = 240
+  })
+  await expect.poll(offset).toEqual({ x: 240, y: 240 })
+  await excel.locator('.fortune-sheet-overlay').hover({ position: { x: 260, y: 160 } })
+  for (const [dx, dy] of [[37, 19], [-13, 27], [-19, -11], [23, -17], [11, 0], [0, 13], [-9, 0], [0, -7]] as const) {
+    const before = await offset()
+    await wheel(dx, dy)
+    await expect.poll(offset).toEqual({ x: before.x + dx, y: before.y + dy })
+  }
+  expect(await excel.locator('.fortune-name-box').innerText()).toBe(selection)
+  await wheel(-10000, -10000)
+  await expect.poll(offset).toEqual({ x: 0, y: 0 })
+  await wheel(-20, 20)
+  await expect.poll(offset).toEqual({ x: 0, y: 20 })
+  await wheel(20, -20)
+  await expect.poll(offset).toEqual({ x: 20, y: 0 })
+  await wheel(-20, 0)
+  await expect.poll(offset).toEqual({ x: 0, y: 0 })
+}
+
+/** Sample the pixel band before the divider center, excluding the adjacent cell grid line. */
+async function freezeDividerInk(excel: Locator, axis: 'x' | 'y'): Promise<number> {
+  return await excel.evaluate((node, direction) => {
+    const canvas = node.querySelector('canvas')!
+    const bounds = canvas.getBoundingClientRect()
+    const scale = canvas.width / bounds.width
+    const columnHeader = node.querySelector<HTMLElement>('.fortune-col-header')!
+    const rowHeader = node.querySelector<HTMLElement>('.fortune-row-header')!
+    const columnHandle = node.querySelector<HTMLElement>('.fortune-cols-freeze-handle')!
+    const rowHandle = node.querySelector<HTMLElement>('.fortune-rows-freeze-handle')!
+    // Canvas coordinates include the 1.5px omitted from FortuneSheet's header elements.
+    const x = Number.parseFloat(rowHeader.style.width) + 1.5 + Number.parseFloat(columnHandle.style.left) - columnHeader.scrollLeft
+    const y = Number.parseFloat(columnHeader.style.height) + 1.5 + Number.parseFloat(rowHandle.style.top) - rowHeader.scrollTop - 2
+    const context = canvas.getContext('2d')!
+    let ink = 0
+    for (let offset = -Math.round(scale); offset < 0; offset += 1) {
+      const px = direction === 'x' ? Math.floor(x * scale) + offset : Math.floor((bounds.width - 25) * scale)
+      const py = direction === 'y' ? Math.floor(y * scale) + offset : Math.floor((y + 15) * scale)
+      const pixel = context.getImageData(px, py, 1, 1).data
+      ink += 255 - pixel[0]!
+    }
+    return ink / scale
+  }, axis)
+}
+
+it.skipIf(MODE === 'record').each([1, 2])('keeps frozen headings without dividers at DPR %i', async (deviceScaleFactor) => {
+  const scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false })
+  let browser: Browser | undefined
+  try {
+    browser = await chromium.launch()
+    const page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, deviceScaleFactor, locale: 'en-US' })
+    const consoleErrors = watchConsole(page)
+    onTestFailed(async () => { await saveFailureShot(page, `screenshots/0908-document-preview/excel-freeze-${deviceScaleFactor}-${process.pid}`) })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    const settled = scaffold.whenTurnSettled()
+    await page.locator('[data-composer-input]').first().fill(PROMPT)
+    await page.locator('[data-composer-input]').first().press('Enter')
+    const cwd = scaffold.ctx.agents.get(await settled)?.session.header.cwd
+    if (cwd === undefined) throw new Error('settled Session has no workspace cwd')
+    await writeFile(join(cwd, 'freeze.xlsx'), await excelFreezeFixture())
+    await page.getByText('LIGHTHOUSE', { exact: true }).waitFor()
+    const column = page.locator('[data-rightbar-col]')
+    await page.locator('[data-sidebar-right-expand]').click()
+    await column.locator('[data-sidebar-right-guide-entry="files"]').click()
+    await column.locator('[data-files-entry="file"]').getByRole('button', { name: 'freeze.xlsx', exact: true }).click()
+    const excel = column.locator('[data-excel-preview]')
+    const selectTopLeft = async () => {
+      await excel.locator('.fortune-sheet-overlay').click({ position: { x: 80, y: 35 } })
+      return await excel.locator('.fortune-fx-input').innerText()
+    }
+    for (const sheet of ['Both', 'Rows', 'Columns', 'None']) {
+      await excel.locator('.luckysheet-sheets-item-name').getByText(sheet, { exact: true }).click()
+      await expect.poll(selectTopLeft).toBe('R1C1')
+      for (const handle of ['.fortune-cols-freeze-handle', '.fortune-rows-freeze-handle']) {
+        expect(await excel.locator(handle).isVisible()).toBe(false)
+        expect(await excel.locator(handle).evaluate(node => node.getClientRects().length)).toBe(0)
+      }
+      for (const ratio of ['100%', '150%']) {
+        await excel.locator('.fortune-zoom-ratio-current').click()
+        await excel.locator('.fortune-zoom-ratio-item').getByText(ratio, { exact: true }).click()
+        await expect.poll(() => excel.locator('.fortune-zoom-ratio-current').innerText()).toBe(ratio)
+        await excel.locator('.fortune-fx-input').click()
+        for (const axis of ['x', 'y'] as const) {
+          if (sheet === 'Both' || sheet === (axis === 'x' ? 'Columns' : 'Rows')) {
+            await expect.poll(() => freezeDividerInk(excel, axis)).toBe(0)
+          }
+        }
+        await expectExcelPanning(page, excel)
+        await successShot(page, `excel-freeze-${sheet}-${ratio}-${deviceScaleFactor}`)
+      }
+      await excel.locator('.luckysheet-scrollbar-x').evaluate((node) => { node.scrollLeft = 240 })
+      await excel.locator('.luckysheet-scrollbar-y').evaluate((node) => { node.scrollTop = 240 })
+      await expect.poll(async () => {
+        const value = await selectTopLeft()
+        const match = /^R(\d+)C(\d+)$/.exec(value)
+        return match && { rowFixed: match[1] === '1', columnFixed: match[2] === '1' }
+      }).toEqual({ rowFixed: sheet === 'Both' || sheet === 'Rows', columnFixed: sheet === 'Both' || sheet === 'Columns' })
+      await successShot(page, `excel-freeze-scrolled-${sheet}-${deviceScaleFactor}`)
+    }
+    await excel.locator('.luckysheet-sheets-item-name').getByText('Both', { exact: true }).click()
+    await expect.poll(selectTopLeft).toBe('R1C1')
+    const canvas = await excel.locator('canvas').first().elementHandle()
+    const selection = await excel.locator('.fortune-name-box').innerText()
+    const layout = await page.addStyleTag({ content: '[data-sidebar-right-panel] { width: 360px !important; }' })
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme })
+      await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme')).toBe(colorScheme === 'dark' ? '' : null)
+      await expectExcelLayout(excel)
+      await successShot(page, `excel-freeze-narrow-${colorScheme}-${deviceScaleFactor}`)
+    }
+    await layout.evaluate(node => node.parentNode!.removeChild(node))
+    await expectExcelLayout(excel)
+    expect(await canvas!.evaluate(node => node.isConnected)).toBe(true)
+    expect(await excel.locator('.fortune-name-box').innerText()).toBe(selection)
+    await canvas!.dispose()
+    expect(consoleErrors.pageErrors).toEqual([])
+  } finally {
+    try { await browser?.close() } finally { await scaffold.close() }
+  }
+})
 
 describe.skipIf(MODE === 'record')('web e2e: document preview through Files', () => {
   let scaffold: WebScaffold
@@ -344,13 +705,13 @@ else process.exit(1);
     const markdownImages: string[] = []
     for (const alt of ['relative image', 'absolute image', 'reference image']) {
       const image = preview.getByRole('img', { name: alt, exact: true })
-      await image.scrollIntoViewIfNeeded()
+      await scrollIntoView(image)
       await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0)).toBe(true)
       const source = new URL(await image.getAttribute('src') ?? '')
       expect(source.pathname).toBe('/api/file')
       markdownImages.push(alt)
     }
-    await preview.getByRole('heading', { name: heading, exact: true }).scrollIntoViewIfNeeded()
+    await scrollIntoView(preview.getByRole('heading', { name: heading, exact: true }))
     await successShot(page, 'markdown')
     const markdownTab = column.locator('[data-dockkit-tab]').filter({ has: page.getByText('smoke.md', { exact: true }) })
     const markdownTabId = await markdownTab.getAttribute('data-dockkit-tab')
@@ -505,17 +866,19 @@ else process.exit(1);
     await pdfZoom.click()
     await page.getByRole('menuitem', { name: '150%', exact: true }).click()
     await expect.poll(async () => (await canvas.boundingBox())!.width / pdfIntrinsicWidth).toBeCloseTo(1.5, 1)
+    await expectPdfResolution(canvas)
     pdfZoom = await revealDocumentZoom(page, preview)
     await pdfZoom.click()
     await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
     await expect.poll(async () => (await canvas.boundingBox())!.width).toBeCloseTo(pdfWidth, 0)
+    await expectPdfResolution(canvas)
     expect(await preview.locator('[data-pdf-page]').count()).toBe(2)
     await expect.poll(() => canvasColor(canvas), { timeout: 30_000 }).toBe('red')
     const firstColor = await canvasColor(canvas)
     expect(firstColor).toBe('red')
     const workerNames = await Promise.all(page.workers().map(worker => worker.evaluate(() => self.name)))
     expect(workerNames).toContain('dsh-pdf')
-    await preview.locator('[data-pdf-page="2"]').scrollIntoViewIfNeeded()
+    await scrollIntoView(preview.locator('[data-pdf-page="2"]'))
     const secondPage = preview.getByRole('img', { name: 'PDF page 2', exact: true })
     await secondPage.waitFor({ state: 'visible', timeout: 30_000 })
     await expect.poll(() => canvasColor(secondPage), { timeout: 30_000 }).toBe('blue')
@@ -528,7 +891,7 @@ else process.exit(1);
     await filesTab.click()
     await column.locator('[data-files-state="tree"]').waitFor({ state: 'visible' })
     await pdfTab.click()
-    await preview.locator('[data-pdf-page="2"]').scrollIntoViewIfNeeded()
+    await scrollIntoView(preview.locator('[data-pdf-page="2"]'))
     await secondPage.waitFor({ state: 'visible', timeout: 30_000 })
     await expect.poll(() => canvasColor(secondPage), { timeout: 30_000 }).toBe('blue')
     const restoredColor = await canvasColor(secondPage)
@@ -543,6 +906,7 @@ else process.exit(1);
       `- Continuous pages: ${await preview.locator('[data-pdf-page]').count()}`,
       '- Zoom reveal: hidden -> bottom hover -> delayed hidden',
       '- Zoom modes: fit width -> 100% -> 150% -> fit width',
+      '- Settled zoom redraws the page at device resolution',
       `- Horizontal overflow: ${String(await body.evaluate(node => node.scrollWidth > node.clientWidth))}`,
       `- Canvas fills: ${[firstColor, secondColor, restoredColor].join(' -> ')}`,
       `- Same tab: ${String(await pdfTab.getAttribute('data-dockkit-tab') === pdfTabId)}`,
@@ -799,7 +1163,12 @@ else process.exit(1);
     })).toEqual({ scrollTop, scrollportBelowBanner: true, firstLineAbove: true })
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin })
     await page.evaluate(() => navigator.clipboard.writeText(''))
-    await codeBlock.getByRole('button', { name: 'Copy', exact: true }).click()
+    const copyCode = codeBlock.getByRole('button', { name: 'Copy', exact: true })
+    expect(await codeBlock.getByRole('button').count()).toBe(1)
+    expect(await copyCode.textContent()).toBe('')
+    await copyCode.hover()
+    await page.getByRole('tooltip', { name: 'Copy', exact: true }).waitFor()
+    await copyCode.click()
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(codeLines.join('\n'))
     sections.push([
       '## Code paging', '',
@@ -1046,7 +1415,8 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       ],
     })
     browser = await chromium.launch()
-    page = await newEnglishPage(browser)
+    page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, deviceScaleFactor: 2,
+      locale: 'en-US', timezoneId: 'Asia/Shanghai' })
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
@@ -1122,6 +1492,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       await page.getByRole('menuitem', { name: '150%', exact: true }).click()
       await expect.poll(() => zoomMenu.innerText()).toBe('150%')
       await expect.poll(async () => (await canvas.boundingBox())!.width / intrinsicWidth).toBeCloseTo(1.5, 1)
+      await expectPdfResolution(canvas)
       const zoomScrollport = preview.locator('[data-document-zoom-scrollport]')
       await zoomScrollport.evaluate((node) => {
         const bounds = node.getBoundingClientRect()
@@ -1130,10 +1501,31 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
       })
       await expect.poll(() => zoomMenu.innerText()).toBe('166%')
       await expect.poll(async () => (await canvas.boundingBox())!.width / intrinsicWidth).toBeCloseTo(1.66, 1)
+      await expectPdfResolution(canvas)
+      await zoomScrollport.evaluate((node) => { node.scrollTop = 0; node.scrollLeft = 0 })
+      await copyPdfText(page, preview, '中文文档')
+      await successShot(page, 'office-zoom-redrawn')
       await zoomMenu.click()
       await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
       await expect.poll(() => zoomMenu.innerText()).toBe(fitPercent)
+      await expectPdfResolution(canvas)
       await zoomScrollport.evaluate((node) => { node.scrollTop = 0; node.scrollLeft = 0 })
+      await zoomScrollport.evaluate(async (node) => {
+        const bounds = node.getBoundingClientRect()
+        for (let step = 0; step < 8; step++) {
+          node.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true,
+            deltaY: -40, clientX: bounds.left + bounds.width / 2, clientY: bounds.top + bounds.height / 2 }))
+          await new Promise<void>(resolve => requestAnimationFrame(() => { resolve() }))
+        }
+      })
+      await expect.poll(() => zoomMenu.innerText()).toBe('400%')
+      expect(await zoomScrollport.evaluate(node => node.scrollLeft > node.clientWidth)).toBe(true)
+      await expectPdfResolution(canvas)
+      await zoomScrollport.evaluate((node) => { node.scrollTop = 0; node.scrollLeft = 0 })
+      await successShot(page, 'office-pinch-400')
+      await zoomMenu.click()
+      await page.getByRole('menuitem', { name: 'Fit width', exact: true }).click()
+      await expectPdfResolution(canvas)
       expect(convert).toHaveBeenCalledTimes(1)
       await preview.getByRole('button', { name: 'Read the file again', exact: true }).click()
       await canvas.waitFor({ state: 'visible' })
@@ -1186,6 +1578,8 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
         '- Escape restores focus to the warning: true',
         '- Closing details preserves the warning and document position: true',
         '- Fit width, presets, and pinch resize the Office PDF continuously: true',
+        '- Settled zoom redraws the Office PDF at device resolution: true',
+        '- Continuous pinch to 400% redraws the page after horizontal panning: true',
         '- Pinch updates the displayed percentage during the gesture: 166%',
         `- Document top inset: ${topInset}px`,
       ].join('\n'), MODE)
@@ -1194,6 +1588,10 @@ describe.skipIf(MODE === 'record')('web e2e: Host Office preview', () => {
         await openPreviewFile(column, filesTab, preview, `chinese.${extension}`)
         await preview.getByRole('img', { name: 'PDF page 1', exact: true }).waitFor({ state: 'visible', timeout: 60_000 })
         await expect.poll(async () => (await preview.locator('[data-pdf-text]').allTextContents()).join(''), { timeout: 30_000 }).toContain('中文文档')
+        const officeZoom = await revealDocumentZoom(page, preview)
+        await officeZoom.click()
+        await page.getByRole('menuitem', { name: '150%', exact: true }).click()
+        await expectPdfResolution(canvas)
         if (['doc', 'ppt'].includes(extension)) expect(await warning.count()).toBe(0)
         await successShot(page, `office-${extension}`)
       }

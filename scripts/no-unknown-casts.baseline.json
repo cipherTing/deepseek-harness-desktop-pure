@@ -285,7 +285,6 @@
     "e16418d396e5aa0dc24e4e963fd984fcd0d6641c2286f101fff3a87a160a4805": 1
   },
   "packages/boot/plugin-manager/tests/operations.spec.ts": {
-    "3f67668a2a47b23d156327c25aec9838ccfb824ad8e28234cf3e3ed78b7ca84b": 1,
     "657d57900ec8cdcfa9a4b11544ef4799d3a60c43c49e20f7aea13d3522ddbbee": 2
   },
   "packages/boot/plugin-manager/tests/tools.spec.ts": {
@@ -700,9 +699,6 @@
   "packages/client/ui-sidebar/src/client/index.ts": {
     "4c73f40f3ce989f285848573d7154fb295886bba707ad829e2c8c089e326aeea": 1
   },
-  "packages/client/ui-skill/tests/skill-row.client.spec.tsx": {
-    "6a1c3746f69a09ed859887aa4f1c9c0cffc1a9152459f3b1aef8b39c0020be74": 1
-  },
   "packages/client/ui-subagent/tests/browser-plugin.client.spec.ts": {
     "810a8e63d34628d25866491b3c6455a51b2d114261b67e62b42728b765370993": 1
   },
@@ -1078,13 +1074,6 @@
     "019c354b579e6d5cfa63e106e3b3047817fe5a37eee532abd7ab4aa80d28676a": 1,
     "4777453719b1a12ac03d7405a7cc1662ac1873b8eb0016a08ccd11f27076e803": 1
   },
-  "packages/experimental/client-ui-agent-team/tests/browser-plugin.client.spec.ts": {
-    "22baf2573ca146a7904b9ffc8b34a43692c4e042f01f43016d85443828bc88b1": 1,
-    "87ef7d60538b938bd8b5748cf4c0a5956ecedb860826c57d9ec789daea2f0355": 5
-  },
-  "packages/experimental/client-ui-agent-team/tests/team-action.client.spec.tsx": {
-    "032fa1f91833ea216b76d2724f073741e70ad3eafebe4fbfcb166b950618e415": 1
-  },
   "packages/experimental/computer-use-cua-driver-mcp/tests/composition.spec.ts": {
     "154da39139a0074bad3d13a624e5fa62d1f7ce19dc8b9c28a73af3263cd7f10e": 1
   },
@@ -1247,15 +1236,6 @@
   },
   "packages/extensions/ui-cordis/tests/inventory.client.spec.ts": {
     "205cd2f0d90ee000d0bd5f8c9e7e03d7d602f22e12220ebdf8043d68fd9b796a": 1
-  },
-  "packages/extensions/ui-cordis/tests/status-icons.client.spec.tsx": {
-    "197a02bb861b1e7f091fed36ce23f7fe7b29686e869eae4ef97ca5f2d3db0c3f": 1,
-    "21e66428cbbde28dc4babe182c025a24ce551db8213ad838f32032f1637f82f3": 1,
-    "2a1282321e7b71e11b6c7f185fee563b40d3bb154ae3ddea20b09885f7e70d1e": 1,
-    "39b3669a761fd862ddc2653942105307bb6b7e9af87a52924dce1f9a6a3ca27d": 1,
-    "3f1740cf4e1f98e62eed39475eefe4975e40c0ef37f9eaa9d42b82e2b3e59441": 1,
-    "ac0beabad88e70e9d83e0ff5f45e36c04da79841f57a9580531dd930d2695511": 1,
-    "c331b9162c06d90cddeb7fd093839d0e12eb2ef6a17e1a5afbcaa335ed3a29c2": 1
   },
   "packages/feedback/command-feedback/tests/loader-composition.spec.ts": {
     "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1

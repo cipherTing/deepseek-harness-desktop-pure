@@ -239,7 +239,8 @@ it('stores a grant before redirecting, restores account presence, and signs out 
   expect(response.headers.get('location')).toBe(`${f.origin}/dsh/authorized?result=test&locale=zh_CN&login_source=desktop`)
   expect((await f.account.getState()).status).toBe('credential-stored')
   expect(await readFile(join(f.home, 'credentials.yaml'), 'utf8')).toContain('dsh_mock_test')
-  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test' })
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test',
+    requestHeaders: { 'x-client-platform': 'web' } })
   expect(await f.account.resolveToken('https://api.deepseek.com')).toBeUndefined()
   await f.account.signOut()
   expect((await f.account.getState()).status).toBe('signed-out')
@@ -483,12 +484,16 @@ it('adds private deployment cookies to every Platform request without exposing t
   expect(JSON.stringify(await f.account.getState())).not.toContain('test_gate')
   await f.account.signOut()
   await expect.poll(f.logoutCount).toBe(1)
-  expect(f.receivedHeaders.map(item => item.path)).toEqual([
-    '/auth-api/v0/dsh/auth_init', '/auth-api/v0/dsh/auth_exchange',
-    '/auth-api/v0/users/current', '/api/v0/users/get_user_summary', '/auth-api/v0/users/logout',
-  ])
-  expect(f.receivedHeaders.every(item => item.cookie === 'test_gate=synthetic')).toBe(true)
-  expect(f.receivedHeaders.slice(2).every(item => item.authorization === 'dsh_mock_test')).toBe(true)
+  const headers = f.receivedHeaders
+  const paths = headers.map(item => item.path)
+  // The profile and wallet queries are independent requests, so their arrival order is scheduler-dependent.
+  expect(paths.slice(0, 2)).toEqual(['/auth-api/v0/dsh/auth_init', '/auth-api/v0/dsh/auth_exchange'])
+  expect(paths.slice(2, -1).sort()).toEqual(['/api/v0/users/get_user_summary', '/auth-api/v0/users/current'])
+  expect(paths.at(-1)).toBe('/auth-api/v0/users/logout')
+  expect(headers.every(item => item.cookie === 'test_gate=synthetic')).toBe(true)
+  const grantedPaths = new Set(['/auth-api/v0/users/current', '/api/v0/users/get_user_summary', '/auth-api/v0/users/logout'])
+  expect(headers.filter(item => grantedPaths.has(item.path ?? '')).every(item => item.authorization === 'dsh_mock_test')).toBe(true)
+  expect(headers.filter(item => !grantedPaths.has(item.path ?? '')).every(item => item.authorization === undefined)).toBe(true)
 })
 
 it('rejects reserved, duplicate and malformed deployment headers without disclosing values', () => {
@@ -779,13 +784,14 @@ it('carries the configured embedded frontend selector in the private Platform se
   await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
-  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test', embeddedPageDist: 'feat/test' })
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test', embeddedPageDist: 'feat/test',
+    requestHeaders: { 'x-client-platform': 'web' } })
 })
 
 it.each([
-  ['darwin', 'desktop-mac'], ['win32', 'desktop-win'], [null, undefined],
+  ['darwin', 'desktop-mac'], ['win32', 'desktop-win'], [null, 'web'],
 ] as const)('identifies %s Host API and embedded Platform requests', async (desktopPlatform, expected) => {
-  const f = await fixture(undefined, { Cookie: 'test_gate=synthetic', ...(desktopPlatform === null ? {} : { 'X-Client-Platform': 'web' }) },
+  const f = await fixture(undefined, { Cookie: 'test_gate=synthetic', 'X-Client-Platform': 'deployment-override' },
     false, {}, undefined, undefined, '', desktopPlatform)
   await f.account.startSignIn('en', f.callbackOrigin, 'desktop')
   await f.wait('waiting-browser')
@@ -796,15 +802,18 @@ it.each([
   await f.wait('waiting-browser')
   await fetch(f.callback(), { redirect: 'manual' })
   await readDetails(f.account)
-  expect(await f.account.getPlatformSession()).toMatchObject({ requestHeaders: { cookie: 'test_gate=synthetic' } })
-  expect((await f.account.getPlatformSession())?.requestHeaders?.['x-client-platform']).toBe(expected)
+  expect(await f.account.getPlatformSession()).toEqual({ origin: f.origin, token: 'dsh_mock_test',
+    requestHeaders: { cookie: 'test_gate=synthetic', 'x-client-platform': expected } })
   await f.account.signOut()
   await expect.poll(f.logoutCount).toBe(1)
-  expect(f.receivedHeaders.map(item => item.path)).toEqual([
+  const paths = f.receivedHeaders.map(item => item.path)
+  expect(paths.slice(0, 4)).toEqual([
     '/auth-api/v0/dsh/auth_init', '/auth-api/v0/dsh/auth_cancel',
     '/auth-api/v0/dsh/auth_init', '/auth-api/v0/dsh/auth_exchange',
-    '/auth-api/v0/users/current', '/api/v0/users/get_user_summary', '/auth-api/v0/users/logout',
   ])
+  // Profile and balance requests run concurrently.
+  expect(paths.slice(4, -1).sort()).toEqual(['/api/v0/users/get_user_summary', '/auth-api/v0/users/current'])
+  expect(paths.slice(-1)).toEqual(['/auth-api/v0/users/logout'])
   expect(f.receivedHeaders.map(item => item.clientPlatform)).toEqual(f.receivedHeaders.map(() => expected))
 })
 

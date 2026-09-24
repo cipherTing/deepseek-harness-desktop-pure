@@ -49,3 +49,5 @@ Host 投影覆盖会读取包含待处理输入的已分离持久 Session，在 
 待处理 Queue 与 steering 输入可在 Host 进程重启后恢复，而无需恢复 Agent。live Inbox 读取、冷历史、重连与投影缓存使用同一份领域拥有的折叠与注册表状态。操作恢复出的行时会恢复其普通 Agent，从而保留 preset 组合与所有权检查。
 
 客户端接收原始的两列表 Inbox 值，并自行决定界面呈现哪些消息。投影的状态版本会在其序列化状态或折叠语义变化时使缓存行失效。
+
+[输入回显入档决策](2026-09-22-input-echo-admission-ownership.zh.md)负责本地 Chat/Dock 接管和迟到 Inbox 行的排除，不替换这里的恢复模型。

@@ -31,6 +31,7 @@ import { adapter, assemble, chunks, MODEL, options, prepareExtensions, server, s
 
 const cleanup: (() => Promise<unknown>)[] = []
 afterEach(async () => {
+  vi.useRealTimers()
   while (cleanup.length) await cleanup.pop()!()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
@@ -206,11 +207,35 @@ describe('direct Messages HTTP', () => {
     await stopped
   })
 
-  it('distinguishes caller cancellation from idle timeout and transport failure', async () => {
-    const http = await endpoint((response) =>{  response.flushHeaders() })
-    await expect(chunks(adapter({ baseURL: http.url, streamIdleTimeoutMs: 30 }).stream(options()))).rejects.toMatchObject({ code: 'TIMEOUT' })
+  it('times out an idle HTTP response and closes the connection', async () => {
+    const stopped = Promise.withResolvers<undefined>()
+    const http = await endpoint((response) => {
+      response.once('close', () => { stopped.resolve(undefined) })
+      response.write(sse(textEvents.slice(0, 2)))
+    })
+    // Advance the idle clock after the response is readable, independently of connection setup time.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const stream = adapter({ baseURL: http.url, streamIdleTimeoutMs: 30 }).stream(options())[Symbol.asyncIterator]()
+    try {
+      expect((await stream.next()).value).toMatchObject({ type: 'block-start' })
+      const rejected = expect(stream.next()).rejects.toMatchObject({ code: 'TIMEOUT' })
+      await vi.advanceTimersByTimeAsync(30)
+      await rejected
+      await stopped.promise
+    } finally {
+      vi.useRealTimers()
+      await stream.return?.()
+    }
+  })
+
+  it('classifies an already cancelled request without contacting the provider', async () => {
+    const http = await endpoint()
     const controller = new AbortController(); controller.abort()
     await expect(chunks(adapter({ baseURL: http.url }).stream(options({ signal: controller.signal })))).rejects.toMatchObject({ code: 'ABORTED' })
+    expect(http.requests).toEqual([])
+  })
+
+  it('classifies a transport failure', async () => {
     vi.stubGlobal('fetch', async () => { throw new TypeError('network down') })
     await expect(chunks(adapter().stream(options()))).rejects.toMatchObject({ code: 'TRANSPORT' })
   })
