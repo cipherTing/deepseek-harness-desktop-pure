@@ -3,11 +3,13 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import { dump } from 'js-yaml'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 // Type-only: the optional `settings` service this registry keeps off the generated pages.
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-tools'
-import type { AgentPresetRoster } from './types.ts'
+import type { AgentPresetDocument, AgentPresetRoster } from './types.ts'
 import { entryListProblem, type PresetDefinition } from './definition.ts'
 import type { AgentPreset, Config } from './preset.ts'
 import { agentPresetProjectionDefinition } from './session.ts'
@@ -189,6 +191,25 @@ export class AgentPresetRegistry extends TypertRemoteService {
       { agentPreset: wanted, available: [...this.definitions.keys()] })
     const broken = await this.diagnostic(record)
     return { id: wanted, ...(broken === undefined ? {} : { broken }) }
+  }
+
+  /** Read one declaration's child plugin list as YAML, for viewing only.
+   * @param agentPreset Preset identity.
+   * @returns The declared composition beside its published metadata.
+   */
+  @Remote('read')
+  readDocument(agentPreset: string): Promise<AgentPresetDocument> {
+    const record = this.definitions.get(agentPreset)
+    if (record === undefined) {
+      return Promise.reject(new RemoteError('agent-preset/not-found', `Unknown agent preset: ${agentPreset}`,
+        { agentPreset, available: [...this.definitions.keys()] }))
+    }
+    const { id, name, description, plugins } = record.config
+    // The Loader's own dialect, so `!!js` conditions read as declared rather than as expression objects.
+    const content = dump(plugins, { schema: entryListSchema, noRefs: true, lineWidth: -1 })
+    return Promise.resolve({
+      agentPreset: id, content, ...(name === undefined ? {} : { name }), ...(description === undefined ? {} : { description }),
+    })
   }
 
   private async retain(id?: string): Promise<Generation> {

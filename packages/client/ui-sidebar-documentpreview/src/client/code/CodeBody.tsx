@@ -24,9 +24,11 @@ export function CodeBody({ resourceAddress, content, wrap, scrollportRef, t }: C
         code={content.text}
         lang={language}
         streaming={!content.eof}
+        wrap={wrap}
         lineNumbers
         copyLabel={t('copy')}
         copiedLabel={t('copied')}
+        toolbarLabels={{ codeLabel: t('codeBlock.title'), wrapLabel: t('codeBlock.wrap'), unwrapLabel: t('codeBlock.unwrap') }}
       />
     </div>
   )

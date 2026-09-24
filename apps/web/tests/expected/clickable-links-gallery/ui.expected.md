@@ -9,7 +9,7 @@
 - button "Copy"
 - status: Worked
 - button "Took {{duration}}" [expanded]
-- button "Edited files, called tools, searched code, etc." [expanded]
+- button "Wrote files, called tools, searched code, etc." [expanded]
 - button "Write site/report.html +1 -0":
   - text: Write
   - button "site/report.html"
@@ -34,8 +34,10 @@
   - text: Edit
   - button "src/tokens.css"
   - text: +1 -1
+- text: css
+- button "Wrap lines"
 - button "Copy"
-- text: "src/tokens.css - --inline-code: #EBEEF2; + --inline-code: #F5F5F5; └ +1 -1 · 1 file"
+- text: "src/tokens.css - --inline-code: #EBEEF2; + --inline-code: #F5F5F5;"
 - button "Inspect"
 - button "Tool call str_replace_editor · create" [expanded]
 - text: "IN { \"command\": \"create\", \"path\": \"docs/press.md\", \"file_text\": \"# Press kit\\n\" } OUT Created docs/press.md"
@@ -45,7 +47,8 @@
 - button "Read docs/guide.md" [expanded]:
   - text: Read
   - button "docs/guide.md"
-- text: docs/guide.md
+- text: Code block docs/guide.md
+- button "Wrap lines"
 - button "Copy"
 - text: "# Link style guide guide line 2 guide line 3 guide line 4"
 - button "Expand 4 more lines": … 4 more lines
@@ -134,8 +137,10 @@
   - code: notes.md
   - text: untouched.
 - paragraph:
-  - img "Token preview"
+  - 'button "View full image: Token preview"':
+    - img "Token preview"
 - text: css
+- button "Wrap lines" [pressed]
 - button "Copy"
 - code: "--inline-code: #F5F5F5;"
 - paragraph: LINK_GALLERY_DONE

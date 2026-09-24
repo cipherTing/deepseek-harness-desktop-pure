@@ -227,6 +227,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   let seededThroughSeq = -1
+  let openingWindow: unknown
 
   beforeAll(async () => {
     // The POSIX terminal fixture stays off Windows; the pinned desktop applies
@@ -266,6 +267,27 @@ describe('web e2e: seeded history renders through cold resume', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
+    if (MODE !== 'record') {
+      // A one-message tail makes this short recording exercise the real Load earlier path.
+      let pagedOpening = false
+      await page.routeWebSocket('**/api/remote.mux', (socket) => {
+        const server = socket.connectToServer()
+        socket.onMessage((message) => {
+          const frame = JSON.parse(String(message)) as {
+            type: string
+            endpoint?: string
+            payload: { args: { request: { maxMessages: number; turnWindow?: { minMessages: number; minTurns: number } } } }
+          }
+          if (!pagedOpening && frame.type === 'open' && frame.endpoint === 'session/follow') {
+            pagedOpening = true
+            openingWindow = { ...frame.payload.args.request }
+            frame.payload.args.request.maxMessages = 1
+            delete frame.payload.args.request.turnWindow
+            server.send(JSON.stringify(frame))
+          } else server.send(message)
+        })
+      })
+    }
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
@@ -330,6 +352,16 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await sessionRow.click()
     // Settled barrier for history: the recorded final assistant text renders.
     await expect.poll(() => page.getByText('DONE', { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    expect(openingWindow).toMatchObject({ maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 } })
+    expect(await page.getByText(PROMPT, { exact: true }).count()).toBe(0)
+    const [paging] = await Promise.all([
+      page.waitForRequest('**/api/session/page'),
+      page.getByRole('button', { name: 'Load earlier', exact: true }).click(),
+    ])
+    expect(paging.postDataJSON()).toMatchObject({
+      payload: { args: { request: { maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 } } } },
+    })
+    await expect.poll(() => page.getByText(PROMPT, { exact: true }).count(), { timeout: 10_000 }).toBe(1)
     await expect.poll(() => page.getByText('compact', { exact: true }).count(), { timeout: 10_000 }).toBe(1)
     await expect.poll(() => page.getByText(/^Compacted \d+ history items \(~\d+ tokens\)$/).count(), {
       timeout: 10_000,

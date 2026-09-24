@@ -20,7 +20,7 @@ Providers that sign in with OAuth, such as Codex, are not supported here yet.
 
 ## Add a custom model API
 
-Switch the card to **Custom model API** for a relay, a company gateway, a self-hosted server, or any provider absent from the installed catalog. Supply a lowercase Provider ID, base URL, API protocol, credential, and at least one model. The **API protocol** must be the one your gateway speaks, and the picker offers three: OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, stored in `settings.yaml` as `openai-completions`, `openai-responses`, and `anthropic-messages`. A provider speaks one protocol, so a gateway that serves two needs two providers.
+Switch the card to **Custom model API** for a relay, a company gateway, a self-hosted server, or any provider absent from the installed catalog. Supply a lowercase Provider ID, base URL, API protocol, credential, and at least one model. The **API protocol** must be the one your gateway speaks, and the picker offers three: OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, stored in the active profile's `cordis.patch.yml` as `openai-completions`, `openai-responses`, and `anthropic-messages`. A provider speaks one protocol, so a gateway that serves two needs two providers.
 
 ![The custom model API form: Provider ID, display name, base URL, API protocol, and API key](providers-custom-form.png)
 
@@ -44,6 +44,8 @@ The generated [plugin configuration catalog](../../config-catalog.md) lists ever
 
 ::: tip Additional settings
 The Models page exposes the API key, display name, base URL, API protocol, and each model's id, display name, context window, max output tokens, and input types. Configure reasoning effort levels, request-compatibility switches, headers, timeouts, and retry policy in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`, the same document the page writes. Edit it directly, or, when the browser runs on the same machine as the server, open it with **Open configuration file** in the Settings header; the adapters re-read it on the next request, so nothing needs a restart. The subsections below cover the fields most gateways need.
+
+For the standard Web UI launch with `dsh web`, `<profile>` is `web`, so the path is `$DSH_HOME/profiles/web/cordis.patch.yml`. If you launch a custom profile, use the name selected at startup instead.
 :::
 
 ### Image input
@@ -132,14 +134,14 @@ Each key is a level the menu offers, and its value is the spelling sent on the w
 An `off` left empty sends nothing, which only stops a model that thinks on request; an `off` given a value sends that value as `reasoning_effort` instead. A model that thinks unless told not to — DeepSeek V4 behind an OpenAI-compatible gateway, for example — needs `compat.thinkingFormat: deepseek`, which makes `off` send `thinking: {type: disabled}` and every other level send `thinking: {type: enabled}` beside the effort:
 
 ```yaml
-      models:
-        - id: deepseek-v4-pro
-          compat:
-            thinkingFormat: deepseek
-          reasoningEfforts:
-            off:
-            high: high
-            max: max
+        models:
+          - id: deepseek-v4-pro
+            compat:
+              thinkingFormat: deepseek
+            reasoningEfforts:
+              off:
+              high: high
+              max: max
 ```
 
 A built-in provider's model whose gateway does not reason loses its levels with `reasoningEfforts: false` under `modelOverrides`; selecting an effort for it is then refused as `UNSUPPORTED_REASONING_EFFORT`. DeepSeek's own route needs none of this: its models already offer `off`, `low`, `high`, and `max`, and `llm-deepseek.reasoningEffort` sets the default the picker starts from:
@@ -174,11 +176,11 @@ Two account for most of it. A model that declares reasoning has its system promp
 A route's `compat` is the default for its models, and a model's own wins field by field, so one model can be corrected without restating the route:
 
 ```yaml
-      models:
-        - id: my-model
-        - id: my-reasoner
-          compat:
-            thinkingFormat: deepseek
+        models:
+          - id: my-model
+          - id: my-reasoner
+            compat:
+              thinkingFormat: deepseek
 ```
 
 What neither sets keeps the installed catalog's value for that model, and what the catalog does not describe falls to pi-ai's detection. Give every switch you name a value: a key left empty (`supportsDeveloperRole:`) is refused rather than ignored, because an empty value would erase what the catalog knows while saying nothing in its place. A name no protocol accepts is refused too, and the message lists the ones that are available.

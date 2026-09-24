@@ -31,7 +31,9 @@ function registerUi(ctx: Context): void {
     },
     transcribe: async (request, signal) => await ctx.remote.speech.transcribe(request, signal),
     configure: async (patch) => { const result = await ctx.remote.speech.configure(patch); if (!result.ok) throw result.error },
-    prepare: async (providerId) => { const result = await ctx.remote.speech.prepare(providerId); if (!result.ok) throw result.error },
+    prepare: async (providerId, options) => {
+      const result = await ctx.remote.speech.prepare(providerId, options); if (!result.ok) throw result.error
+    },
     cancelPreparation: async (providerId) => {
       const result = await ctx.remote.speech.cancelPreparation(providerId); if (!result.ok) throw result.error
     },

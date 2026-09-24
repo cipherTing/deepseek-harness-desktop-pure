@@ -36,7 +36,7 @@ API Key 与账号记录独立保存。账号 token 没有过期或刷新流程�
 
 Platform 内嵌通过私有 Node IPC 将授权从 Host 传给 Electron，再经沙箱 preload 一次性传给受信任的 Platform 主 frame。preload 在页面脚本执行前执行一次同步 IPC；主进程仅校验调用来源并返回已准备的内存数据。Platform 此后同步读取 token，无需就绪接口。初始化失败时保留内嵌模式，由 getter 抛错。账号 UI 投影仍不包含凭证。Platform 文档能够读取此凭证，因此其脚本安全也是账号保护的一部分；上下文隔离保护原生能力，不能隐藏有意返回给文档的 token。替换或移除授权会销毁文档及其临时会话。
 
-支持问卷仅通过显式预填字段接收 Platform UID 和已有的环境信息，URL 不包含账号 token 或脱敏联系方式。账号提供者为此投影 current-user 的 UID；UI 使用最新账号快照，避免退出登录后复用旧 UID。
+支持问卷仅通过显式预填字段接收已有的环境信息，URL 不包含账号 UID、token 或脱敏联系方式。
 
 私有代理开发可通过 rewriteBrowserOrigin 显式将授权页和完成页映射到 platformOrigin。两者保留固定路径和完整查询字符串；仅放宽来源而不做映射会让浏览器离开配置的环境。发布配置要求浏览器地址同源。
 

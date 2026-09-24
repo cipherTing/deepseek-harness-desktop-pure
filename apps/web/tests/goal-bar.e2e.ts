@@ -13,7 +13,7 @@ import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, expectTooltipOnTop, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/goal-bar', import.meta.url))
 const ACTIVE_EXPECTED = join(SNAPSHOT_DIR, 'active.expected.md')
@@ -58,6 +58,9 @@ describe('web e2e: goal bar clear convergence', () => {
     await pause.hover()
     const pauseTooltip = page.getByRole('tooltip', { name: 'Pause goal', exact: true })
     await pauseTooltip.waitFor()
+    // The strip rides directly above the input card, which paints later; the
+    // bubble must escape the strip's stacking context instead of landing under it.
+    await expectTooltipOnTop(pauseTooltip)
     const tooltipGeometry = await page.evaluate(() => {
       const element = document.querySelector<HTMLElement>('[role="tooltip"]')
       if (element === null) return null
@@ -67,11 +70,18 @@ describe('web e2e: goal bar clear convergence', () => {
         declaredTop: Number.parseFloat(element.style.top),
         tooltipCenter: tooltip.left + tooltip.width / 2,
         tooltipTop: tooltip.top,
+        left: tooltip.left,
+        right: tooltip.right,
+        viewportWidth: window.innerWidth,
+        visibility: element.style.visibility,
       }
     })
     expect(tooltipGeometry).not.toBeNull()
     expect(Math.abs(tooltipGeometry!.tooltipCenter - tooltipGeometry!.declaredLeft)).toBeLessThan(2)
     expect(Math.abs(tooltipGeometry!.tooltipTop - tooltipGeometry!.declaredTop)).toBeLessThan(2)
+    expect(tooltipGeometry!.visibility).toBe('visible')
+    expect(tooltipGeometry!.left).toBeGreaterThanOrEqual(12)
+    expect(tooltipGeometry!.right).toBeLessThanOrEqual(tooltipGeometry!.viewportWidth - 12)
     await page.mouse.move(0, 0)
     await pauseTooltip.waitFor({ state: 'hidden' })
     const snapshot = await captureStableAria(page, '[data-goal-bar]', scaffold.workspaceCwd)

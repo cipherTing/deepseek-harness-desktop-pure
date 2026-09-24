@@ -22,6 +22,8 @@ Status: implemented
 
 [ChatReading](../../../../packages/client/ui-chat/src/client/chat/use-chat-reading.ts) 负责跟随底部、语义恢复和读者移动采样。[ChatNavigation](../../../../packages/client/ui-chat/src/client/chat/use-chat-navigation.ts) 负责已加载或未加载轮次跳转、分页锚点、任务替换和回退。[useChatScroll](../../../../packages/client/ui-chat/src/client/chat/use-chat-scroll.ts) 提供已提交输入并协调各对象。定时器与动画帧完成时直接调用负责对象，不再递增 React tick 状态。[贴底事件规则](../../../../packages/client/ui-chat/README.zh.md#scroll-ownership) 仍有独立必要性：期间发生的布局增长不能抵消读者的小幅操作。
 
+共用的嵌套跟随机制与控件定位见 [Chat 滚动与页脚决策](../bug-fix/2026-09-22-chat-scroll-follow-and-footer-geometry.zh.md)；外层采样阅读与历史导航仍由上述对象负责。
+
 ### 每次历史跳转统一发布
 
 [Session.loadThrough](../../../../packages/api/session-controller/src/client/sessions/session.ts) 在共享目标被覆盖或加载结束前，保留已接受的页面和私有分页游标。它只反转一次页面列表并展开一次，然后发布一次有序前插。实时事件继续走正常发布路径。后续页面失败时，已成功取得的部分统一发布一次；流或窗口被替换时丢弃失效的暂存页面。单页 `loadOlder` 仍立即发布，重复跳转请求保留既有的最低目标策略。

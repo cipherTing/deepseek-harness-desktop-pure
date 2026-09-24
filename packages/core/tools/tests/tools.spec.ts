@@ -101,6 +101,46 @@ describe('ToolRuntime', () => {
     expect(schema.execute).toBeUndefined()
   })
 
+  it('runs the captured content projector before policy and keeps later replacement authoritative', async () => {
+    const ctx = await setup()
+    const definition = defineTool({
+      name: 'projected', description: 'projected result', parameters: {},
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'fallback' }] },
+      async execute() { return 'canonical' },
+      projectContent() { return [{ type: 'text', text: 'prepared' }] },
+    })
+    ctx.tools.register(definition)
+    ctx.on('tools/pre-execute', async (_exec, next) => {
+      definition.projectContent = () => [{ type: 'text', text: 'later definition' }]
+      return next()
+    })
+    ctx.on('tools/post-execute', async (_exec, result, next): Promise<PostToolDecision> => {
+      await next()
+      expect(result.content).toEqual([{ type: 'text', text: 'prepared' }])
+      return { kind: 'accept', content: [{ type: 'text', text: 'policy result' }] }
+    })
+    try {
+      expect(Object.keys(ctx.tools.schemas()[0]!)).not.toContain('projectContent')
+      const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('projection'), name: 'projected', arguments: {} })
+      expect(result.content).toEqual([{ type: 'text', text: 'policy result' }])
+      if (result.isError) throw new Error('expected successful projection')
+      expect(result.value).toBe('canonical')
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('normalizes a throwing content projector without running post-execute', async () => {
+    const ctx = await setup()
+    let postCalls = 0
+    ctx.tools.register({ ...echoTool, projectContent() { throw new Error('projection failed') } })
+    ctx.on('tools/post-execute', async (_exec, _result, next) => { postCalls++; return next() })
+    try {
+      const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('projection-error'), name: 'echo', arguments: {} })
+      expect(result.isError).toBe(true)
+      expect(JSON.stringify(result.content)).toContain('projection failed')
+      expect(postCalls).toBe(0)
+    } finally { await ctx.fiber.dispose() }
+  })
+
   it('schemas() excludes timeoutMs — the budget must never reach the model', async () => {
     const ctx = await setup()
     ctx.tools.register(defineContentToolFixture({

@@ -27,6 +27,8 @@ This optional browser plugin adds an outline microphone icon between the model s
 
 Enable the [voice input bundle](../voice-input-bundle/README.md) from Plugins. After cache inspection, missing models trigger a setup prompt with Go to setup and Later actions. Go to setup opens bundle details; Download and prepare starts installation there. Intact cached models need no prompt or repeated installation. Before preparation, local providers can show their estimated disk, memory and setup-time requirements. The preparation summary starts collapsed; expand it to inspect completed, current and pending steps. Once ready, click the microphone, allow access and click Stop to transcribe. Cancel or Escape discards capture. Recognition feedback stays inside the toolbar. Provider and language preferences are saved from bundle details through the Settings service. Browser microphone access requires HTTPS or loopback and operating-system permission.
 
+Before downloading or retrying, **Model download source** offers Automatic and the origins advertised by the Host. SenseVoice normally offers Hugging Face and HF-Mirror; a fixed private deployment exposes only its configured origin. Manual selection uses only that source, while Automatic preserves the provider’s comparison and fallback policy. The choice is retained for retries in the current card, without changing deployment configuration or recognition preferences. Source controls are unavailable during preparation and hidden when resources are ready.
+
 -----
 
 <a id="understand-the-implementation"></a>

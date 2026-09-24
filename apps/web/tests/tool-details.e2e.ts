@@ -8,7 +8,7 @@ import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
+import { expandOwningTurnProcess, newEnglishPage, saveFailureShot, scrollIntoView } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/tool-details', import.meta.url))
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/tool-details/session.v3.jsonl', import.meta.url))
@@ -73,7 +73,7 @@ describe.skipIf(MODE === 'record')('web e2e: compact Tool details', () => {
     const card = page.locator('[data-tool="schedule_create"]')
     expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     const reminders = page.locator('[data-tool="schedule_list"]')
-    await reminders.scrollIntoViewIfNeeded()
+    await scrollIntoView(reminders)
     const list = reminders.getByRole('list').first()
     await list.evaluate((element) => {
       const second = element.children[1]!

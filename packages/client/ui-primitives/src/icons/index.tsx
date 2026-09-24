@@ -640,8 +640,8 @@ export const IconWarningTriangleOutlineMedium = (props: IconProps) => (
 
 const IconUserOutlineArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
-    <path d="M8 8.5C9.65685 8.5 11 7.15685 11 5.5C11 3.84315 9.65685 2.5 8 2.5C6.34315 2.5 5 3.84315 5 5.5C5 7.15685 6.34315 8.5 8 8.5Z" stroke="currentColor" />
-    <path d="M1.5 14.5C1.5 11.25 4.25 10 8 10C11.75 10 14.5 11.25 14.5 14.5" stroke="currentColor" />
+    <path d="M8 8.25C9.51878 8.25 10.75 7.01878 10.75 5.5C10.75 3.98122 9.51878 2.75 8 2.75C6.48122 2.75 5.25 3.98122 5.25 5.5C5.25 7.01878 6.48122 8.25 8 8.25Z" stroke="currentColor" />
+    <path d="M2.5 14.5C2.5 11.5 5.25 10.25 8 10.25C10.75 10.25 13.5 11.5 13.5 14.5" stroke="currentColor" />
   </svg>
 )
 
@@ -653,6 +653,25 @@ export const IconUserOutlineRegular = (props: IconProps) => (
 /** Medium IconUserOutline artwork with a 1.3px stroke. */
 export const IconUserOutlineMedium = (props: IconProps) => (
   <IconUserOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
+)
+
+const IconUsersOutlineArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
+    <path d="M6 8.25C7.51878 8.25 8.75 7.01878 8.75 5.5C8.75 3.98122 7.51878 2.75 6 2.75C4.48122 2.75 3.25 3.98122 3.25 5.5C3.25 7.01878 4.48122 8.25 6 8.25Z" stroke="currentColor" />
+    <path d="M1 14.5C1 11.5 3.5 10.25 6 10.25C8.5 10.25 11 11.5 11 14.5" stroke="currentColor" />
+    <path d="M10.5 2.9C11.65 3.35 12.45 4.35 12.45 5.5C12.45 6.65 11.65 7.65 10.5 8.1" stroke="currentColor" />
+    <path d="M12.4 10.6C13.9 11.3 15 12.6 15 14.5" stroke="currentColor" />
+  </svg>
+)
+
+/** Regular one-pixel IconUsersOutline artwork: a front person with a second person behind. */
+export const IconUsersOutlineRegular = (props: IconProps) => (
+  <IconUsersOutlineArtwork {...props} strokeWidth={ICON_REGULAR_STROKE} />
+)
+
+/** Medium IconUsersOutline artwork with a 1.3px stroke. */
+export const IconUsersOutlineMedium = (props: IconProps) => (
+  <IconUsersOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
 )
 
 const IconPaperPlaneOutlineArtwork = ({ size = 14, className, strokeWidth }: WeightedIconProps) => (

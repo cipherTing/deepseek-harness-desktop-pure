@@ -475,11 +475,16 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await page.context().setOffline(false)
     await page.reload({ waitUntil: 'load' })
     await page.locator('[data-sidebar-right-expand]').click()
-    await expect.poll(() => page.getByRole('alert').innerText()).toContain('no longer exists')
+    const terminal = page.locator('[data-sidebar-terminal]')
+    let unavailableSnapshot = ''
+    // Mounting can refresh a failed recovered view; readiness and comparison use the same DOM sample.
+    await expect.poll(async () => {
+      unavailableSnapshot = await terminal.ariaSnapshot()
+      return unavailableSnapshot
+    }).toContain('no longer exists')
     expect(handles).toHaveLength(1)
     const unavailable = fileURLToPath(new URL('./expected/sidebar-terminal/unavailable.expected.md', import.meta.url))
-    const terminal = page.locator('[data-sidebar-terminal]')
-    await compareOrRefreshGolden(unavailable, await terminal.ariaSnapshot(), webSnapshotMode())
+    await compareOrRefreshGolden(unavailable, unavailableSnapshot, webSnapshotMode())
     await terminal.screenshot({ path: `${shots}/unavailable.png`, animations: 'disabled' })
     const tabCount = await page.locator('[data-dockkit-tab]').count()
     const create = terminal.getByRole('button', { name: 'New terminal', exact: true })

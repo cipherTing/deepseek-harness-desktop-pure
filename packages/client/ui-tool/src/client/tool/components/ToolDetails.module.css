@@ -232,14 +232,12 @@
   overflow: auto;
 }
 
+.root .item:has(> .code:only-child) { padding: 0; }
+.root .item > .code:only-child { margin: 0; }
+
 .root .group .item:has(> .code:only-child) {
   padding: 4px 0 0 20px;
 }
-
-.root .group .item > .code:only-child { margin: 0; }
-
-.root .code [data-code-block-banner] { padding: 4px 10px; }
-.root .code pre { padding: 6px 10px 8px; }
 
 .path {
   flex: 1;

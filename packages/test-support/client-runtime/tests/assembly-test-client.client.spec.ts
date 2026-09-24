@@ -32,6 +32,9 @@ async function started(plan: AssemblyPlan, options?: TestClientOptions): Promise
 
 describe('TestClient (jsdom)', () => {
   it('boots the whole web-app roster, connects, mounts, and disposes with nothing unmatched', async () => {
+    // Exercise missing-API cleanup independently of the suite's browser defaults.
+    vi.stubGlobal('ResizeObserver', undefined)
+    onTestFinished(() => { vi.unstubAllGlobals() })
     const mock = RemoteMock.create().load(remoteDefaultResponses)
     const client = await TestClient.start({ roster: webApp }, mock, { mount: true })
     expect(client.connection.state.getSnapshot()).toBe('connected')

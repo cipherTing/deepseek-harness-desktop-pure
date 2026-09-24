@@ -42,6 +42,10 @@ function row(overrides: Partial<PackageRow> = {}): PackageRow {
   return { entryId: 'include:sidebar' as PluginEntryId, rowId: 'sidebar', moduleName: 'dsh-better-sidebar', enabled: true, phase: 'active', ...overrides }
 }
 
+const INCOMPATIBLE = { name: 'dsh-late', version: '2.0.0', runtimeVersion: '0.1.0', peers: { '@deepseek-ai/dsh': '^0.2.0', '@deepseek-ai/dsh-core': '^0.2.0' } }
+/** The English sentence an incompatibility of {@link INCOMPATIBLE}, optionally renamed, reads as. */
+const incompatibleText = (name = INCOMPATIBLE.name): string => en.reasonIncompatibleVersion
+  .replace('{plugin}', `${name}@2.0.0`).replace('{runtime}', '0.1.0').replace('{peers}', '@deepseek-ai/dsh ^0.2.0, @deepseek-ai/dsh-core ^0.2.0')
 const MIRROR = 'https://registry.npmmirror.com/'
 const OFFICIAL = 'https://registry.npmjs.org/'
 
@@ -106,6 +110,7 @@ function renderTab(
     toggleRegistryOptions: vi.fn(),
     chooseRegistry: vi.fn(),
     changeRegistry: vi.fn(),
+    useGithubMirror: vi.fn(),
     approveBuildsAndRetry: vi.fn(),
     enableInstalled: vi.fn(),
     clearHighlight: vi.fn(),
@@ -754,6 +759,11 @@ describe('PluginManagerPage', () => {
     expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonNotBundle}`)).toBeTruthy()
     set({ packages: [pkg({ error: { code: 'operation-error' } })] })
     expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonOperationError}`)).toBeTruthy()
+    // An incompatibility reads from its structured packages in the dictionary's words, one sentence per package.
+    set({ packages: [pkg({ error: { code: 'incompatible-version', incompatible: [INCOMPATIBLE, { ...INCOMPATIBLE, name: 'other' }] } })] })
+    expect(within(detail).getByText(`${en.reasonLabel}: ${incompatibleText()} ${incompatibleText('other')}`)).toBeTruthy()
+    set({ packages: [pkg({ error: { code: 'incompatible-version' } })] })
+    expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonIncompatibleVersionUnnamed}`)).toBeTruthy()
     fireEvent.click(within(detail).getByRole('button', { name: en.backToList }))
     expect(document.querySelector('[data-plugin-detail]')).toBeNull()
     // A bundle that leaves the list drops back to the cards.
@@ -1045,6 +1055,12 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.reasonNotBundle)).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: 'ERR_PNPM_ADDING_TO_ROOT', code: 'operation-error' } } })
     expect(screen.getByText('ERR_PNPM_ADDING_TO_ROOT')).toBeTruthy()
+    // A compatibility refusal outranks the kind pnpm's exit was classified as.
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed',
+      failure: { reason: '', code: 'incompatible-version', incompatible: [INCOMPATIBLE], kind: 'unknown' } } })
+    expect(screen.getByText(incompatibleText())).toBeTruthy()
+    set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: '', code: 'incompatible-version' } } })
+    expect(screen.getByText(en.reasonIncompatibleVersionUnnamed)).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: 'the transport said so' } } })
     expect(screen.getByText('the transport said so')).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: '' } } })
@@ -1054,6 +1070,63 @@ describe('PluginManagerPage', () => {
     // A tarball spec reads by its kind too.
     set({ install: { ...IDLE_INSTALL, open: true, spec: '/p/x.tgz', phase: 'failed', subject: { spec: '/p/x.tgz', status: 'accepted', kind: 'tarball', bundle: null, registry: null }, failure: null } })
     expect(screen.getByText(en.installSubjectTarball)).toBeTruthy()
+  })
+
+  it.each(['network', 'timeout'] as const)('shows GitHub recovery only after a %s failure and returns to package input', (kind) => {
+    const subject = { spec: 'github:a/b', status: 'accepted', kind: 'git', bundle: null, registry: null, host: 'github.com' } as const
+    const failed: InstallState = {
+      ...IDLE_INSTALL, open: true, spec: subject.spec, registries: REGISTRIES, phase: 'failed', subject,
+      failure: { reason: 'GitHub connection failed', kind, failedAt: 'spec-host' },
+    }
+    const { actions, set, setLanguage } = renderTab({ install: { ...failed, phase: 'idle', failure: null } })
+    expect(screen.queryByText(en.installGithubFailedTitle)).toBeNull()
+    set({ install: failed })
+    const dialog = screen.getByRole('dialog', { name: kind === 'timeout' ? en.installGithubTimeoutTitle : en.installGithubFailedTitle })
+    expect(within(dialog).getByText(en.installGithubFailedDescription)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en.installRetry })).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: en.installUseGithubMirror }))
+    expect(actions.useGithubMirror).toHaveBeenCalledOnce()
+    expect(actions.runInstall).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: en.cancel }))
+    expect(actions.closeInstall).toHaveBeenCalledOnce()
+    setLanguage(zh)
+    expect(screen.getByRole('dialog', { name: kind === 'timeout' ? '连接 GitHub 超时' : '无法访问 GitHub' })).toBeTruthy()
+    expect(screen.getByText('请尝试其他安装来源。')).toBeTruthy()
+    set({ install: { ...IDLE_INSTALL, open: true, mirrorRecovery: true, registries: REGISTRIES, registry: { kind: 'offered', registry: MIRROR } } })
+    const form = within(screen.getByRole('dialog', { name: zh.installTitle }))
+    expect(form.queryByText(zh.installDescription)).toBeNull()
+    expect(form.queryByRole('textbox', { name: zh.installSpecLabel })).toBeNull()
+    const input = screen.getByRole('textbox', { name: zh.installPackageLabel })
+    expect(input).toHaveProperty('value', '')
+    expect(document.activeElement).toBe(input)
+    expect(screen.getByRole('button', { name: zh.installRun })).toHaveProperty('disabled', true)
+    expect(form.getAllByRole('button')).toEqual([
+      form.getByRole('button', { name: zh.close }),
+      form.getByRole('button', { name: zh.installGuideToggle }),
+      form.getByRole('button', { name: '安装源 中国大陆镜像源' }),
+      form.getByRole('button', { name: zh.installRun }),
+    ])
+  })
+
+  it('keeps the ordinary failure view for registry errors, other hosts, and unavailable mirrors', () => {
+    const failed: InstallState = {
+      ...IDLE_INSTALL, open: true, registries: REGISTRIES, phase: 'failed',
+      subject: { spec: 'github:a/b', status: 'accepted', kind: 'git', bundle: null, registry: null, host: 'github.com' },
+      failure: { reason: 'failed', kind: 'network', failedAt: 'registry' },
+    }
+    const { set } = renderTab({ install: failed })
+    expect(screen.getByRole('button', { name: en.installChangeRegistry })).toBeTruthy()
+    for (const patch of [
+      { subject: { ...failed.subject!, host: 'gitlab.com' } },
+      { subject: null },
+      { registries: { ...REGISTRIES, fallbackRegistries: [] } },
+      { registries: null },
+      { failure: { reason: 'not found', kind: 'not-found' as const, failedAt: 'spec-host' as const } },
+    ]) {
+      set({ install: { ...failed, failure: { reason: 'failed', kind: 'network', failedAt: 'spec-host' }, ...patch } })
+      expect(screen.queryByRole('dialog', { name: en.installGithubFailedTitle })).toBeNull()
+      expect(screen.getByRole('button', { name: en.installRetry })).toBeTruthy()
+    }
   })
 
   it('offers the registries under the spec, folded by default, and picks or types one', () => {
@@ -1231,6 +1304,8 @@ describe('PluginManagerPage', () => {
       expect(screen.getByRole('alert').textContent).toContain(en.failedEnable.replace('{reason}', 'the tree rejected it'))
       set({ notice: { kind: 'failed', action: 'uninstall', code: 'bundle-in-use', reason: '', packageName: 'pkg-1', seq: 5 } })
       expect(screen.getByRole('alert').textContent).toContain(en.failedUninstall.replace('{reason}', en.reasonBundleInUse))
+      set({ notice: { kind: 'failed', action: 'enable', code: 'incompatible-version', incompatible: [INCOMPATIBLE], reason: '', packageName: 'pkg-1', seq: 5 } })
+      expect(screen.getByRole('alert').textContent).toContain(en.failedEnable.replace('{reason}', incompatibleText()))
       set({ notice: { kind: 'failed', action: 'rowDisable', code: 'operation-error', reason: 'EACCES', packageName: 'pkg-1', seq: 6 } })
       expect(screen.getByRole('alert').textContent).toContain(en.failedRowDisable.replace('{reason}', 'EACCES'))
       set({ notice: { kind: 'failed', action: 'disable', reason: '', packageName: 'pkg-1', seq: 7 } })

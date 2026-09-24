@@ -520,6 +520,12 @@ async list(): Promise<AgentPreset[]>
  */
 async resolve(id?: string): Promise<AgentPreset>
 
+/** Read one declaration's child plugin list as YAML, for viewing only.
+ * @param agentPreset Preset identity.
+ * @returns The declared composition beside its published metadata.
+ */
+@Remote('read') readDocument(agentPreset: string): Promise<AgentPresetDocument>
+
 /** Bind an unpublished Agent to the current preset revision.
  * @param ctx Agent context from its setup callback.
  * @param id Requested preset, or the default.

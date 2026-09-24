@@ -1,6 +1,7 @@
 /** Read-only help stays local to Settings and never changes the selected preset. */
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button, IconCloseOutlineRegular, IconListPenOutlineRegular, MarkdownText, Modal, SegmentedTabs, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AgentPresetSettingsKey } from './locales.ts'
 import css from './PresetGuideDialog.module.css'
@@ -32,13 +33,32 @@ export function presetGuide(id: string, trust: string): PresetGuide | undefined 
   return trust === 'system' ? guides.get(id) : undefined
 }
 
+/** Keep keyboard focus inside a preset reader while Tab moves through its controls.
+ * @param event Keyboard event from the active reader.
+ */
+export function trapPresetReaderTab(event: KeyboardEvent<HTMLDivElement>): void {
+  if (event.key !== 'Tab') return
+  const targets = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+    'button:not([disabled]):not([tabindex="-1"]), [tabindex="0"]',
+  )).filter(element => !element.closest('[hidden]'))
+  const first = targets[0]
+  const last = targets[targets.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
+
 /** Curated usage dictionaries contain only level-three example sections. */
 function GuideUsage({ text, t }: {
   text: string
-  t: (key: AgentPresetSettingsKey) => string
+  t: TranslateNS<'settings.agentPreset'>
 }): ReactNode {
   const labels = {
-    code: { copyLabel: t('guideCopy'), copiedLabel: t('guideCopied') },
+    code: { copyLabel: t('guideCopy'), copiedLabel: t('guideCopied'), toolbarLabels: { codeLabel: t('codeBlock.title'), wrapLabel: t('codeBlock.wrap'), unwrapLabel: t('codeBlock.unwrap') } },
     footnotes: t('guideFootnotes'),
   }
   return text.split(/(?=^### )/m).map((section) => {
@@ -67,7 +87,7 @@ function GuideUsage({ text, t }: {
 export function PresetGuideDialog({ guide, initialPage, t, onClose }: {
   guide: PresetGuide
   initialPage: PresetGuidePage
-  t: (key: AgentPresetSettingsKey) => string
+  t: TranslateNS<'settings.agentPreset'>
   onClose: () => void
 }): ReactNode {
   const [page, setPage] = useState(initialPage)
@@ -89,20 +109,7 @@ export function PresetGuideDialog({ guide, initialPage, t, onClose }: {
       event.preventDefault()
       event.stopPropagation()
       onClose()
-    } else if (event.key === 'Tab') {
-      const targets = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
-        'button:not([disabled]):not([tabindex="-1"]), [tabindex="0"]',
-      )).filter(element => !element.closest('[hidden]'))
-      const first = targets[0]
-      const last = targets[targets.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last?.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first?.focus()
-      }
-    }
+    } else trapPresetReaderTab(event)
   }
 
   return (
@@ -144,7 +151,7 @@ export function PresetGuideDialog({ guide, initialPage, t, onClose }: {
                 <MarkdownText
                   text={t(guide.explanation)}
                   labels={{
-                    code: { copyLabel: t('guideCopy'), copiedLabel: t('guideCopied') },
+                    code: { copyLabel: t('guideCopy'), copiedLabel: t('guideCopied'), toolbarLabels: { codeLabel: t('codeBlock.title'), wrapLabel: t('codeBlock.wrap'), unwrapLabel: t('codeBlock.unwrap') } },
                     footnotes: t('guideFootnotes'),
                   }}
                 />

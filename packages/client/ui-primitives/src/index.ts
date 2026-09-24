@@ -2,6 +2,7 @@
  * Cordis-free React primitives styled only through `--dsw-*` tokens.
  */
 
+export type { CodeToolbarLabels } from './CodeToolbar.tsx'
 export { StateDot } from './StateDot.tsx'
 export type { StateDotState } from './StateDot.tsx'
 export { DisclosureRow } from './DisclosureRow.tsx'
@@ -101,3 +102,5 @@ export * from './icons/index.tsx'
 export {
   PluginArtworkTerminal, PluginArtworkLoop, PluginArtworkSubagent, PluginArtworkSearch, PluginArtworkDefault,
 } from './plugin-artwork.tsx'
+export { ImageLightbox } from './ImageLightbox.tsx'
+export type { ImageLightboxLabels } from './ImageLightbox.tsx'

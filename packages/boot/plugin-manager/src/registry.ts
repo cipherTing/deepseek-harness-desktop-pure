@@ -13,6 +13,9 @@ import type { PluginInstallFailureKind, PluginRegistries, Registry } from './typ
 /** npm's own registry: what pnpm names without any configuration, and the one public registry a plan trusts as such. */
 export const OFFICIAL_NPM_REGISTRY = 'https://registry.npmjs.org/'
 
+/** Public npmmirror URL shared by the fallback configuration and public-registry comparison. */
+export const NPMMIRROR_REGISTRY = 'https://registry.npmmirror.com/'
+
 /** An http(s) URL, as pnpm's `--registry` takes it. */
 export const REGISTRY_URL = /^https?:\/\/\S+$/
 

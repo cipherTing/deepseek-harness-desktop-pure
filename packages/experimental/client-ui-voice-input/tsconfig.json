@@ -54,7 +54,7 @@
       "path": "../../client/store"
     },
     {
-      "path": "../../client/ui-plugin-manager"
+      "path": "../../client/ui-plugin-manager/tsconfig.client.json"
     }
   ]
 }

@@ -1,13 +1,21 @@
-/* Zero-height sticky slot, like the back-to-bottom control: the rail floats
-   over the transcript's right gutter without extending scrollHeight. */
+/* The rail is a sibling of the clipped transcript, not its descendant. */
 .slot {
-  position: sticky;
+  position: absolute;
   top: 0;
+  right: 0;
+  left: 0;
   /* Above transcript CodeBlock banners (z-index 6). The rail band excludes
      the composer, so its preview never needs to cross the footer. */
   z-index: 7;
   height: 0;
+  /* Query the transcript's usable width while keeping the rail full-bleed. */
+  padding-inline: calc(var(--dsh-composer-side-clearance) + 16px);
+  container-type: inline-size;
   pointer-events: none;
+}
+
+:global([data-conversation-scroll]) .slot {
+  position: sticky;
 }
 
 .frame {
@@ -22,9 +30,7 @@
 
   position: absolute;
   top: calc(var(--turn-rail-band) / 2);
-  /* Flush with the scrollport edge: the slot sits inside the transcript's side
-     padding, so the rail gives that inset back and keeps 12px of its own. */
-  right: calc(12px - (var(--dsh-composer-side-clearance) + 16px));
+  right: 12px;
   width: 28px;
   /* Fixed-pitch marks never compress: a ladder taller than the band scrolls
      inside this frame instead of pushing marks under the composer or above
@@ -198,7 +204,7 @@
 }
 
 @container (max-width: 900px) {
-  .slot {
+  .frame {
     display: none;
   }
 }

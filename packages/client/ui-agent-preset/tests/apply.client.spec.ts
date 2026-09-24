@@ -131,9 +131,9 @@ async function bench(options: {
       }
       return Promise.resolve(ROSTER)
     },
-    read: () => Promise.resolve({
+    read: (id: string) => Promise.resolve({
       ok: true as const,
-      value: { agentPreset: 'standard', content: '', revision: 'rev' },
+      value: { agentPreset: id, content: `# ${id}\n[]\n` },
     }),
     save: (id: string) => {
       calls.push(`save:${id}`)
@@ -350,6 +350,11 @@ describe('ui-agent-preset apply', () => {
     await section.makeDefault('standard')
     expect(section.hooks.agentPresetSection.getSnapshot().rows)
       .toEqual([{ id: 'standard', isDefault: true }])
+    await section.view('standard')
+    expect(section.hooks.agentPresetSection.getSnapshot().view)
+      .toEqual({ id: 'standard', title: 'standard', content: '# standard\n[]\n' })
+    section.closeView()
+    expect(section.hooks.agentPresetSection.getSnapshot().view).toBeNull()
   })
 
   it('refreshes a showing surface when its namespace changes, and ignores others', async () => {

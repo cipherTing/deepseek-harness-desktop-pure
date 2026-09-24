@@ -22,6 +22,8 @@ The rail uses ResizeObserver-delivered viewport dimensions and fixed item sizes.
 
 [ChatReading](../../../../packages/client/ui-chat/src/client/chat/use-chat-reading.ts) owns follow-tail policy, semantic restoration, and sampled reader movement. [ChatNavigation](../../../../packages/client/ui-chat/src/client/chat/use-chat-navigation.ts) owns loaded or unloaded jumps, paging anchors, replacement tasks, and fallback. [useChatScroll](../../../../packages/client/ui-chat/src/client/chat/use-chat-scroll.ts) supplies committed inputs and coordinates these owners. Timer and animation-frame completion invoke the owners directly instead of incrementing React tick state. The [pinned-delivery rule](../../../../packages/client/ui-chat/README.md#scroll-ownership) remains independently necessary: small reader gestures cannot be erased by intervening layout growth.
 
+Shared nested-follow mechanics and control placement are recorded in the [Chat scroll and footer decision](../bug-fix/2026-09-22-chat-scroll-follow-and-footer-geometry.md); sampled outer reading and historical navigation retain the owners above.
+
 ### One publication per historical jump
 
 [Session.loadThrough](../../../../packages/api/session-controller/src/client/sessions/session.ts) retains accepted pages and a private paging cursor until its shared target is covered or loading ends. It reverses the page list and flattens it once, then publishes one ordered prepend. Live events continue through their normal publication path. A later page failure publishes the successful prefix once; stream or window replacement discards obsolete buffered pages. Single-page `loadOlder` remains immediate, and repeated jump requests retain the existing lowest-target policy.

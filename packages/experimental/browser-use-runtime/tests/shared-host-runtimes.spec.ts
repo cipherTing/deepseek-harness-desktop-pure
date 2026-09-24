@@ -28,8 +28,8 @@ describe('profile installs share the installation host runtime instances', () =>
   it('declares every identity-bearing host runtime as a peer, never a dependency', async () => {
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Manifest
     for (const name of SHARED_HOST_RUNTIMES) {
-      expect(manifest.peerDependencies?.[name], `${name} must be a peerDependency`).toBe('workspace:^')
-      expect(manifest.devDependencies?.[name], `${name} must also be a devDependency`).toBe('workspace:^')
+      expect(manifest.peerDependencies?.[name], `${name} must be a peerDependency`).toBe('workspace:*')
+      expect(manifest.devDependencies?.[name], `${name} must also be a devDependency`).toBe('workspace:*')
       expect(manifest.dependencies?.[name], `${name} must not be a dependency`).toBeUndefined()
     }
   })

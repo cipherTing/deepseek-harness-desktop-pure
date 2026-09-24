@@ -30,6 +30,6 @@
     "lib/client.js"
   ],
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^"
+    "@deepseek-ai/schemastery": "workspace:~"
   }
 }

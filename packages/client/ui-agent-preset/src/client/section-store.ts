@@ -1,10 +1,19 @@
-/** Preset roster and selection policy for the settings section. */
+/** Preset roster, selection policy and the read-only composition viewer for the settings section. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { writeDefaultPreset, writeModeSelectionEnabled } from './settings-store.ts'
 
+/** The read-only composition viewer over one preset. */
+export interface PresetView {
+  /** The preset being read. */
+  id: string
+  /** Display name the preset published, or its id. */
+  title: string
+  /** The declared child plugin list as YAML. */
+  content: string
+}
 /** Settings page state. */
 export interface AgentPresetSectionState {
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -12,15 +21,18 @@ export interface AgentPresetSectionState {
   showPicker: boolean
   policySaving: boolean
   rows: readonly AgentPresetRow[]
+  /** The open viewer, or null. */
+  view: PresetView | null
 }
-const INITIAL: AgentPresetSectionState = { status: 'idle', error: null, showPicker: true, policySaving: false, rows: [] }
+const INITIAL: AgentPresetSectionState = { status: 'idle', error: null, showPicker: true, policySaving: false, rows: [], view: null }
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error)
 
-/** Loads the roster and writes the default and chooser policy. */
+/** Loads the roster, writes the default and chooser policy, and reads one composition at a time. */
 export class AgentPresetSectionController {
-  /** Observable roster and selection state. */
+  /** Observable roster, selection and viewer state. */
   readonly store: SnapshotStore<AgentPresetSectionState> = createSnapshotStore(INITIAL)
   private loading: Promise<void> | undefined
+  private viewRequest = 0
   constructor(private readonly ctx: Context) {}
 
   private set(patch: Partial<AgentPresetSectionState>): void { this.store.set({ ...this.store.getSnapshot(), ...patch }) }
@@ -38,6 +50,24 @@ export class AgentPresetSectionController {
       this.set({ status: 'ready', error: null, rows: result.value.presets, showPicker: result.value.modeSelectionEnabled })
     } catch (error) { this.set({ status: 'error', error: message(error) }) }
   }
+
+  /** Open one preset's declared composition in the viewer.
+   * @param id Preset to read.
+   * @returns Once the read settles; a current failure lands in `error`, while a read superseded by close or another read is ignored.
+   */
+  async view(id: string): Promise<void> {
+    const request = ++this.viewRequest
+    this.set({ error: null, view: null })
+    try {
+      const result = await this.ctx.remote.agentPresets.read(id)
+      if (request !== this.viewRequest) return
+      if (!result.ok) throw new Error(result.error.message)
+      const { name, content } = result.value
+      this.set({ view: { id, title: name ?? id, content } })
+    } catch (error) { if (request === this.viewRequest) this.set({ error: message(error) }) }
+  }
+  /** Close the viewer. */
+  closeView(): void { this.viewRequest++; this.set({ view: null }) }
 
   /** Set the default and synchronize the current blank task when supplied.
    * @param id Selected default.

@@ -66,7 +66,7 @@
 
 .trigger:hover,
 .trigger:focus-visible {
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
 }
 
 .switcherTrigger:hover,
@@ -98,21 +98,41 @@
   max-width: min(400px, calc(100vw - 32px));
   max-height: min(560px, calc(100vh - 140px));
   padding: 3px;
-  overflow: auto;
+  overflow: hidden;
   border-radius: 16px;
-  background: var(--dsw-specific-menu);
-  backdrop-filter: var(--dsw-menu-backdrop-filter);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
 }
 
+/* The menu skin lives on a pseudo-element: backdrop-filter on the menu itself
+   would turn it into the containing block for fixed descendants, so the
+   sidebar-button Tooltip bubbles would be re-anchored into the menu and
+   clipped by its hidden overflow. */
+.menu::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: 16px;
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+}
+
+.menuBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
 .node {
   position: relative;
   min-width: 0;
 }
-.menu > .node {
+.menuBody > .node {
   margin-left: -2px;
 }
 

@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { AccountView, AccountDetails } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { PlatformBridge } from './PlatformOverlay.tsx'
@@ -21,7 +22,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'settings.account': AccountKey }
 }
 /** Services required by account settings. */
-export const inject = ['slots', 'locale', 'remote', 'remote.account']
+export const inject = ['slots', 'locale', 'remote', 'remote.account', 'theme']
 /** Register account UI only in the Desktop renderer. @param ctx - client plugin context. */
 export function apply(ctx: Context): void {
   if (!('dshDesktop' in globalThis)) return
@@ -81,9 +82,7 @@ export function apply(ctx: Context): void {
     ...nativePlatform === undefined ? {} : { platform: nativePlatform },
     refresh,
     contactUs() {
-      const profile = snapshot.details?.profile
       const url = contactUrl(config, {
-        uid: profile?.status === 'ready' ? profile.value.id : null,
         version: process.env.DSH_CLIENT_VERSION,
         locale: ctx.locale.getSnapshot().active === 'zh' ? 'zh-CN' : 'en',
         width: window.screen.width, height: window.screen.height, pixelRatio: window.devicePixelRatio,
@@ -92,10 +91,16 @@ export function apply(ctx: Context): void {
     },
     showLogin(visible) { publish({ ...snapshot, loginVisible: visible }) },
     setOnboarding(active) { publish({ ...snapshot, onboarding: active }) },
-    hooks: { account: {
-      getSnapshot: () => snapshot,
-      subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
-    } },
+    hooks: {
+      account: {
+        getSnapshot: () => snapshot,
+        subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+      },
+      theme: {
+        getSnapshot: () => ctx.theme.getTheme(),
+        subscribe: listener => ctx.on('theme/change', listener),
+      },
+    },
     async start() {
       publish({ ...snapshot, loginVisible: true, loginFailed: false })
       const transport = (globalThis as typeof globalThis & {

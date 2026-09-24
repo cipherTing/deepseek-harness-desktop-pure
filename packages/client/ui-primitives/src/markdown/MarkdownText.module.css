@@ -401,24 +401,6 @@
   z-index: auto;
 }
 
-.compact [data-code-block-banner] {
-  padding: 4px 8px;
-  font: inherit;
-}
-
-.compact [data-code-block-banner] > :first-child {
-  font-size: inherit;
-  line-height: inherit;
-  color: inherit;
-}
-
-.compact pre {
-  margin: 4px 0;
-  padding: 8px;
-  font-size: inherit;
-  line-height: inherit;
-}
-
 /* Shiki writes token colors inline; compact code uses the surrounding text color. */
 .compact pre,
 .compact pre :is(code, span) {
@@ -459,4 +441,27 @@
 
 .compact :global(.katex-display) {
   margin: 4px 0;
+}
+
+.imageButton {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  vertical-align: middle;
+  cursor: zoom-in;
+}
+.imageButton .image { max-width: min(100%, 640px); max-height: 360px; }
+.imageButton:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 3px; }
+.previewName {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
 }

@@ -524,6 +524,75 @@ describe('web e2e: long Chat scroll contract', () => {
     await browser?.close()
   })
 
+  it.skipIf(MODE === 'record')('keeps floating controls anchored outside the clipped transcript', async () => {
+    await withScrollWorld({
+      failureShot: 'web-e2e-chat-floating-controls',
+      seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
+    }, async (world) => {
+      await openSeed(world.page, HISTORY_FIXTURE, HISTORY_FIXTURE.markers.assistant(HISTORY_FIXTURE.turns))
+      const host = world.page.locator('[data-conversation-scroll]')
+      const backToBottom = world.page.getByRole('button', { name: 'Back to bottom', exact: true })
+      const expectControls = async (): Promise<void> => {
+        await expect.poll(() => host.evaluate((element) => {
+          const rail = element.querySelector('nav[aria-label="Turn navigation"]')
+          const button = element.querySelector('button[aria-label="Back to bottom"]')
+          const composer = element.querySelector('[data-composer-seat]')
+          if (rail === null || button === null || composer === null) return Infinity
+          const viewport = element.getBoundingClientRect()
+          const railBox = rail.getBoundingClientRect()
+          const buttonBox = button.getBoundingClientRect()
+          const composerBox = composer.getBoundingClientRect()
+          const top = viewport.top + element.clientTop
+          return Math.max(
+            Math.abs((railBox.top + railBox.bottom) / 2 - (top + composerBox.top) / 2),
+            Math.abs(viewport.left + element.clientLeft + element.clientWidth - railBox.right - 12),
+            Math.abs(composerBox.top - buttonBox.bottom - 16),
+          )
+        }), { timeout: 10_000 }).toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
+      }
+
+      await wheelTranscript(world.page, -1_200)
+      await backToBottom.waitFor({ timeout: 10_000 })
+      await expectControls()
+      await wheelTranscript(world.page, -1_200)
+      await expectControls()
+
+      const seat = world.page.locator('[data-composer-seat]')
+      const initialHeight = await seat.evaluate(element => element.getBoundingClientRect().height)
+      const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
+      await composer.fill(Array.from({ length: 8 }, (_, index) => `draft line ${index}`).join('\n'))
+      await expect.poll(() => seat.evaluate(element => element.getBoundingClientRect().height))
+        .toBeGreaterThan(initialHeight + 40)
+      await expectControls()
+      await composer.fill('')
+      await expectControls()
+
+      const rail = world.page.getByRole('navigation', { name: 'Turn navigation', includeHidden: true })
+      const frame = rail.locator('../..')
+      const originalStyle = await frame.getAttribute('style')
+      try {
+        for (const clearance of [16, 8]) {
+          for (const contentWidth of [901, 900, 899, 901]) {
+            await frame.evaluate((element, { clearance, contentWidth }) => {
+              element.style.width = `${contentWidth + 2 * (clearance + 16)}px`
+              element.style.setProperty('--dsh-composer-side-clearance', `${clearance}px`)
+            }, { clearance, contentWidth })
+            await expect.poll(() => rail.isVisible()).toBe(contentWidth > 900)
+          }
+        }
+      } finally {
+        await frame.evaluate((element, style) => {
+          if (style === null) element.removeAttribute('style')
+          else element.setAttribute('style', style)
+        }, originalStyle)
+      }
+      await expectControls()
+      await backToBottom.click()
+      await expectBottom(world.page)
+      assertClean(world)
+    })
+  })
+
   it.skipIf(MODE === 'record')('preserves the reader anchor when history and streaming arrive concurrently', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-history-stream',
@@ -607,6 +676,131 @@ describe('web e2e: long Chat scroll contract', () => {
       assertClean(world)
     })
   }, 180_000)
+
+  it.skipIf(MODE === 'record')('follows a growing process group independently of the outer transcript', async () => {
+    const parts = [
+      'GROUP_SCROLL_START\n\n',
+      ...Array.from({ length: 4 }, (_, batch) => Array.from({ length: 20 }, (_, row) =>
+        `Group batch ${batch} paragraph ${row}: inspect the next recorded operation.\n\n`).join('')),
+      'GROUP_SCROLL_END\n\n',
+    ]
+    const chunks: StreamChunk[] = [
+      { type: 'block-start', index: 0, blockType: 'reasoning' },
+      ...parts.map((text): StreamChunk => ({ type: 'reasoning-delta', index: 0, text })),
+      { type: 'block-end', index: 0, block: { type: 'reasoning', text: parts.join('') } },
+      { type: 'block-start', index: 1, blockType: 'text' },
+      { type: 'text-delta', index: 1, text: 'GROUP_SCROLL_DONE' },
+      { type: 'block-end', index: 1, block: { type: 'text', text: 'GROUP_SCROLL_DONE' } },
+      { type: 'usage', usage: { inputTokens: 256, outputTokens: 512 } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    await withScrollWorld({
+      failureShot: 'web-e2e-chat-process-follow',
+      replay: [replayEntry(chunks)],
+      seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
+    }, async (world) => {
+      await world.page.emulateMedia({ reducedMotion: 'no-preference' })
+      await openSeed(world.page, HISTORY_FIXTURE, HISTORY_FIXTURE.markers.assistant(HISTORY_FIXTURE.turns))
+      const gates = parts.slice(1).map(() => Promise.withResolvers<undefined>())
+      const dispose = world.scaffold.ctx.on('llm/stream', async function* (_options, next) {
+        let index = -1
+        for await (const chunk of next()) {
+          if (chunk.type === 'reasoning-delta') await gates[index++]?.promise
+          yield chunk
+        }
+      })
+      const settled = world.scaffold.whenTurnSettled(60_000)
+      try {
+        await world.page.locator('[data-composer-input][contenteditable="true"]').last().fill(
+          'Inspect the recorded operations while I scroll the conversation.',
+        )
+        await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
+        const group = world.page.locator('[data-step-process]:has([data-variant="think"][data-state="running"])')
+        await group.locator('[data-process-activity]').click()
+        await group.locator('[data-disclosure-row]').click()
+        const body = group.locator('[data-step-process-body]')
+        await nextPaint(world.page)
+        expect(await body.evaluate(element => element.scrollHeight <= element.clientHeight)).toBe(true)
+        const height = () => body.evaluate(element => element.scrollHeight)
+        const top = () => body.evaluate(element => element.scrollTop)
+        const expectGroupBottom = async (): Promise<void> => {
+          await expect.poll(() => body.evaluate(element =>
+            element.scrollHeight - element.clientHeight - element.scrollTop))
+            .toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
+        }
+        const grow = async (index: number): Promise<void> => {
+          const before = await height()
+          gates[index]!.resolve(undefined)
+          await expect.poll(height).toBeGreaterThan(before + 200)
+        }
+
+        // Outer following is a precondition independent of opening the inner disclosure.
+        const backToBottom = world.page.getByRole('button', { name: 'Back to bottom', exact: true })
+        await wheelTranscript(world.page, -400)
+        await backToBottom.click()
+        await expectBottom(world.page)
+        await grow(0)
+        await expectGroupBottom()
+        await expectBottom(world.page)
+        // Per-frame growth exercises the real observer and native animation
+        // independently of transport batching while the next model chunk waits.
+        const content = group.locator('[data-step-process-content]')
+        const heightStyle = await content.evaluate(element => element.style.height)
+        const beforeGrowth = await top()
+        try {
+          const duringGrowth = await body.evaluate(async (scroller) => {
+            const content = scroller.querySelector<HTMLElement>('[data-step-process-content]')!
+            const initialHeight = content.getBoundingClientRect().height
+            let halfway = scroller.scrollTop
+            for (let frame = 1; frame <= 60; frame++) {
+              content.style.height = `${initialHeight + frame * 20}px`
+              await new Promise<void>(resolve => requestAnimationFrame(() => { resolve() }))
+              if (frame === 30) halfway = scroller.scrollTop
+            }
+            return halfway
+          })
+          expect(duringGrowth).toBeGreaterThan(beforeGrowth + 20)
+          await expectGroupBottom()
+        } finally {
+          await content.evaluate((element, previous) => { element.style.height = previous }, heightStyle)
+        }
+        await expectGroupBottom()
+        await wheelTranscript(world.page, -800)
+        await backToBottom.waitFor()
+        const outerTop = (await scrollGeometry(world.page)).scrollTop
+        await grow(1)
+        await expectGroupBottom()
+        expect(Math.abs((await scrollGeometry(world.page)).scrollTop - outerTop)).toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
+
+        await backToBottom.click()
+        await expectBottom(world.page)
+        const pinnedTop = await top()
+        await body.hover()
+        await world.page.mouse.wheel(0, -160)
+        await expect.poll(top).toBeLessThan(pinnedTop - 100)
+        await nextPaint(world.page)
+        const readerTop = await top()
+        await grow(2)
+        expect(Math.abs(await top() - readerTop)).toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
+        await expectBottom(world.page)
+
+        await group.locator('[data-process-activity]').click()
+        await group.locator('[data-process-activity]').click()
+        await expectGroupBottom()
+
+        await body.hover()
+        await world.page.mouse.wheel(0, 10_000)
+        await expectGroupBottom()
+        await grow(3)
+        await expectGroupBottom()
+        assertClean(world)
+      } finally {
+        for (const gate of gates) gate.resolve(undefined)
+        dispose()
+        await settled
+      }
+    })
+  })
 
   it.skipIf(MODE === 'record')('virtualizes the outline rail and jumps to an unloaded turn', async () => {
     await withScrollWorld({

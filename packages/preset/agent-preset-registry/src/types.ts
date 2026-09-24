@@ -26,6 +26,18 @@ export interface AgentPresetRoster {
   readonly modeSelectionEnabled: boolean
 }
 
+/** One preset's declared composition, rendered for reading. */
+export interface AgentPresetDocument {
+  /** The preset the composition belongs to. */
+  readonly agentPreset: string
+  /** The declared child plugin list as entry-list YAML, `!!js` expressions included. */
+  readonly content: string
+  /** Display name the preset published. */
+  readonly name?: string
+  /** One sentence on what this preset is for. */
+  readonly description?: string
+}
+
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     /** No declaration supplies the requested identity. */

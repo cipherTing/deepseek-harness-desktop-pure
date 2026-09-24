@@ -27,7 +27,7 @@ export interface AccountView {
 
 /** Platform account identifier supplied by the current-user endpoint. */
 export type AccountUserId = Branded<'AccountUserId'>
-/** Display identity and support UID; contacts retain Platform masking. */
+/** Display identity; contacts retain Platform masking. */
 export interface AccountProfile {
   readonly id: AccountUserId | null
   readonly name: string | null

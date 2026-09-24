@@ -10,7 +10,7 @@ export interface Config {
 }
 /** Validate public questionnaire options. */
 export const Config: z<Partial<Config>, Config> = z.object({
-  contactFormUrl: z.string().pattern(/^https:\/\/[^/\s]+\//).default('https://trtgsjkv6r.feishu.cn/share/base/form/shrcnhcHE4A6lQaQ3v0raCXmBAg'),
+  contactFormUrl: z.string().pattern(/^https:\/\/[^/\s]+\//).default('https://trtgsjkv6r.feishu.cn/share/base/form/shrcnlCoGElW7MQznGy9r3YYXcg'),
   contactSource: z.string().default(''),
 })
 /** Bootstrap key containing no account credentials. */

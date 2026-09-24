@@ -60,4 +60,4 @@ No model request prefix changes.
 
 The [desktop login decision](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.md) records cancellation and storage ownership.
 
-PlatformSession may carry private deployment requestHeaders from Host to Electron main. Consumers must exclude those headers from renderer bootstrap and restrict them to the configured origin. mergePlatformCookies preserves unrelated cookie pairs while replacing matching names.
+PlatformSession may carry Host-only requestHeaders from Host to Electron main: deployment headers plus the provider's x-client-platform. Consumers must exclude those headers from renderer bootstrap and restrict them to the configured origin. mergePlatformCookies preserves unrelated cookie pairs while replacing matching names.

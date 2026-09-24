@@ -87,6 +87,7 @@ describe('ModelSelect reasoning effort', () => {
         reasoningEffort: 'max',
       })
       expect(trigger.getAttribute('aria-label')).toBe('选择模型，当前 DeepSeek-V4-Flash，推理等级 Max')
+      expect(document.activeElement).toBe(trigger)
     })
   })
 
@@ -196,10 +197,12 @@ describe('ModelSelect reasoning effort', () => {
       t={t}
     />)
 
-    fireEvent.click(screen.getByRole('button', { name: /选择模型|当前/ }))
+    const trigger = screen.getByRole('button', { name: /选择模型|当前/ })
+    fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ }))
     const toast = await screen.findByRole('alert')
+    expect(document.activeElement).toBe(trigger)
     expect(toast.textContent).toBe(sessionInUse
       ? zh['error.sessionInUse']
       : '模型操作失败：session/model-unavailable: session already contains images')
@@ -232,8 +235,8 @@ describe('ModelSelect reasoning effort', () => {
       expect(menu.style.left).toBe('12px')
       expect(menu.style.top).toBe('12px')
       // Interactions inside the trigger subtree or the portaled card stay open.
-      fireEvent.mouseDown(menu)
-      fireEvent.mouseDown(trigger)
+      expect(fireEvent.mouseDown(menu)).toBe(true)
+      expect(fireEvent.mouseDown(trigger)).toBe(false)
       fireEvent.blur(trigger, { relatedTarget: menu })
       expect(screen.getByRole('menu')).toBeTruthy()
       fireEvent.mouseDown(document.body)
@@ -313,6 +316,20 @@ describe('ModelSelect keyboard walk', () => {
     return select
   }
 
+  it.each(['model', 'effort'])('prevents button mousedown defaults in the %s pane without selecting it', (pane) => {
+    const select = mountOpen()
+    const cell = screen.getByRole('menuitem', { name: pane === 'model' ? /^模型/ : /推理等级/ })
+    expect(fireEvent.mouseDown(cell.firstElementChild!)).toBe(false)
+    fireEvent.click(cell)
+    const rows = screen.getAllByRole('menuitemradio')
+    const focused = document.activeElement
+    expect(fireEvent.mouseDown(rows[0]!.firstElementChild!)).toBe(false)
+    fireEvent.mouseUp(screen.getByRole('menu'))
+    expect(select).not.toHaveBeenCalled()
+    fireEvent.keyDown(focused!, { key: 'Escape' })
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: pane === 'model' ? /^模型/ : /推理等级/ }))
+  })
+
   it('↑↓ walk the rows of the shown pane, wrapping, and stay open', () => {
     mountOpen()
     // The trigger holds focus while the menu opens: the first forward step
@@ -369,8 +386,6 @@ describe('ModelSelect keyboard walk', () => {
       t={t}
     />)
     const trigger = screen.getByRole('button', { name: /选择模型/ })
-    // A real click focuses the trigger first; jsdom's does not.
-    trigger.focus()
     fireEvent.click(trigger)
     expect(fireEvent.keyDown(trigger, { key: 'Tab' })).toBe(false)
     // The root pane's first cell carries the current selection.
@@ -404,6 +419,7 @@ describe('ModelSelect keyboard walk', () => {
   })
 
   it('keeps the card navigable when a pane has no rows, and leaves a retry its Tab', () => {
+    const load = vi.fn()
     const directory = createSnapshotStore<ModelDirectoryState>(state({
       groups: [], failures: [], status: 'error', error: 'catalog down',
     }))
@@ -411,13 +427,11 @@ describe('ModelSelect keyboard walk', () => {
       locked={false}
       available
       directory={directory}
-      load={vi.fn()}
+      load={load}
       select={vi.fn().mockResolvedValue({ ok: true, value: undefined })}
       t={t}
     />)
     const trigger = screen.getByRole('button', { name: /选择模型/ })
-    // A real click focuses the trigger first; jsdom's does not.
-    trigger.focus()
     fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
     // No rows to hand the keyboard to: the trigger keeps it, so the card's
@@ -425,6 +439,10 @@ describe('ModelSelect keyboard walk', () => {
     expect(document.activeElement).toBe(trigger)
 
     const retry = screen.getByRole('button', { name: '重试' })
+    expect(fireEvent.mouseDown(retry)).toBe(false)
+    fireEvent.click(retry)
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('menu')).toBeTruthy()
     retry.focus()
     // A control that is not a row keeps the browser's traversal.
     expect(fireEvent.keyDown(retry, { key: 'Tab' })).toBe(true)

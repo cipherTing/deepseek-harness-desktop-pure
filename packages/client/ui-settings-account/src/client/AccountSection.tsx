@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react'
 import { Button, IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { PropsRuntime, PropsLocale, InjectFace, HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { PlatformOverlay, type PlatformBridge } from './PlatformOverlay.tsx'
 import { formatBalance } from './formatBalance.ts'
 import { AccountAvatar } from './AccountAvatar.tsx'
+import { authorizeUrlWithTheme } from './authorize-url.ts'
 import css from './AccountSection.module.css'
 
 /** Safe account snapshot shared by the settings page and launcher. */
@@ -30,11 +32,15 @@ export interface AccountSectionInjected {
   /** Desktop-only commands; absent in ordinary browsers. */
   platform?: PlatformBridge
 
-  /** Host-owned account stream observed through framework hooks. */
-  hooks: { account: HostObservable<AccountSnapshot> }
+  /** Account stream owned by the Host and theme snapshots published by the renderer, observed through framework hooks. */
+  hooks: {
+    account: HostObservable<AccountSnapshot>
+    /** Palette the Platform login pages follow. */
+    theme: HostObservable<ThemeSnapshot>
+  }
   /** @returns after account details are refreshed; concurrent refreshes share a request. */
   refresh: () => Promise<void>
-  /** Open the external support questionnaire with the current account and environment. */
+  /** Open the external support questionnaire with the current build and browser environment. */
   contactUs: () => void
   /** Open or dismiss the login dialog. */
   showLogin: (visible: boolean) => void
@@ -51,8 +57,9 @@ export interface AccountSectionInjected {
 export type AccountSectionProps =
   PropsRuntime<'settings.section'> & PropsLocale<'settings.account'> & InjectFace<AccountSectionInjected>
 /** @param props - localized actions and account subscription. @returns account settings UI. */
-export function AccountSection({ t, useAccount, start, cancel, refresh, platform }: AccountSectionProps) {
+export function AccountSection({ t, useAccount, useTheme, start, cancel, refresh, platform }: AccountSectionProps) {
   const { view: state, details, failed: streamFailed } = useAccount(value => value)
+  const colorScheme = useTheme(snapshot => snapshot.active.colorScheme)
   const [platformPage, setPlatformPage] = useState<'usage' | 'top-up'>()
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -107,7 +114,8 @@ export function AccountSection({ t, useAccount, start, cancel, refresh, platform
         </a>}
       </div>
       {active && <div className={css.actions}>
-        {attempt.authorizeUrl && <a className={css.linkButton} href={attempt.authorizeUrl} target="_blank" rel="noreferrer">
+        {attempt.authorizeUrl && <a className={css.linkButton} href={authorizeUrlWithTheme(attempt.authorizeUrl, colorScheme)}
+          target="_blank" rel="noreferrer">
           {t('open')}
         </a>}
         <Button variant="outline" className={css.button} disabled={busy || attempt.phase === 'committing'}

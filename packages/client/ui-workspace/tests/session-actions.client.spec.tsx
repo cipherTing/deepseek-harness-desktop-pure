@@ -379,7 +379,7 @@ describe('SessionArchiveConfirmDialog', () => {
     const lines = [...screen.getByRole('list', { name: '将被停止的工作' }).querySelectorAll('li')].map(li => li.textContent)
     expect(lines).toEqual([
       '进行中的回合',
-      '2 个运行中的子代理：reviewer、child-2',
+      '2 个运行中的子智能体：reviewer、child-2',
       '1 个后台任务：pnpm run build',
       '1 条定时提醒：check the build',
     ])

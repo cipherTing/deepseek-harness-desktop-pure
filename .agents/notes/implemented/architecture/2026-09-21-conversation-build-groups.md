@@ -35,6 +35,7 @@ The grouping foundation provides a separate, Node-input `ConversationGroupDefini
 | Record | Relationship |
 |---|---|
 | [Business Node assembly](2026-08-09-client-conversation-node-assembly.md) | Retains event matching, Contexts, Locations, one business Node per Context, and target Builders; grouping adds another input category. |
+| [Chat scroll and footer](../bug-fix/2026-09-22-chat-scroll-follow-and-footer-geometry.md) | Owns clipping and independent nested following without changing Group Definition membership. |
 
 Grouping preserves the independent Node-assembly decisions. Cross-View navigation and `toolCallFocus` remain separate responsibilities; Group references carry no View handles or resource-navigation policy.
 
@@ -106,7 +107,7 @@ Grouping never replays raw events. Node Definitions handle replay first; groupin
 | [group-store.ts](../../../../packages/client/ui-conversation/src/client/conversation/group-store.ts) | Atomic reference validation, keyed sources, array reuse, and local publication. |
 | [chat-snapshot-builder.ts](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) | Record projected Node deltas, target positions, and changed Turn orders; provide indexed readers and defer source notification. No process grouping class. |
 | [ChatView.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) | Read optional root entries and switch between node/group; fallback to existing Node order. |
-| [ChatGroupSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx) | Stable group parent, member-only subscription, nested Node seats. |
+| [ChatGroupSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx) | Stable group parent, group-local subscriptions, nested Node seats. |
 | [ChatNodeSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatNodeSeat.tsx) | Existing Node sources/renderers, groupPart forwarding, distinct part anchors, Store-replacement rebind. |
 | [slots.ts](../../../../packages/client/ui-chat/src/client/contract/slots.ts) and [apply.ts](../../../../packages/client/ui-chat/src/client/apply.ts) | Existing keyed-hook injection for Group sources; no Slot-engine change. |
 

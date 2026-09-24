@@ -30,7 +30,8 @@ const UI_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'ui-expanded.expected.md')
 const MODE = webSnapshotMode()
 
 const SKILL_NAME = 'user-invoke-demo'
-const ARGS_TEXT = '@"meeting notes.md" and confirm the fixture wiring'
+const FILE_NAME = 'meeting notes-this-is-a-very-long-filename-for-testing-user-message-file-references-and-preview-layout.md'
+const ARGS_TEXT = `@"${FILE_NAME}" and confirm the fixture wiring`
 const REPLY = 'USER_INVOKE_REPLY acknowledged; following the injected skill.'
 
 async function seedUserOnlySkill(workspaceCwd: string): Promise<void> {
@@ -78,7 +79,7 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
       paceMs: 10,
     })
     await seedUserOnlySkill(scaffold.workspaceCwd)
-    await writeFile(join(scaffold.workspaceCwd, 'workspace', 'meeting notes.md'), '# Meeting notes\n\nSent reference preview.\n')
+    await writeFile(join(scaffold.workspaceCwd, 'workspace', FILE_NAME), '# Meeting notes\n\nSent reference preview.\n')
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -162,6 +163,19 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
     await skill.click()
     await expect.poll(() => preview.textContent(), { timeout: 10_000 }).toContain('Reply with the fixture acknowledgement line.')
     const file = page.locator('[data-chat-flow-kind="user"] [data-ref-chip="file"]').first()
+    const bounds = await file.evaluate((element) => {
+      const bubble = element.closest('[class*="bubble"]')
+      if (bubble === null) throw new Error('file reference has no user bubble')
+      const label = element.getBoundingClientRect()
+      const container = bubble.getBoundingClientRect()
+      return {
+        left: label.left - container.left, right: container.right - label.right,
+        height: label.height, lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+      }
+    })
+    expect(bounds.left).toBeGreaterThanOrEqual(0)
+    expect(bounds.right).toBeGreaterThanOrEqual(0)
+    expect(bounds.height).toBeGreaterThan(bounds.lineHeight)
     await file.hover()
     expect(await file.evaluate(el => getComputedStyle(el).textDecorationStyle)).toBe('dotted')
     await file.click()

@@ -27,7 +27,7 @@
       "path": "../ui-renderer"
     },
     {
-      "path": "../ui-plugin-manager"
+      "path": "../ui-plugin-manager/tsconfig.client.json"
     },
     {
       "path": "../ui-settings/tsconfig.client.json"

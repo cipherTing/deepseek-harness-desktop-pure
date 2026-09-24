@@ -115,7 +115,7 @@ describe('deriveTrajectoryLayout', () => {
       nodes: [],
       partial: null,
       runningCalls: [{
-        callId: 'r1', name: 'bash', argsRaw: '{"command":"pwd"}',
+        phase: 'start' as const, callId: 'r1', name: 'bash', argsRaw: '{"command":"pwd"}',
         turn: 1, step: 2, time: 9_000, subCalls: [],
       }],
     })
@@ -179,7 +179,7 @@ describe('deriveTrajectoryLayout', () => {
       nodes: [],
       partial: { ...partial, blocks: [] },
       runningCalls: [{
-        callId: 'c1', name: 'bash', argsRaw: '{"command":"pwd"}',
+        phase: 'start' as const, callId: 'c1', name: 'bash', argsRaw: '{"command":"pwd"}',
         turn: 1, step: 1, time: 9_000, subCalls: [],
       }],
     })
@@ -540,7 +540,7 @@ describe('run_code sub-dispatch cells', () => {
 
   it('a running (unsettled) sub-call renders a subtool cell with blank time', () => {
     const running = {
-      callId: 'p1:code:1', name: 'grep', argsRaw: '{"pattern":"x"}',
+      phase: 'start' as const, callId: 'p1:code:1', name: 'grep', argsRaw: '{"pattern":"x"}',
       turn: 0, step: 0, time: 6_400, subCalls: [],
     }
     const turns = deriveTrajectoryLayout({ nodes: withSubCalls([running]), partial: null, runningCalls: [] })

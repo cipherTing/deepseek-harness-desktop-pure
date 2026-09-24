@@ -35,6 +35,7 @@ Chat Builder 汇总整个目标的节点及索引。在其中固定创建 Chat �
 | 记录 | 关系 |
 |---|---|
 | [业务节点组装](2026-08-09-client-conversation-node-assembly.zh.md) | 保留事件匹配、Context、Location、每个 Context 一个业务 Node 及目标 Builder，分组增加另一种输入类别。 |
+| [Chat 滚动与页脚](../bug-fix/2026-09-22-chat-scroll-follow-and-footer-geometry.zh.md) | 负责裁剪与独立的嵌套跟随，不改变 Group Definition 成员关系。 |
 
 分组保留独立的节点组装决策。跨 View 导航与 `toolCallFocus` 仍是独立职责，Group 引用不携带 View 句柄或资源导航策略。
 
@@ -106,7 +107,7 @@ GroupStore 按 GroupKey 索引记录和来源，不反复查找数组。等价�
 | [group-store.ts](../../../../packages/client/ui-conversation/src/client/conversation/group-store.ts) | 原子引用校验、按键来源、数组复用及局部发布。 |
 | [chat-snapshot-builder.ts](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) | 记录投影后节点增量、目标位置及变化轮次顺序，提供索引读取器并推迟来源通知，不持有过程分组类。 |
 | [ChatView.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) | 读取可选根引用并切换 node/group，无分组时使用既有 Node 顺序。 |
-| [ChatGroupSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx) | 稳定组父级、仅成员订阅及嵌套 Node 容器。 |
+| [ChatGroupSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx) | 稳定组父级、组内订阅及嵌套 Node 容器。 |
 | [ChatNodeSeat.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatNodeSeat.tsx) | 既有 Node 来源及渲染器、groupPart 传递、独立部分锚点及 Store 替换时重绑定。 |
 | [slots.ts](../../../../packages/client/ui-chat/src/client/contract/slots.ts) 与 [apply.ts](../../../../packages/client/ui-chat/src/client/apply.ts) | 使用现有按键钩子注入 Group 来源，不改 Slot 引擎。 |
 

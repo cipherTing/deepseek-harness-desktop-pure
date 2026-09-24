@@ -41,6 +41,7 @@
 - Continuous pages: 2
 - Zoom reveal: hidden -> bottom hover -> delayed hidden
 - Zoom modes: fit width -> 100% -> 150% -> fit width
+- Settled zoom redraws the page at device resolution
 - Horizontal overflow: false
 - Canvas fills: red -> blue -> blue
 - Same tab: true

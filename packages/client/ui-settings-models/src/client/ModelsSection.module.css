@@ -707,9 +707,12 @@ select.input {
 
 .candidateId {
   flex: 1 1 auto;
+  min-width: 0;
   font-family: var(--ds-font-family-code);
   font-size: 13px;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .candidateEmpty {

@@ -8,13 +8,16 @@ import { en, zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 const id = 'login-attempt' as SignInAttemptId
-function mount(attempt: AccountView['attempt'], copy: typeof en | typeof zh = en) {
+function dialogProps(attempt: AccountView['attempt'], copy: typeof en | typeof zh = en, colorScheme: 'light' | 'dark' = 'dark') {
   const start = vi.fn(async () => {})
   const cancel = vi.fn(async () => {})
   const close = vi.fn()
   const useApiKey = vi.fn()
-  const props = { start, cancel, close, useApiKey, t: (key: keyof typeof en) => copy[key],
+  return { start, cancel, close, useApiKey, colorScheme, t: (key: keyof typeof en) => copy[key],
     account: { view: { status: 'signed-out' as const, attempt, links: { usageUrl: 'https://platform.deepseek.com/usage', topUpUrl: 'https://platform.deepseek.com/top_up' } }, details: undefined, failed: false } }
+}
+function mount(attempt: AccountView['attempt'], copy: typeof en | typeof zh = en, colorScheme: 'light' | 'dark' = 'dark') {
+  const props = dialogProps(attempt, copy, colorScheme)
   render(<SignInDialog {...props} />)
   return props
 }
@@ -57,7 +60,7 @@ it.each([en, zh])('restores the copy label two seconds after the latest successf
     const authorizeUrl = 'https://platform.deepseek.com/dsh/authorize?state=example'
     mount({ id, phase: 'waiting-browser', authorizeUrl }, copy)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copyLink })) })
-    expect(writeText).toHaveBeenLastCalledWith(authorizeUrl)
+    expect(writeText).toHaveBeenLastCalledWith('https://platform.deepseek.com/dsh/authorize?state=example&theme=dark')
     act(() => { vi.advanceTimersByTime(1000) })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copiedLink })) })
     expect(writeText).toHaveBeenCalledTimes(2)
@@ -69,6 +72,25 @@ it.each([en, zh])('restores the copy label two seconds after the latest successf
   } finally {
     cleanup()
     vi.useRealTimers()
+    if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
+    else Reflect.deleteProperty(navigator, 'clipboard')
+  }
+})
+
+it('copies the authorization link with the palette of the current render', async () => {
+  const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  const writeText = vi.fn(async () => {})
+  try {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const attempt = { id, phase: 'waiting-browser' as const, authorizeUrl: 'https://platform.deepseek.com/dsh/authorize?state=example' }
+    const props = dialogProps(attempt, en, 'dark')
+    const view = render(<SignInDialog {...props} />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.copyLink })) })
+    expect(writeText).toHaveBeenLastCalledWith('https://platform.deepseek.com/dsh/authorize?state=example&theme=dark')
+    view.rerender(<SignInDialog {...props} colorScheme="light" />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.copiedLink })) })
+    expect(writeText).toHaveBeenLastCalledWith('https://platform.deepseek.com/dsh/authorize?state=example&theme=light')
+  } finally {
     if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
     else Reflect.deleteProperty(navigator, 'clipboard')
   }

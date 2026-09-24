@@ -44,7 +44,7 @@ const kit = {
 }
 
 describe('Desktop collapsed update badge', () => {
-  it('shows update status, marks failures, and yields to connection feedback', () => {
+  it('shows update and retry status and yields to connection feedback', () => {
     let state: DesktopUpdateView = { failed: false, opening: false }
     let connection: 'connected' | 'connecting' | 'disconnected' = 'connected'
     const props = { ...kit, t,
@@ -55,17 +55,17 @@ describe('Desktop collapsed update badge', () => {
     expect(screen.queryByRole('img')).toBeNull()
     state = { ...state, presentation: { phase: 'available', version: '1.0.1' } }
     view.rerender(<DesktopUpdateBadge {...props} />)
-    expect(screen.getByRole('img', { name: 'Update' }).getAttribute('data-error')).toBeNull()
+    expect(screen.getByRole('img', { name: 'Update' })).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
     state = { ...state, failed: true }
     view.rerender(<DesktopUpdateBadge {...props} />)
-    expect(screen.getByRole('img', { name: en['desktop.update.retry'] }).getAttribute('data-error')).toBe('true')
+    expect(screen.getByRole('img', { name: en['desktop.update.retry'] })).toBeTruthy()
     state = { failed: true, opening: false }
     view.rerender(<DesktopUpdateBadge {...props} />)
-    expect(screen.getByRole('img', { name: en['desktop.update.retry'] }).getAttribute('data-error')).toBe('true')
+    expect(screen.getByRole('img', { name: en['desktop.update.retry'] })).toBeTruthy()
     state = { failed: false, opening: false, presentation: { phase: 'error', failure: 'install' } }
     view.rerender(<DesktopUpdateBadge {...props} />)
-    expect(screen.getByRole('img', { name: en['desktop.update.retry'] }).getAttribute('data-error')).toBe('true')
+    expect(screen.getByRole('img', { name: en['desktop.update.retry'] })).toBeTruthy()
     for (const value of ['connecting', 'disconnected'] as const) {
       connection = value
       view.rerender(<DesktopUpdateBadge {...props} />)

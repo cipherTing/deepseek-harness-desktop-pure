@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 import { cleanup, fireEvent, render } from '@testing-library/react'
-import type { RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { StartedToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ToolCallOwnerProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { IconGlobeOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { webCardModel } from '../src/client/tool/models/web-card-model.ts'
@@ -49,8 +49,8 @@ const fetchMeta = (over?: Partial<FetchMeta>): FetchMeta => ({
   url: 'https://example.com/page', statusCode: 200, truncated: false, ...over,
 })
 
-const runningSearch = (over?: Partial<RunningToolCall>): RunningToolCall => ({
-  callId: 'c1', name: 'web_search', argsRaw: SEARCH_ARGS,
+const runningSearch = (over?: Partial<StartedToolCall>): StartedToolCall => ({
+  phase: 'start' as const, callId: 'c1', name: 'web_search', argsRaw: SEARCH_ARGS,
   turn: 1, step: 1, time: 1_000, subCalls: [], ...over,
 })
 
@@ -124,13 +124,13 @@ describe('webCardModel', () => {
 })
 
 describe('chat row web body', () => {
-  const ownerProps = (block: RunningToolCall | ToolResultNode, toolName: string): ToolCallOwnerProps => ({
-    useDisclosure, callId: block.callId, toolName, block, openFile: vi.fn(), loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
+  const ownerProps = (block: StartedToolCall | ToolResultNode, toolName: string): ToolCallOwnerProps => ({
+    useDisclosure, callId: block.callId, toolName, ...('kind' in block ? { phase: 'result' as const, block: block } : { phase: block.phase, block: block }), openFile: vi.fn(), loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
   })
   // WebRow reads only toolName/block off the full runtime share plus the locale
   // seat; the standard kit is unused, so the cast supplies the owner slice and
   // `t` alone (as BashRow's tests do for the terminal card).
-  const rowProps = (block: RunningToolCall | ToolResultNode, toolName: string): Parameters<typeof WebRow>[0] =>
+  const rowProps = (block: StartedToolCall | ToolResultNode, toolName: string): Parameters<typeof WebRow>[0] =>
     ({ ...ownerProps(block, toolName), t } as unknown as Parameters<typeof WebRow>[0])
 
   /** The whole summary row is the expand toggle (ToolRow's unified interaction). */

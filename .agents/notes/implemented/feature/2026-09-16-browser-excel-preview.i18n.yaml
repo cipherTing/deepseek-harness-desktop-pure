@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-16-browser-excel-preview.md
-2026-09-16-browser-excel-preview.md: 15db888330b2a1a6d6d78dad46689962466d531d
-2026-09-16-browser-excel-preview.zh.md: 6b3a6a617a0cd18dcd3da1682a31f26bd7e70386
+2026-09-16-browser-excel-preview.md: 8a4bbd5dc838bc79e61f9b412af43b912a8fe019
+2026-09-16-browser-excel-preview.zh.md: f04170b28fe4c6d267b12958f47a392638bfaadb

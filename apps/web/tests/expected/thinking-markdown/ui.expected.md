@@ -214,6 +214,7 @@
   - text: .
 - math: a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + a + 1 1 + 1 x
 - text: typescript
+- button "Wrap lines" [pressed]
 - button "Copy"
 - code: const value = "reasoning code"
 - paragraph: {{longToken}}

@@ -2,6 +2,7 @@
 
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { ChatViewport } from '../src/client/chat/use-chat-viewport.ts'
+import { ScrollFollow, scrollMetrics } from '../src/client/chat/use-scroll-follow.ts'
 
 function fixture() {
   const column = document.createElement('div')
@@ -428,6 +429,32 @@ it.each([
   expect(h.body.scrollTop).toBe(test.expectedInner)
   expect(h.scroller.scrollTop).toBe(test.expectedOuter)
   expect(h.row.getBoundingClientRect().top).toBe(top)
+})
+
+it('gives paging compensation priority over an active inner follow animation', () => {
+  const h = nestedFixture(600, 400)
+  const follow = new ScrollFollow(true, 1)
+  onTestFinished(follow.bind(h.body))
+  const scrollTo = vi.fn((options?: ScrollToOptions | number, y?: number) => {
+    if (typeof options === 'number') h.body.scrollTop = y ?? 0
+    else if (options?.behavior === 'instant') h.body.scrollTop = options.top ?? 0
+  })
+  h.body.scrollTo = scrollTo
+  h.body.scrollTop = 100
+  const top = h.begin()
+  follow.toBottom(h.body, scrollMetrics(h.body), 'smooth')
+  expect(follow.animating).toBe(true)
+  h.prepend(200)
+  h.viewport.preserve()
+  expect(h.row.getBoundingClientRect().top).toBe(top)
+  expect(scrollTo).toHaveBeenLastCalledWith({ top: 300, behavior: 'instant' })
+  expect(follow.animating).toBe(false)
+  expect(follow.active).toBe(false)
+  follow.sample(scrollMetrics(h.body))
+  follow.settle(scrollMetrics(h.body))
+  expect(follow.active).toBe(false)
+  h.body.scrollTop = scrollMetrics(h.body).floor
+  expect(follow.sample(scrollMetrics(h.body))).toBe(true)
 })
 
 it.each(['wheel', 'touchstart', 'pointerdown', 'keydown', 'beforematch'])(
