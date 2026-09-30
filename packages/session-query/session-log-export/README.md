@@ -79,6 +79,8 @@ This section explains how the package wires the export control and points at the
 
 The package has two halves. The Host half ([`src/index.ts`](src/index.ts)) registers the `/export` command and contributes the exact `GET`/`HEAD /api/session.export` Fetch route to Connection; [`src/archive.ts`](src/archive.ts) builds the bounded ZIP stream. The browser half ([`src/client/index.ts`](src/client/index.ts)) provides the shared download controller and UI, resolves the optional surface save carrier, and observes `command/executed` so only the submitting browser starts a download.
 
+The Header’s More action uses the shared compact Button, with a 28px square target and the same radius and hover fill as the right-sidebar expand control.
+
 ### Download flow
 
 Both entry paths issue a `HEAD` preflight to `/api/session.export?...`, then hand the GET URL and safe filename to the active save carrier without buffering the ZIP in JavaScript. The default carrier clicks a browser download anchor and returns immediately; an embedding surface may install `globalThis.__DSH_DOWNLOAD_CARRIER__` before client boot and settle with `file-saved` or `cancelled`. One controller owns one in-flight download per Session, collapses concurrent gestures into that operation, and cancels the preflight on plugin disposal. Modal state lives in a snapshot store keyed by Session, so the button and the command share one modal per Session.

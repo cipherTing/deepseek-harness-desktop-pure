@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-14-desktop-sync-branch-topology.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-14-desktop-sync-branch-topology.md
-2026-09-14-desktop-sync-branch-topology.md: b80719b62d4f7784a5b0ecbcda555176658e4d0d
-2026-09-14-desktop-sync-branch-topology.zh.md: 40290b621fff9e81791361ed394c9567d19143fc
+/agent-note-desktop-synchronization-branch-topology:
+  en: 4517d7014bd5bc51
+  zh: 954a56443490016d
+/agent-note-desktop-synchronization-branch-topology/problem:
+  en: d7fd9340e3d79f96
+  zh: 9d034d696dae0193
+/agent-note-desktop-synchronization-branch-topology/decision:
+  en: 8e33584316458fd4
+  zh: 46195c8a8a32170d
+/agent-note-desktop-synchronization-branch-topology/alternatives-considered:
+  en: 49ad7c33452b3f7a
+  zh: 568f7d22d0d0e036
+/agent-note-desktop-synchronization-branch-topology/consequences:
+  en: f897d2addfd8bb15
+  zh: 4ec3afac5154cf26

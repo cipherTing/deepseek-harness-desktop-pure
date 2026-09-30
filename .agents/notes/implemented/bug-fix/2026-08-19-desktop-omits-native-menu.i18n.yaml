@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-19-desktop-omits-native-menu.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-19-desktop-omits-native-menu.md
-2026-08-19-desktop-omits-native-menu.md: 70260cf6f6fe60b11d84e40ec0d0177d243bc3a6
-2026-08-19-desktop-omits-native-menu.zh.md: 77ff95ea9d7ecca4167ed14b2e43e0bdae19face
+/agent-note-desktop-omits-the-native-application-menu:
+  en: 8e5fde89ed50770f
+  zh: 195bc0590f019914
+/agent-note-desktop-omits-the-native-application-menu/problem:
+  en: d21bf69be8854467
+  zh: 455b9e4171c50638
+/agent-note-desktop-omits-the-native-application-menu/decision:
+  en: 61256aec81b4d719
+  zh: 442b179dce8c7f36
+/agent-note-desktop-omits-the-native-application-menu/alternatives-considered:
+  en: 224cbe2e4fd3222a
+  zh: ad27b9a74af51dc6
+/agent-note-desktop-omits-the-native-application-menu/consequences:
+  en: 2c49ead7ce84c280
+  zh: 98a1b10cb8e2efc2

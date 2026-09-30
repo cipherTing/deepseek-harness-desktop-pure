@@ -54,8 +54,8 @@ const MACOS_TITLE_BAR_HEIGHT = 30
  * Top inset the shared layout reserves for the window's own strip. The client
  * declares it only for the Electron host's `data-platform="darwin"`, and
  * Desktop owns the same overlay strip through Tauri, so entry pages that pad by
- * this token and overlays that keep it as their viewport margin would otherwise
- * collide with the traffic lights.
+ * this token would otherwise collide with the traffic lights. Portalled
+ * overlays use the separate overlay token with the shared 20px safe inset.
  */
 const MACOS_FRAME_TOP_CLEARANCE = 48
 const TITLE_BAR_INTERACTIVE_SELECTOR = [
@@ -366,6 +366,10 @@ function installMacOSOverlayTitleBar(): void {
   document.documentElement.style.setProperty(
     '--dsh-frame-top-clearance',
     `${MACOS_FRAME_TOP_CLEARANCE}px`,
+  )
+  document.documentElement.style.setProperty(
+    '--dsh-frame-overlay-top',
+    'calc(var(--dsh-frame-top-clearance) + 20px)',
   )
   window.addEventListener('mousedown', (event) => {
     if (event.buttons !== 1 || event.clientY > MACOS_TITLE_BAR_HEIGHT) return

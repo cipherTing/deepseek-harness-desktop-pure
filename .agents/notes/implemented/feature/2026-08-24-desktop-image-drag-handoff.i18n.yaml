@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-24-desktop-image-drag-handoff.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-desktop-image-drag-handoff.md
-2026-08-24-desktop-image-drag-handoff.md: 8c86ea0fec2068f615181a8ccb0ed9261af7f451
-2026-08-24-desktop-image-drag-handoff.zh.md: bd23f75760ebc9038e445571f4714e2542d7b9d7
+/agent-note-desktop-attachment-drag-handoff-and-release-feedback:
+  en: d42f66f3203d2ad1
+  zh: fdcdb94e60a2654c
+/agent-note-desktop-attachment-drag-handoff-and-release-feedback/problem:
+  en: a5b34ab3b446212d
+  zh: a47750f17a3b7828
+/agent-note-desktop-attachment-drag-handoff-and-release-feedback/decision:
+  en: 517bc7c0fd577ed3
+  zh: 63632bdae94a1dae
+/agent-note-desktop-attachment-drag-handoff-and-release-feedback/verification:
+  en: 5a24f7631a1fa130
+  zh: 470bb59593fd747c
+/agent-note-desktop-attachment-drag-handoff-and-release-feedback/alternatives-considered:
+  en: 07284e4902a53b6a
+  zh: 4efeda268a597e9e
+/agent-note-desktop-attachment-drag-handoff-and-release-feedback/consequences:
+  en: 5c80a2935784601e
+  zh: b375a0656cc3dd5b

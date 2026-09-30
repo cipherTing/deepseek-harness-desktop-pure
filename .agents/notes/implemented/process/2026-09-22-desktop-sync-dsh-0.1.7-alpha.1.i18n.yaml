@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-22-desktop-sync-dsh-0.1.7-alpha.1.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-22-desktop-sync-dsh-0.1.7-alpha.1.md
-2026-09-22-desktop-sync-dsh-0.1.7-alpha.1.md: b0e55d1ce693e52aa47b02f3a66895b0b5bb2156
-2026-09-22-desktop-sync-dsh-0.1.7-alpha.1.zh.md: 45ec8b856b3898d20c1cad81c6dce311fbf9be90
+/agent-note-desktop-adaptation-for-deepseek-harness-0-1-7-alpha-1:
+  en: 2c2b62cbf1a3ba0c
+  zh: 4f28b6284acdc8b6
+/agent-note-desktop-adaptation-for-deepseek-harness-0-1-7-alpha-1/problem:
+  en: db955e48c2328bca
+  zh: 3e3b9b04487b8847
+/agent-note-desktop-adaptation-for-deepseek-harness-0-1-7-alpha-1/decision:
+  en: 8f3872953e262d71
+  zh: ca5ff37d7874b402
+/agent-note-desktop-adaptation-for-deepseek-harness-0-1-7-alpha-1/alternatives-considered:
+  en: 21e79458978f8836
+  zh: 0a6cd4e6f2f34c3c
+/agent-note-desktop-adaptation-for-deepseek-harness-0-1-7-alpha-1/consequences:
+  en: 0c64c4e25dc0eb4f
+  zh: 23baac9ec393583f
+/agent-note-desktop-adaptation-for-deepseek-harness-0-1-7-alpha-1/verification:
+  en: 721199b8bffd04ad
+  zh: 4651e02f0a43e360

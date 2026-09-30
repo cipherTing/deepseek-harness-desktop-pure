@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-18-desktop-ignore-update-reminder.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-18-desktop-ignore-update-reminder.md
-2026-09-18-desktop-ignore-update-reminder.md: 68710d624c5d5dd9fd88d7d42efe5a8a5ddd54fe
-2026-09-18-desktop-ignore-update-reminder.zh.md: a1fd23345bbd124896738a6327d0469b7ac07584
+/agent-note-ignore-one-desktop-update-reminder:
+  en: 25d4d3b222abc494
+  zh: c1db33a26f7beeda
+/agent-note-ignore-one-desktop-update-reminder/problem:
+  en: 24adad533d8f6955
+  zh: 86535fe5b53ddd07
+/agent-note-ignore-one-desktop-update-reminder/decision:
+  en: f81d9eab26edaf6b
+  zh: 9522b6509127d26c
+/agent-note-ignore-one-desktop-update-reminder/verification:
+  en: 078bc566722306c0
+  zh: 34d4a913aa831cc6
+/agent-note-ignore-one-desktop-update-reminder/alternatives-considered:
+  en: d5af1011302490d9
+  zh: c968939ac20c314d
+/agent-note-ignore-one-desktop-update-reminder/consequences:
+  en: 58abf651d7544497
+  zh: 6844173b5d579978
