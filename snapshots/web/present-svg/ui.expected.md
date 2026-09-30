@@ -1,7 +1,7 @@
 - text: 简单画一个 SVG 表示冯诺依曼架构, 保存为 von-neumann.svg {{clock}}
 - button "复制"
-- status: 已完成工作
-- button "用时 {{duration}}" [expanded]
+- status: 已完成
+- button "已完成，用时 {{duration}}" [expanded]
 - button "已完成分析" [expanded]
 - button "思考 The user wants a simple SVG diagram of the von Neumann architecture, saved as von-neumann.svg. Let me create a clean SVG showing CPU (control unit, ALU), memory, input, and output with bidirectional data/control buses."
 - paragraph: 我来创建一个冯诺依曼架构的 SVG 示意图。
@@ -31,10 +31,7 @@
     - strong: 总线连接
     - text: ：CPU 与内存间的地址总线，以及 CPU 与 I/O 设备间的数据/控制线，箭头标明数据流向
 - paragraph: 下方附一行核心思想说明：指令与数据以二进制统一存储在存储器中。用浏览器打开该 SVG 文件即可查看。
-- button "在侧边栏查看本轮改动": 已编辑 1 个文件 +83 -0
-- list:
-  - listitem:
-    - button "查看 von-neumann.svg 的改动": von-neumann.svg +83 -0
+- button "查看 von-neumann.svg 的改动": 已编辑 von-neumann.svg +83 -0
 - text: 此主机没有可用的桌面，无法使用外部程序打开文件或文件夹；文件仍可在侧边栏预览
 - button "在侧边栏预览 von-neumann.svg"
 - text: von-neumann.svg 冯诺依曼架构示意图 SVG

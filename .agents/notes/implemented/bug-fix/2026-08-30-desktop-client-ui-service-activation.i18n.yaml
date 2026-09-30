@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-30-desktop-client-ui-service-activation.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-30-desktop-client-ui-service-activation.md
-2026-08-30-desktop-client-ui-service-activation.md: d9cd693bf1546e7449c03f9495a693da39bfc073
-2026-08-30-desktop-client-ui-service-activation.zh.md: 717ba83f5c82499211f7cc8ad45fa4500f06870e
+/agent-note-desktop-client-ui-service-activation:
+  en: 00afc3cc4d49adc8
+  zh: d4877b54e15b36a7
+/agent-note-desktop-client-ui-service-activation/problem:
+  en: 8b364cbd1307f6bd
+  zh: 15d83445eed1b889
+/agent-note-desktop-client-ui-service-activation/decision:
+  en: 45bef8a3f88518b1
+  zh: 79343e59870922c2
+/agent-note-desktop-client-ui-service-activation/alternatives-considered:
+  en: a0017bc809bde9d9
+  zh: 48ddda2446345150
+/agent-note-desktop-client-ui-service-activation/consequences:
+  en: 2b92d87d73831db5
+  zh: 4a4d1a3b7c3bf801
+/agent-note-desktop-client-ui-service-activation/verification:
+  en: 3297e27092cb8072
+  zh: becf15a51219bd3a

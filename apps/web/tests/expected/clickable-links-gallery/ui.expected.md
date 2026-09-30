@@ -7,8 +7,8 @@
     - tab "Trajectory"
 - text: "Assemble the link gallery: write the report and styles, inspect the sources, and summarize. {{clock}}"
 - button "Copy"
-- status: Worked
-- button "Took {{duration}}" [expanded]
+- status: Completed
+- button "Completed in {{duration}}" [expanded]
 - button "Wrote files, called tools, searched code, etc." [expanded]
 - button "Write site/report.html +1 -0":
   - text: Write
@@ -83,7 +83,10 @@
     - text: One cursor token, one focus ring.
   - listitem: Mirror spec (non-http) A non-http source renders inert.
 - button "Inspect"
-- button "Fetch https://docs.example.test/tokens" [expanded]
+- button "Fetch https://docs.example.test/tokens" [expanded]:
+  - text: Fetch
+  - link "https://docs.example.test/tokens":
+    - /url: https://docs.example.test/tokens
 - link "https://docs.example.test/tokens":
   - /url: https://docs.example.test/tokens
 - text: HTTP 200

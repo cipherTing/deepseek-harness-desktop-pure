@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-20-tauri-shell-sidecar-launch.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-20-tauri-shell-sidecar-launch.md
-2026-08-20-tauri-shell-sidecar-launch.md: ffb362d12d90720397f1e31327ec70c8129278b9
-2026-08-20-tauri-shell-sidecar-launch.zh.md: 16867304c6f30828e823c7bd4b9324cfd594a26c
+/agent-note-tauri-shell-launches-the-desktop-node-sidecar:
+  en: 4aa98d457c969e4c
+  zh: ec01de79834ecd02
+/agent-note-tauri-shell-launches-the-desktop-node-sidecar/problem:
+  en: 79c85e977f0f5593
+  zh: bef175d5bac22c10
+/agent-note-tauri-shell-launches-the-desktop-node-sidecar/decision:
+  en: 87e201e648df953b
+  zh: cadcae99474a3114
+/agent-note-tauri-shell-launches-the-desktop-node-sidecar/alternatives-considered:
+  en: 9ad43aff520684f8
+  zh: baccd1518fbe5d6c
+/agent-note-tauri-shell-launches-the-desktop-node-sidecar/verification:
+  en: 0be20c2c40570359
+  zh: c46c0857c68222eb
+/agent-note-tauri-shell-launches-the-desktop-node-sidecar/consequences:
+  en: a595cc201b0c2f4a
+  zh: 2129bbb729a40317

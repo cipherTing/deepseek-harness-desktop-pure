@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-08-19-windows-eval-sidecar-argv.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-19-windows-eval-sidecar-argv.md
-2026-08-19-windows-eval-sidecar-argv.md: 2bd3a478b08bbca5b7a2cd91ddf037c05bd5bde8
-2026-08-19-windows-eval-sidecar-argv.zh.md: 33a70640c1fba8367ab56970038d9cdb932e58f4
+/agent-note-windows-eval-sidecar-preserves-the-main-module-argument:
+  en: 573901f311edfd29
+  zh: 5df439de0b1b359a
+/agent-note-windows-eval-sidecar-preserves-the-main-module-argument/problem:
+  en: 2a6e9abbcfad58e1
+  zh: 170c254bdadca54f
+/agent-note-windows-eval-sidecar-preserves-the-main-module-argument/decision:
+  en: e5558b072d38d7c0
+  zh: 64ec3b11a0606fe2
+/agent-note-windows-eval-sidecar-preserves-the-main-module-argument/alternatives-considered:
+  en: d0db4c465588f030
+  zh: cfb51c9b1d1abe7f
+/agent-note-windows-eval-sidecar-preserves-the-main-module-argument/consequences:
+  en: 9fc5658224148169
+  zh: 36624e9bc8e790af

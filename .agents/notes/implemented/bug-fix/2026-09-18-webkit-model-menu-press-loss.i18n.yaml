@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-18-webkit-model-menu-press-loss.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-18-webkit-model-menu-press-loss.md
-2026-09-18-webkit-model-menu-press-loss.md: 198f4b3ac9836884bba8b7ba83e522f266b40eaf
-2026-09-18-webkit-model-menu-press-loss.zh.md: fcdf0de2f1e6b956d089f397604573209bb023de
+/agent-note-restore-model-menu-row-presses-on-webkit:
+  en: 4b3b5a020d9fa081
+  zh: 780f0b91a43a8e99
+/agent-note-restore-model-menu-row-presses-on-webkit/problem:
+  en: e02035fb18e9cdf6
+  zh: 75ba20b51b394de4
+/agent-note-restore-model-menu-row-presses-on-webkit/decision:
+  en: e6c2dc9bb6065a2d
+  zh: c142da539946d66e
+/agent-note-restore-model-menu-row-presses-on-webkit/verification:
+  en: 9b78bfbda706d974
+  zh: 9669be267d2e953b
+/agent-note-restore-model-menu-row-presses-on-webkit/alternatives-considered:
+  en: 9e89afcec4d1cbdd
+  zh: aa6367f461240984
+/agent-note-restore-model-menu-row-presses-on-webkit/consequences:
+  en: 9605fee3487831dd
+  zh: 4d5dee6398cc9177
