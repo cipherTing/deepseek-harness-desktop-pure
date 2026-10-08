@@ -2,7 +2,7 @@
  * Files the immutable Desktop runtime omits from the tree `pnpm deploy`
  * produced. Every runtime asset the Harness loads stays; only build outputs,
  * type declarations, package-manager state, and native payloads for another
- * platform are omitted, so the shipped artifact carries what it runs.
+ * platform are omitted. Linux targets use glibc, so musl payloads are omitted.
  *
  * Upstream's Electron package set applies the same kind of policy before it
  * seals its runtime; the rules here name this fork's deployed layout, whose
@@ -59,7 +59,11 @@ export function runtimeFileExclusion(path, target) {
   }
   if (name.startsWith('@deepseek-ai/libreoffice-kit-')) {
     const engine = name.slice('@deepseek-ai/libreoffice-kit-'.length)
-    if (engine !== `${target.platform}-${target.arch}`) return 'LibreOffice other platform'
+    const linuxFallback = target.platform === 'linux' && engine === 'wasm'
+    if (engine !== `${target.platform}-${target.arch}` && !linuxFallback) return 'LibreOffice other platform'
+  }
+  if (target.platform === 'linux' && name.startsWith('@koromix/koffi-linux-') && entry.startsWith('musl_')) {
+    return 'Koffi other libc'
   }
   if (name === '@mixmark-io/domino' && (entry === 'test' || entry.startsWith('test/'))) {
     return 'Domino test fixtures'

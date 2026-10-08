@@ -9,7 +9,7 @@ A bundled Node.js sidecar starts the standard `web` profile on a loopback port (
 - Do not add Harness features, change Harness behavior, or refactor unrelated upstream code.
 - Keep the smallest complete, extremely low-intrusion solution inside `desktop/`. A change elsewhere requires a concrete integration blocker and must be minimal; speculative abstractions, broad transport refactors, and Desktop-motivated cleanup are prohibited.
 - Use official Tauri plugins and APIs for system interaction when an official capability exists. Do not replace an official plugin with an ad hoc native bridge.
-- Releases are self-contained: users install no Node.js, pnpm, runtime, or package manager. Support only macOS Apple Silicon and Windows x64 unless explicitly changed.
+- Releases bundle Node.js, pnpm, and Harness dependencies. Support macOS Apple Silicon, Windows x64, and Linux x64 on Ubuntu 22.04+/Debian 12+ with a graphical desktop.
 - `desktop/` contains packaging source and resources, never a Harness profile, workspace, configuration home, or user-data directory.
 
 ## Git and release authority
@@ -38,10 +38,10 @@ After verification, replace the sole value in [`desktop/UPSTREAM_COMMIT`](deskto
 
 - Desktop uses independent SemVer beginning at `0.1.0`; upstream tags and SHAs never determine versions or artifact names. `desktop/package.json` is the sole version source. Run `pnpm desktop:version:set -- <version>` to update its runtime manifest, `Cargo.toml`, and Desktop `Cargo.lock` entry, or `pnpm desktop:version:check` to verify them. Never change the upstream root version for a Desktop release.
 - From the repository root, use `pnpm desktop:dev` or `pnpm desktop:build`. Package names derive from the Desktop version.
-- `.github/workflows/build-desktop.yml` runs only by `workflow_dispatch`. Any fork ref may run the two-platform build for validation; only `master` may publish a Release. It freezes the dispatched commit SHA for both platforms and any release tag, never synchronizes upstream, and never changes versions.
+- `.github/workflows/build-desktop.yml` runs only by `workflow_dispatch`. Any fork ref may run the three-platform build for validation; only `master` may publish a Release. It freezes the dispatched commit SHA for all platforms and any release tag, never synchronizes upstream, and never changes versions.
 - Among checked-in workflow files, only `Build and release Desktop` may remain enabled in this fork. GitHub-managed dynamic security workflows such as `Dependency Graph` are repository settings, not upstream workflow files, and are audited separately. Keep upstream workflow files unchanged but disabled in GitHub Actions. After synchronization, disable newly introduced upstream workflows; do not enable upstream CI, docs, E2E, issue automation, or releases without explicit maintainer approval.
-- Artifacts are named `deepdive-macos-arm64-<version>.dmg` and `deepdive-windows-x64-<version>.exe`.
-- After both builds pass, publish immutable tag/title `v<version>` with the bilingual Markdown notes supplied at `workflow_dispatch`: Chinese and English notes are both required only for a `master` publication and receive fixed section headings. Each language is a concise Markdown bullet list covering only high-level, user-facing changes; do not include implementation details, investigation history, internal terminology, or exhaustive change inventories. Bump the version instead of replacing an existing tag or release. Upstream traceability comes from tagged fork source plus `desktop/UPSTREAM_COMMIT`, not duplicated release prose.
+- Artifacts are named `deepdive-macos-arm64-<version>.dmg`, `deepdive-windows-x64-<version>.exe`, and `deepdive-linux-x64-<version>.deb`/`.AppImage`.
+- After all builds pass, publish immutable tag/title `v<version>` with the bilingual Markdown notes supplied at `workflow_dispatch`: Chinese and English notes are both required only for a `master` publication and receive fixed section headings. Each language is a concise Markdown bullet list covering only high-level, user-facing changes; do not include implementation details, investigation history, internal terminology, or exhaustive change inventories. Bump the version instead of replacing an existing tag or release. Upstream traceability comes from tagged fork source plus `desktop/UPSTREAM_COMMIT`, not duplicated release prose.
 - Windows packaging uses the system Evergreen WebView2 Runtime with Tauri's `downloadBootstrapper` fallback. Do not bundle the offline WebView2 installer.
 
 ## Runtime and path invariants
@@ -144,7 +144,6 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   mcp/                  external tools
   experimental/         pre-stable prototypes; public by default with explicit private exceptions
   test-support/         test infrastructure
-  runtime-diagnostics/  runtime invariants
   util/                 zero-dependency utilities
 python/      Python SDK/runtime (python/README.md)
 native/      @deepseek-ai/node-addon-system source (native/README.md)
@@ -202,11 +201,10 @@ Real-API tests/demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and 
 
 ## Conventions
 
-- Packages use `@deepseek-ai/dsh-<name>`; vendor is [rescoped](docs/rescope.md) and `private: true`. Harness packages declare `@deepseek-ai/cordis` in `peerDependencies`/`devDependencies`. Workspace dependency sections use DSH `workspace:*`, vendor/native `workspace:~` ([rules](.agents/notes/implemented/process/2026-09-22-workspace-release-ranges.md)).
+- Packages use `@deepseek-ai/dsh-<name>`; vendor is [rescoped](docs/rescope.md) and `private: true`. Harness packages declare `@deepseek-ai/cordis` in `peerDependencies`/`devDependencies`. Workspace dependency sections use DSH `workspace:*`, vendor/native `workspace:~` ([rules](.agents/notes/implemented/process/2026-08-10-npm-release-sequences.md)).
 - ESM everywhere (`"type": "module"`). Use package names across packages and `.ts` in local relative imports. Config subprocesses run built `lib/` under plain Node; source regressions use their declared launcher ([testing policy](docs/testing.md#test-subprocess-launch-modes)). The `dsh` CLI source launch runs through tsx's ESM-only hook (`node --import tsx/esm`); modules it reaches must stay ESM (no CJS-only exports) — Node's native TypeScript modes are unavailable across the engines range ([source-launch contract](.agents/notes/implemented/architecture/2026-07-29-dsh-source-launch-tsx-esm.md)). Raw/Web `cordis.yml` bare plugins must appear in their resolver manifest's `dependencies`; `verify-cordis-config` enforces it.
 - **Registrations are effects**: every contribution goes through `ctx.effect()` / `ctx.on()`; a registry's `register()` returns the disposer.
-- **Runtime invariants assert owned relationships.** Publish `./invariant` only when independent observations can diverge. Otherwise omit its source and wiring and record why in its README; empty installers and checks of service presence, plugin metadata, effects, or fixed examples are invalid ([package invariant rules](packages/AGENTS.md)).
-- **Typed events use declaration merging** and merge-extensible maps. Event JSDoc needs `@mode` and payload `@param`; scoped keys absent from payloads need `@dshScopeScan unsupported`. Public service methods document parameters and non-void returns. `SessionEventMap` members are required-on-read by default — builds that do not know a type refuse the log unless the event carries the envelope's `ignorable: true`; only structural format changes bump `SESSION_FORMAT_VERSION` ([mechanism](.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md)).
+- **Typed events use declaration merging** and merge-extensible maps. Event JSDoc needs `@mode` and payload `@param`. Public service methods document parameters and non-void returns. `SessionEventMap` members are required-on-read by default — builds that do not know a type refuse the log unless the event carries the envelope's `ignorable: true`; only structural format changes bump `SESSION_FORMAT_VERSION` ([mechanism](.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md)).
 - **Switch on discriminant tags.** Closed unions end in `assertNever`; merge-extensible unions fall through a documented default.
 - **Waterfall listeners MUST call `next()`** to delegate; returning without it short-circuits the chain ([semantics](docs/cordis-primer.md#cordis-waterfall-semantics)).
 - **Model-visible ⟺ logged**: anything that reaches a model request must be reconstructable from the session log; a new model-visible input requires a session event.
@@ -222,7 +220,7 @@ Real-API tests/demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and 
 - **Source plane vs artifact plane, never mixed.** Static gates and tests resolve workspace imports through tsconfig `paths` to `src` and pass on a clean tree; gates consuming built `lib/` declare that dependency ([layout](docs/development.md#typescript-project-layout)).
 - **Keep compiler faces explicit.** A package with both Host and Client programs exposes face-specific leaf configs and a solution-only root; repo-wide programs seed a face config, never the root solution ([layout](docs/development.md#typescript-project-layout)).
 - **An empty `catch` names the error** and why; keep its `try` to one statement.
-- **Keep comments local.** Do not restate code, expand unrelated comments, or explain distant behavior without local need ([rationale](.agents/notes/implemented/process/2026-08-09-concrete-prose-names-actors-and-recorded-facts.md)).
+- **Keep comments local.** Do not restate code, expand unrelated comments, or explain distant behavior without local need ([rationale](.agents/skills/dsh-prose-standard/SKILL.md)).
 - **Ban `prove` + `nance`** ([rule](.agents/notes/implemented/process/2026-08-26-ban-ambiguous-origin-label.md)).
 - **Prefer symmetry for parallel values**; unexplained asymmetry usually signals a missed extraction.
 - **Tests describe behavior, not correctness.** Change obsolete behavior with its tests; explain why in the PR.

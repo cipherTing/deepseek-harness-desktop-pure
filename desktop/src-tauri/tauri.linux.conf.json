@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["deb", "appimage"],
+    "externalBin": ["binaries/deepdive-node"],
+    "linux": {
+      "deb": {
+        "depends": ["xdg-user-dirs"]
+      },
+      "appimage": {
+        "files": {
+          "/usr/bin/xdg-user-dir": "/usr/bin/xdg-user-dir"
+        }
+      }
+    }
+  }
+}

@@ -474,7 +474,7 @@ fn desktop_file_handlers(path: String) -> Result<file_handlers::FileHandlerMenu,
 }
 
 #[tauri::command]
-fn desktop_open_file_with(app: AppHandle, path: String, handler_id: String) -> Result<(), String> {
+fn desktop_open_file_with(path: String, handler_id: String) -> Result<(), String> {
     let path = linked_file_path(&path)?;
     if !std::fs::metadata(&path)
         .map_err(|error| error.to_string())?
@@ -484,9 +484,7 @@ fn desktop_open_file_with(app: AppHandle, path: String, handler_id: String) -> R
     }
     let handler = file_handlers::find_for(&path, &handler_id)
         .ok_or_else(|| "Desktop file handler is no longer available".to_string())?;
-    app.opener()
-        .open_path(linked_file_argument(path)?, Some(handler.launcher()))
-        .map_err(|error| error.to_string())
+    handler.open(Path::new(&linked_file_argument(path)?))
 }
 
 #[tauri::command]

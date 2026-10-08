@@ -1,7 +1,7 @@
 /** Recorded npm evidence stays intact while authored files and exact edits remain checked. */
 
 import { describe, expect, it } from 'vitest'
-import { exactEditState, isRescopeExcluded } from './rescope-vendor.ts'
+import { exactEditState, isRescopeExcluded, rewritePackageNames } from './rescope-vendor.ts'
 
 const ANCHOR = '\n## Sync procedure'
 const INSERTED = `\n15. **rescope**: one log entry.\n${ANCHOR}`
@@ -19,6 +19,36 @@ describe('rescope file selection', () => {
     'packages/example/package.json',
   ])('keeps %s subject to upstream package-name checks', (file) => {
     expect(isRescopeExcluded(file)).toBe(false)
+  })
+})
+
+describe('preset identifiers', () => {
+  it.each([
+    'packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx',
+    'packages/client/ui-agent-preset/tests/components.client.spec.tsx',
+    'packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx',
+    'packages/client/ui-agent-preset/tests/section-store.client.spec.ts',
+    'apps/web/tests/agent-preset-selection.e2e.ts',
+    'apps/web/tests/developer-tools-settings.e2e.ts',
+    'packages/bundle/web-app/cordis.patch.yml',
+    'docs/subsystems/schedule.md',
+    'docs/subsystems/schedule.zh.md',
+    'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.md',
+    'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.zh.md',
+    'docs/user/guide/schedule.md',
+    'docs/user/guide/schedule.zh.md',
+  ])('preserves the cordis preset in %s while rescoping other packages', (file) => {
+    const text = "```ts\nconst preset = 'cordis'\nimport Schema from 'schemastery'\n```\n"
+    const scoped = rewritePackageNames(text, file).text
+    expect(scoped).toBe(text.replace("'schemastery'", "'@deepseek-ai/schemastery'"))
+    expect(rewritePackageNames(scoped, file, true).text).toBe(text)
+  })
+
+  it('rescopes the framework outside preset identifier exceptions', () => {
+    const text = "import { Context } from 'cordis'\n"
+    const scoped = "import { Context } from '@deepseek-ai/cordis'\n"
+    expect(rewritePackageNames(text, 'packages/core/example/src/index.ts').text).toBe(scoped)
+    expect(rewritePackageNames(scoped, 'packages/core/example/src/index.ts', true).text).toBe(text)
   })
 })
 

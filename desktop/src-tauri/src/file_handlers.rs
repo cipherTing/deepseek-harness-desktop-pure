@@ -1,4 +1,4 @@
-//! Native discovery of real applications that can open a linked file.
+//! Native discovery and opening through installed applications.
 
 use std::{collections::HashSet, path::Path};
 
@@ -24,9 +24,20 @@ impl FileHandler {
         &self.id
     }
 
-    /** Return the native application argument accepted by Tauri Opener. */
-    pub(crate) fn launcher(&self) -> &str {
-        &self.launcher
+    /** Open through Tauri, or through GIO with the Linux desktop entry's arguments. */
+    pub(crate) fn open(&self, path: &Path) -> Result<(), String> {
+        #[cfg(target_os = "linux")]
+        {
+            use gio::prelude::AppInfoExt;
+            let application = gio::DesktopAppInfo::new(&self.launcher)
+                .ok_or_else(|| "Desktop file handler is no longer available".to_string())?;
+            application
+                .launch(&[gio::File::for_path(path)], None::<&gio::AppLaunchContext>)
+                .map_err(|error| error.to_string())
+        }
+        #[cfg(not(target_os = "linux"))]
+        tauri_plugin_opener::open_path(path, Some(&self.launcher))
+            .map_err(|error| error.to_string())
     }
 
     fn summary(&self) -> FileHandlerSummary {
@@ -319,10 +330,148 @@ fn windows_known_installation(application: &WindowsDeveloperApplication) -> Opti
         .find(|path| path.is_file())
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn platform_handlers(_path: &Path) -> ResolvedHandlers {
-    ResolvedHandlers {
-        primary: None,
-        handlers: Vec::new(),
+#[cfg(target_os = "linux")]
+fn platform_handlers(path: &Path) -> ResolvedHandlers {
+    use gio::prelude::{AppInfoExt, FileExt};
+    let content_type = gio::File::for_path(path)
+        .query_info(
+            "standard::content-type",
+            gio::FileQueryInfoFlags::NONE,
+            None::<&gio::Cancellable>,
+        )
+        .ok()
+        .and_then(|info| info.content_type());
+    let Some(content_type) = content_type else {
+        return ResolvedHandlers {
+            primary: None,
+            handlers: Vec::new(),
+        };
+    };
+    let primary = gio::AppInfo::default_for_type(&content_type, false)
+        .and_then(|application| linux_handler(&application));
+    let handlers = gio::AppInfo::all_for_type(&content_type)
+        .iter()
+        .filter(|application| application.should_show())
+        .filter_map(linux_handler)
+        .collect();
+    ResolvedHandlers { primary, handlers }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_handler(application: &gio::AppInfo) -> Option<FileHandler> {
+    use gio::prelude::AppInfoExt;
+    let desktop_id = application.id()?.to_string();
+    Some(FileHandler {
+        id: format!("linux:{desktop_id}"),
+        label: application.display_name().to_string(),
+        launcher: desktop_id,
+    })
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt,
+        process::{Command, Stdio},
+        thread,
+        time::{Duration, Instant},
+    };
+
+    #[test]
+    fn linux_handlers_preserve_desktop_arguments() {
+        if let Some(root) = std::env::var_os("DSH_LINUX_HANDLER_FIXTURE") {
+            let root = std::path::PathBuf::from(root);
+            let path = root.join("note with spaces.txt");
+            let menu = menu_for(&path);
+            assert_eq!(menu.primary.unwrap().label, "Fixture Default");
+            assert!(menu
+                .handlers
+                .iter()
+                .any(|handler| handler.label == "Fixture Choice"));
+            assert!(!menu
+                .handlers
+                .iter()
+                .any(|handler| handler.label == "Fixture Hidden"));
+            assert!(find_for(&path, "linux:/bin/sh").is_none());
+            let handler = find_for(&path, "linux:fixture-choice.desktop").unwrap();
+            handler.open(&path).unwrap();
+            let output = root.join("arguments");
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !output.exists() {
+                assert!(
+                    Instant::now() < deadline,
+                    "desktop application did not receive the file"
+                );
+                thread::sleep(Duration::from_millis(10));
+            }
+            assert_eq!(
+                fs::read_to_string(output).unwrap(),
+                format!("--fixture-mode\n{}\n", path.display())
+            );
+            return;
+        }
+
+        // GIO caches XDG application state, so each fixture gets its own process.
+        let root = tempfile::tempdir().unwrap();
+        let applications = root.path().join("data/applications");
+        let configuration = root.path().join("config");
+        fs::create_dir_all(&applications).unwrap();
+        fs::create_dir_all(&configuration).unwrap();
+        let helper = root.path().join("open-fixture");
+        fs::write(&helper, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DSH_HANDLER_OUTPUT.tmp\"\nmv \"$DSH_HANDLER_OUTPUT.tmp\" \"$DSH_HANDLER_OUTPUT\"\n").unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        for (id, label, hidden) in [
+            ("default", "Fixture Default", false),
+            ("choice", "Fixture Choice", false),
+            ("hidden", "Fixture Hidden", true),
+        ] {
+            fs::write(applications.join(format!("fixture-{id}.desktop")), format!(
+                "[Desktop Entry]\nType=Application\nName={label}\nExec=\"{}\" --fixture-mode %F\nMimeType=text/plain;\nNoDisplay={hidden}\nTerminal=false\n",
+                helper.display(),
+            )).unwrap();
+        }
+        fs::write(configuration.join("mimeapps.list"), "[Default Applications]\ntext/plain=fixture-default.desktop;\n[Added Associations]\ntext/plain=fixture-default.desktop;fixture-choice.desktop;fixture-hidden.desktop;\n").unwrap();
+        fs::write(root.path().join("note with spaces.txt"), "fixture text\n").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "file_handlers::tests::linux_handlers_preserve_desktop_arguments",
+                "--nocapture",
+            ])
+            .env("DSH_LINUX_HANDLER_FIXTURE", root.path())
+            .env("DSH_HANDLER_OUTPUT", root.path().join("arguments"))
+            .env("XDG_DATA_HOME", root.path().join("data"))
+            .env("XDG_CONFIG_HOME", configuration)
+            .env("XDG_CONFIG_DIRS", root.path().join("empty-config"))
+            .env("XDG_CURRENT_DESKTOP", "DeepDiveFixture")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let timed_out = loop {
+            if child.try_wait().unwrap().is_some() {
+                break false;
+            }
+            if Instant::now() >= deadline {
+                // A concurrently exited child is still reaped by wait_with_output.
+                let _termination = child.kill();
+                break true;
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            !timed_out,
+            "Linux desktop application fixture exceeded its deadline"
+        );
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

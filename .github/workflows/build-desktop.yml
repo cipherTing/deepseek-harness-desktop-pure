@@ -83,6 +83,10 @@ jobs:
             runner: windows-latest
             target: x86_64-pc-windows-msvc
             bundle: nsis
+          - platform: linux-x64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundle: deb,appimage
 
     steps:
       - name: Checkout release source
@@ -90,6 +94,20 @@ jobs:
         with:
           ref: ${{ needs.metadata.outputs.source_sha }}
           fetch-depth: 1
+
+      # NSIS reads absolute resource paths with a 260-character limit.
+      - name: Prepare short Windows build path
+        id: windows-source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        env:
+          SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+        run: |
+          $buildWorkspace = Join-Path $env:RUNNER_TEMP 'dsh'
+          git worktree add --detach $buildWorkspace $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "workspace=$buildWorkspace" >> $env:GITHUB_OUTPUT
 
       - name: Install pnpm and Node.js
         uses: pnpm/setup@v2
@@ -102,33 +120,43 @@ jobs:
         shell: bash
         run: rustup toolchain install 1.96.0 --profile minimal
 
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev libfuse2 xdg-user-dirs
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}
 
       - name: Check Desktop version mirrors
         run: pnpm desktop:version:check
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}
 
       - name: Prepare the Harness bundle
         run: pnpm run bundle:prepare
-        working-directory: desktop
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
 
       - name: Run Desktop node tests
         run: pnpm run test
-        working-directory: desktop
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
 
       - name: Run Desktop Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
-        working-directory: desktop
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
 
       - name: Build and upload Desktop package
         uses: tauri-apps/tauri-action@v1
         with:
-          projectPath: desktop
+          projectPath: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
           tauriScript: pnpm tauri
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
           releaseAssetNamePattern: deepdive-${{ matrix.platform }}-[version][ext]
           uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: deepdive-${{ matrix.platform }}-[version]
+          workflowArtifactNamePattern: deepdive-${{ matrix.platform }}-[version]-[bundle]
         env:
           DESKTOP_SKIP_BUNDLE: '1'
 
@@ -147,7 +175,7 @@ jobs:
       - name: Download Desktop packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: deepdive-*-${{ needs.metadata.outputs.version }}
+          pattern: deepdive-*-${{ needs.metadata.outputs.version }}-*
           path: release-input
           merge-multiple: true
 
@@ -159,9 +187,11 @@ jobs:
           shopt -s nullglob
           dmg=(release-input/*.dmg)
           exe=(release-input/*.exe)
+          deb=(release-input/*.deb)
+          appimage=(release-input/*.AppImage)
 
-          if [[ "${#dmg[@]}" -ne 1 || "${#exe[@]}" -ne 1 ]]; then
-            echo "::error::Expected exactly one DMG and one EXE artifact."
+          if [[ "${#dmg[@]}" -ne 1 || "${#exe[@]}" -ne 1 || "${#deb[@]}" -ne 1 || "${#appimage[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one DMG, one EXE, one DEB and one AppImage artifact."
             find release-input -maxdepth 2 -type f -print
             exit 1
           fi
@@ -169,6 +199,8 @@ jobs:
           mkdir -p release-assets
           cp "${dmg[0]}" "release-assets/deepdive-macos-arm64-$VERSION.dmg"
           cp "${exe[0]}" "release-assets/deepdive-windows-x64-$VERSION.exe"
+          cp "${deb[0]}" "release-assets/deepdive-linux-x64-$VERSION.deb"
+          cp "${appimage[0]}" "release-assets/deepdive-linux-x64-$VERSION.AppImage"
 
       - name: Prepare bilingual release notes
         shell: bash

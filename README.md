@@ -20,7 +20,7 @@
 <p align="center">
   <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><img src="https://img.shields.io/github/v/release/cipherTing/deepseek-harness-desktop-pure?display_name=tag&sort=semver&label=release" alt="Latest release"></a>
   <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml"><img src="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml/badge.svg" alt="Desktop build"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Windows%20x64-0f766e" alt="Supported platforms">
+  <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Windows%20x64%20%7C%20Linux%20x64-0f766e" alt="Supported platforms">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/cipherTing/deepseek-harness-desktop-pure" alt="MIT License"></a>
 </p>
 
@@ -34,7 +34,7 @@
 
 ## 一个桌面入口，不另造一套 Harness
 
-DeepDive 将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Web 客户端封装为 macOS 和 Windows 安装包。它只负责桌面窗口、随包运行环境和必要的系统适配；Harness 的功能、Web 界面、插件机制和用户数据仍由上游运行时负责。
+DeepDive 将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Web 客户端封装为 macOS、Windows 和 Linux 安装包。它只负责桌面窗口、随包运行环境和必要的系统适配；Harness 的功能、Web 界面、插件机制和用户数据仍由上游运行时负责。
 
 | | |
 | --- | --- |
@@ -50,8 +50,11 @@ DeepDive 将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 | --- | --- | --- |
 | macOS | `deepdive-macos-arm64-<version>.dmg` | macOS 11 或更高版本，仅 Apple Silicon。 |
 | Windows | `deepdive-windows-x64-<version>.exe` | Windows x64；使用系统 Evergreen WebView2 Runtime，缺失时由安装程序联网补齐。 |
+| Linux | `deepdive-linux-x64-<version>.deb` / `.AppImage` | Ubuntu 22.04+/Debian 12+，仅 x64。 |
 
 > **首次安装提醒：** macOS 包采用 ad-hoc 签名且未进行 Apple notarization，Windows 包未使用商业代码签名证书。首次安装时系统可能显示开发者或 SmartScreen 提醒；请确认下载来源是本仓库的 GitHub Release。
+
+Linux 需要图形桌面环境。`.deb` 使用系统包管理器安装并补齐 GTK/WebKitGTK 和 `xdg-user-dirs` 依赖；AppImage 自带目录查询工具，下载后需要赋予执行权限，系统缺少 FUSE 2 时可使用 `APPIMAGE_EXTRACT_AND_RUN=1` 运行。两种安装包均自带 Node.js 和 pnpm。默认工作区使用系统的“文档”目录；未配置该目录时，可通过“选择工作区”指定文件夹。
 
 ## 继续使用你已有的 Harness 环境
 
@@ -106,13 +109,13 @@ pnpm desktop:dev
 pnpm desktop:build
 ```
 
-macOS 安装包只能在 Apple Silicon Mac 上构建，Windows x64 安装包只能在 Windows x64 环境构建。完整的维护规则、增量开发命令和发布约束见 [AGENTS.md](AGENTS.md)。
+macOS 安装包在 Apple Silicon Mac 上构建，Windows x64 安装包在 Windows x64 环境构建，Linux x64 安装包在 Ubuntu 22.04 x64 上构建。完整的维护规则、增量开发命令和发布约束见 [AGENTS.md](AGENTS.md)。
 
 ### 版本与发布
 
 - [`desktop/package.json`](desktop/package.json) 是 Desktop 版本的唯一来源；使用 `pnpm desktop:version:set -- <version>` 更新版本，并用 `pnpm desktop:version:check` 校验。
 - [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) 只记录本 fork 已完成同步的上游 tag 或完整 SHA，不记录本仓库 HEAD。
-- GitHub Actions 仅由维护者手动触发；只有 `master` 可以在两个平台构建成功后发布 `v<version>`。
+- GitHub Actions 仅由维护者手动触发；只有 `master` 可以在三个平台构建成功后发布 `v<version>`。
 - Release 正文使用中英文的简短 Markdown 列表，只概述用户可感知的更新，不记录实现细节。
 
 ## 贡献与许可
