@@ -95,6 +95,20 @@ jobs:
           ref: ${{ needs.metadata.outputs.source_sha }}
           fetch-depth: 1
 
+      # NSIS reads absolute resource paths with a 260-character limit.
+      - name: Prepare short Windows build path
+        id: windows-source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        env:
+          SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+        run: |
+          $buildWorkspace = Join-Path $env:RUNNER_TEMP 'dsh'
+          git worktree add --detach $buildWorkspace $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "workspace=$buildWorkspace" >> $env:GITHUB_OUTPUT
+
       - name: Install pnpm and Node.js
         uses: pnpm/setup@v2
         with:
@@ -116,26 +130,28 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}
 
       - name: Check Desktop version mirrors
         run: pnpm desktop:version:check
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}
 
       - name: Prepare the Harness bundle
         run: pnpm run bundle:prepare
-        working-directory: desktop
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
 
       - name: Run Desktop node tests
         run: pnpm run test
-        working-directory: desktop
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
 
       - name: Run Desktop Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
-        working-directory: desktop
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
 
       - name: Build and upload Desktop package
         uses: tauri-apps/tauri-action@v1
         with:
-          projectPath: desktop
+          projectPath: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
           tauriScript: pnpm tauri
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
           releaseAssetNamePattern: deepdive-${{ matrix.platform }}-[version][ext]

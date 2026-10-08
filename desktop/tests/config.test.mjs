@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
+import { win32 } from 'node:path'
 import test from 'node:test'
+import { load } from 'js-yaml'
 
 const readJson = (url) => JSON.parse(readFileSync(url, 'utf8'))
 
@@ -82,6 +84,42 @@ test('Desktop workflow builds any manual ref and releases only one frozen master
   assert.match(workflow, /--notes-file release-notes\.md/)
   assert.doesNotMatch(workflow, /--generate-notes/)
   assert.match(workflow, /--fail-on-no-commits/)
+})
+
+test('Windows packaging keeps the longest Inspector resource below the NSIS source path limit', () => {
+  const workflow = load(readFileSync(new URL('../../.github/workflows/build-desktop.yml', import.meta.url), 'utf8'))
+  const build = workflow.jobs.build
+  const resource = 'desktop/src-tauri/rt/node_modules/@deepseek-ai/dsh-experimental-inspector/lib/devtools/models/issues_manager/descriptions/selectElementAccessibilityInteractiveContentAttributesSelectDescendant.md'
+  const hostedWorkspace = 'D:/a/deepseek-harness-desktop-pure/deepseek-harness-desktop-pure'
+
+  assert.equal(win32.join(hostedWorkspace, resource).length, 260)
+  const buildWorkspace = win32.join('D:/a/_temp', 'dsh')
+  assert.ok(win32.join(buildWorkspace, resource).length < 260)
+
+  const prepareIndex = build.steps.findIndex((step) => step.name === 'Prepare short Windows build path')
+  const installIndex = build.steps.findIndex((step) => step.name === 'Install dependencies')
+  assert.ok(prepareIndex >= 0 && prepareIndex < installIndex)
+  const prepare = build.steps[prepareIndex]
+  assert.equal(prepare.id, 'windows-source')
+  assert.equal(prepare.if, "runner.os == 'Windows'")
+  assert.equal(prepare.shell, 'pwsh')
+  assert.equal(prepare['working-directory'], '${{ github.workspace }}')
+  assert.equal(prepare.env.SOURCE_SHA, '${{ needs.metadata.outputs.source_sha }}')
+  assert.match(prepare.run, /Join-Path \$env:RUNNER_TEMP 'dsh'/)
+  assert.match(prepare.run, /git worktree add --detach \$buildWorkspace \$env:SOURCE_SHA/)
+  assert.match(prepare.run, /if \(\$LASTEXITCODE -ne 0\) \{ exit \$LASTEXITCODE \}/)
+  assert.match(prepare.run, /"workspace=\$buildWorkspace" >> \$env:GITHUB_OUTPUT/)
+
+  const source = '${{ steps.windows-source.outputs.workspace || github.workspace }}'
+  for (const name of ['Install dependencies', 'Check Desktop version mirrors']) {
+    assert.equal(build.steps.find((step) => step.name === name)['working-directory'], source)
+  }
+
+  for (const name of ['Prepare the Harness bundle', 'Run Desktop node tests', 'Run Desktop Rust tests']) {
+    assert.equal(build.steps.find((step) => step.name === name)['working-directory'], `${source}/desktop`)
+  }
+  assert.equal(build.steps.find((step) => step.uses === 'tauri-apps/tauri-action@v1').with.projectPath,
+    `${source}/desktop`)
 })
 
 test('Tauri prepares the bundle exactly once', () => {
