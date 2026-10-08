@@ -13,7 +13,9 @@ const triple = process.platform === 'darwin' && process.arch === 'arm64'
   ? 'aarch64-apple-darwin'
   : process.platform === 'win32' && process.arch === 'x64'
     ? 'x86_64-pc-windows-msvc'
-    : undefined
+    : process.platform === 'linux' && process.arch === 'x64'
+      ? 'x86_64-unknown-linux-gnu'
+      : undefined
 
 const launchModes = [
   { name: 'native main script', arguments: sidecar => [sidecar] },
@@ -34,7 +36,8 @@ const launchModes = [
 
 async function runSidecarSmoke(launchMode) {
   const dshHome = await mkdtemp(resolve(tmpdir(), 'dsh-desktop-smoke-'))
-  const executable = resolve(desktop, `src-tauri/binaries/node-${triple}${process.platform === 'win32' ? '.exe' : ''}`)
+  const binaryName = process.platform === 'linux' ? 'deepdive-node' : 'node'
+  const executable = resolve(desktop, `src-tauri/binaries/${binaryName}-${triple}${process.platform === 'win32' ? '.exe' : ''}`)
   const sidecar = resolve(desktop, 'src-tauri/rt/lib/sidecar.mjs')
   const clientUi = resolve(desktop, 'src-tauri/rt/node_modules/@deepseek-ai/dsh-desktop-client-ui/lib')
   assert.equal(existsSync(join(clientUi, 'index.js')), true, 'deployed client-ui Host entry is missing')

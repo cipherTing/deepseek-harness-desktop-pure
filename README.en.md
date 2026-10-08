@@ -20,7 +20,7 @@
 <p align="center">
   <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest"><img src="https://img.shields.io/github/v/release/cipherTing/deepseek-harness-desktop-pure?display_name=tag&sort=semver&label=release" alt="Latest release"></a>
   <a href="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml"><img src="https://github.com/cipherTing/deepseek-harness-desktop-pure/actions/workflows/build-desktop.yml/badge.svg" alt="Desktop build"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Windows%20x64-0f766e" alt="Supported platforms">
+  <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Windows%20x64%20%7C%20Linux%20x64-0f766e" alt="Supported platforms">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/cipherTing/deepseek-harness-desktop-pure" alt="MIT License"></a>
 </p>
 
@@ -34,7 +34,7 @@
 
 ## One desktop entry point, not another Harness
 
-DeepDive packages the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web client as macOS and Windows installers. It owns only the desktop window, bundled runtime, and required system adapters; Harness features, Web UI, plugin system, and user data remain owned by the upstream runtime.
+DeepDive packages the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web client as macOS, Windows, and Linux installers. It owns only the desktop window, bundled runtime, and required system adapters; Harness features, Web UI, plugin system, and user data remain owned by the upstream runtime.
 
 | | |
 | --- | --- |
@@ -50,8 +50,11 @@ Download the latest package for your platform from [GitHub Releases](https://git
 | --- | --- | --- |
 | macOS | `deepdive-macos-arm64-<version>.dmg` | macOS 11 or newer, Apple Silicon only. |
 | Windows | `deepdive-windows-x64-<version>.exe` | Windows x64. It uses the system Evergreen WebView2 Runtime and downloads it only when absent. |
+| Linux | `deepdive-linux-x64-<version>.deb` / `.AppImage` | Ubuntu 22.04+/Debian 12+, x64 only. |
 
 > **First-install note:** macOS packages use ad-hoc signing and are not Apple-notarized. Windows packages do not use a commercial code-signing certificate. The operating system may show a developer or SmartScreen warning on first install; verify that the package came from this repository's GitHub Release.
+
+Linux requires a graphical desktop. Install `.deb` packages through the system package manager to resolve GTK/WebKitGTK and `xdg-user-dirs` dependencies. AppImage bundles the directory lookup tool; make it executable and, when FUSE 2 is unavailable, run it with `APPIMAGE_EXTRACT_AND_RUN=1`. Both packages bundle Node.js and pnpm. The default workspace uses the system Documents directory; when it is unconfigured, use Choose workspace to select a folder.
 
 ## Keep using your existing Harness environment
 
@@ -106,13 +109,13 @@ pnpm desktop:dev
 pnpm desktop:build
 ```
 
-macOS packages can be built only on an Apple Silicon Mac, and Windows x64 packages only in a Windows x64 environment. See [AGENTS.md](AGENTS.md) for maintenance rules, incremental development commands, and release constraints.
+Build macOS packages on an Apple Silicon Mac, Windows x64 packages on Windows x64, and Linux x64 packages on Ubuntu 22.04 x64. See [AGENTS.md](AGENTS.md) for maintenance rules, incremental development commands, and release constraints.
 
 ### Versioning and releases
 
 - [`desktop/package.json`](desktop/package.json) is the only Desktop version source. Update it with `pnpm desktop:version:set -- <version>`, then run `pnpm desktop:version:check`.
 - [`desktop/UPSTREAM_COMMIT`](desktop/UPSTREAM_COMMIT) records only the upstream tag or full SHA synchronized into this fork, never this repository's HEAD.
-- GitHub Actions is maintainer-triggered only; only `master` may publish `v<version>` after both platform builds succeed.
+- GitHub Actions is maintainer-triggered only; only `master` may publish `v<version>` after all three platform builds succeed.
 - Release notes use short Chinese and English Markdown lists that summarize user-visible changes without implementation detail.
 
 ## Contributing and license

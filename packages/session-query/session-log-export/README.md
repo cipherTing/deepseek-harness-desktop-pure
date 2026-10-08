@@ -143,5 +143,3 @@ This Dev Note is working context for maintainers: open design questions and dire
 The download route deliberately returns bytes rather than a Host path. A future Host-path export would need a separate API and an explicit ownership decision for the destination.
 
 </details>
-
-**Runtime invariant:** No companion is published. Connection and the command registry own both registrations, while each export reads authoritative Session services.

@@ -18,6 +18,12 @@ const TARGETS = {
     binary: `node-v${NODE_VERSION}-win-x64/node.exe`,
     output: 'node-x86_64-pc-windows-msvc.exe',
   },
+  'x86_64-unknown-linux-gnu': {
+    archive: `node-v${NODE_VERSION}-linux-x64.tar.gz`,
+    checksum: 'b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a',
+    binary: `node-v${NODE_VERSION}-linux-x64/bin/node`,
+    output: 'deepdive-node-x86_64-unknown-linux-gnu',
+  },
 }
 
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), '..')

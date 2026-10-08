@@ -51,7 +51,7 @@ The Electron Desktop Browser retains guest security, shared IPC declarations and
 | Application restart or window reload | Show the saved title and URL; load only after an explicit restore or address submission. |
 | Guest crash | Retry through the provider; page memory and native history are not durable. |
 
-[Layout and provider recovery](2026-09-14-sidebar-layout-provider-recovery.md) remains independent: persisted tab identity, placement and address support cold starts, not DOM serialization. A hidden page may continue scripts, media and networking.
+[Layout and provider recovery](../../../../packages/client/ui-sidebar-right/README.md) remains independent: persisted tab identity, placement and address support cold starts, not DOM serialization. A hidden page may continue scripts, media and networking.
 
 ## Alternatives considered
 

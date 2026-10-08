@@ -189,6 +189,7 @@ window.__ModuleLoader__.load({
       const normalized = String(version).replace(/^v/i, "");
       if (navigator.userAgent.includes("Windows")) return `deepdive-windows-x64-${normalized}.exe`;
       if (navigator.userAgent.includes("Macintosh")) return `deepdive-macos-arm64-${normalized}.dmg`;
+      if (/Linux (?:x86_64|x64)/.test(navigator.userAgent)) return `deepdive-linux-x64-${normalized}.AppImage`;
       return null;
     }
     function fileTransfer(event) {

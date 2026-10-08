@@ -7,6 +7,13 @@ use tauri_plugin_shell::{
 };
 use tokio::sync::mpsc;
 
+// Debian installs sidecars in /usr/bin; reserve a name independent of system Node.js.
+const NODE_SIDECAR_NAME: &str = if cfg!(target_os = "linux") {
+    "deepdive-node"
+} else {
+    "node"
+};
+
 /// Events emitted by one owned Node sidecar generation.
 #[derive(Debug)]
 pub(crate) enum SidecarEvent {
@@ -37,7 +44,7 @@ impl SidecarProcess {
     ) -> Result<Self, String> {
         let command = app
             .shell()
-            .sidecar("node")
+            .sidecar(NODE_SIDECAR_NAME)
             .map_err(|error| format!("Desktop Node sidecar could not be resolved: {error}"))?
             .args(&arguments)
             .current_dir(cwd)

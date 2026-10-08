@@ -707,6 +707,7 @@ dependencies = [
 name = "deepseek-harness-desktop"
 version = "0.1.19"
 dependencies = [
+ "gio",
  "objc2-app-kit",
  "objc2-foundation",
  "rmp-serde",
@@ -720,6 +721,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-shell",
  "tauri-plugin-single-instance",
+ "tempfile",
  "tokio",
  "ureq",
  "url",
