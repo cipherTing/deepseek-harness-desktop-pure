@@ -1,6 +1,6 @@
 [package]
 name = "deepseek-harness-desktop"
-version = "0.1.19"
+version = "0.1.20"
 description = "DeepDive desktop distribution for DeepSeek Harness"
 authors = ["DeepDive contributors"]
 license = "MIT"
