@@ -255,7 +255,7 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   assert.match(sidecar, /args: \['--host', '127\.0\.0\.1', '--port', String\(await webPort\(\)\), '--no-open'\]/)
   assert.match(sidecar, /packageManager: bundledPackageManager\(\)/)
   assert.match(sidecar, /'node_modules', 'pnpm', 'bin', 'pnpm\.mjs'/)
-  assert.equal(runtimePackage.dependencies.pnpm, '11.7.0')
+  assert.equal(runtimePackage.dependencies.pnpm, '11.28.5')
   assert.match(sidecar, /connection\.authenticatedUrl\(origin\)/)
   // The profile-boot facade re-exports the boot of `@deepseek-ai/dsh` inside
   // this deploy root. The sidecar anchors the shared `web` profile and that
