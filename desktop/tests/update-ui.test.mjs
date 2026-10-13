@@ -136,8 +136,8 @@ function loadClientUi({
   const primitives = {
     Button: ({ children, icon, variant: _variant, size: _size, ...props }) => React.createElement(
       'button', props, icon, children),
-    IconChevronRightOutline14: () => React.createElement('span', { 'aria-hidden': 'true' }, '>'),
-    IconDownloadOutline16: () => React.createElement('span', { 'aria-hidden': 'true' }, 'download'),
+    IconChevronRightOutlineRegular: () => React.createElement('span', { 'aria-hidden': 'true' }, '>'),
+    IconDownloadOutlineRegular: () => React.createElement('span', { 'aria-hidden': 'true' }, 'download'),
     MarkdownText: ({ text }) => React.createElement('div', { 'data-testid': 'release-markdown' }, text),
     Modal: ({ open, title, children, footer, className, contentClassName }) => open
       ? React.createElement('div', { role: 'dialog', 'aria-label': title, className },
@@ -458,4 +458,55 @@ test('version comparison does not lose precision for large SemVer identifiers', 
   const UpdateBadge = components.get('settings.update')
   const view = render(React.createElement(UpdateBadge, { wide: true, t }))
   await view.findByRole('button', { name: '更新' })
+})
+
+/**
+ * Names the checked-in Desktop client bundle destructures from the shared
+ * primitives module table.
+ * @returns the required export names, in source order.
+ */
+function requiredPrimitives() {
+  const names = [...clientSource.matchAll(
+    /const\s*\{([^}]*)\}\s*=\s*require\("@deepseek-ai\/dsh-client-ui-primitives"\)/g,
+  )].flatMap(match => match[1].split(',').map(part => part.trim()).filter(part => part !== ''))
+  assert.ok(names.length > 0, 'the Desktop client bundle must destructure the primitives module')
+  return names
+}
+
+/**
+ * Value exports reachable from the primitives package entry in the source
+ * plane, following `export *` one module deep (the icon barrel).
+ * @returns every exported value name.
+ */
+function primitivesExportSurface() {
+  const names = new Set()
+  const collect = (path) => {
+    const source = readFileSync(
+      new URL(`../../packages/client/ui-primitives/src/${path}`, import.meta.url), 'utf8')
+    for (const match of source.matchAll(/^export\s+(?:const|function|class)\s+([A-Za-z0-9_$]+)/gm)) {
+      names.add(match[1])
+    }
+    for (const match of source.matchAll(/^export\s+\*\s+from\s+'([^']+)'/gm)) {
+      collect(match[1].replace(/^\.\//, ''))
+    }
+    for (const match of source.matchAll(/^export\s+(?!type\b)\{([^}]*)\}\s*from\s+'[^']+'/gm)) {
+      for (const part of match[1].split(',')) {
+        const trimmed = part.trim()
+        if (trimmed === '' || trimmed.startsWith('type ')) continue
+        const name = trimmed.split(/\s+as\s+/).at(-1)
+        if (name !== undefined && name !== '') names.add(name)
+      }
+    }
+  }
+  collect('index.ts')
+  return names
+}
+
+// A shared-library rename reaches this bundle only as `undefined` at require
+// time, which React reports as an invalid element type when the update dialog
+// first renders. Guard the required names against the primitives source so the
+// rename fails here instead of inside the shipped dialog.
+test('the Desktop client bundle requires only names the primitives package exports', () => {
+  const exported = primitivesExportSurface()
+  assert.deepEqual(requiredPrimitives().filter(name => !exported.has(name)), [])
 })

@@ -23,15 +23,6 @@
   align-items: stretch;
 }
 
-/* Keep the Desktop update seat below the settings trigger. */
-.triggerColumn {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-}
-
 .trigger {
   flex: 1;
   min-width: 0;

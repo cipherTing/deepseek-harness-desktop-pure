@@ -8,8 +8,8 @@ window.__ModuleLoader__.load({
     const React = require("react");
     const {
       Button,
-      IconChevronRightOutline14,
-      IconDownloadOutline16,
+      IconChevronRightOutlineRegular,
+      IconDownloadOutlineRegular,
       MarkdownText,
       Modal,
     } = require("@deepseek-ai/dsh-client-ui-primitives");
@@ -358,7 +358,7 @@ window.__ModuleLoader__.load({
           target: "_self",
         },
           React.createElement("span", { className: "dab-startLinkIcon" },
-            React.createElement(IconDownloadOutline16, { size: 16 })),
+            React.createElement(IconDownloadOutlineRegular, { size: 16 })),
           t("dialog.start"),
         ),
       );
@@ -377,7 +377,7 @@ window.__ModuleLoader__.load({
             React.createElement("span", { className: "dab-versionValue" }, `v${String(info?.desktopVersion ?? "?").replace(/^v/i, "")}`),
           ),
           React.createElement("span", { className: "dab-versionArrow", "aria-hidden": "true" },
-            React.createElement(IconChevronRightOutline14, { size: 14 })),
+            React.createElement(IconChevronRightOutlineRegular, { size: 14 })),
           React.createElement("div", { className: "dab-versionCell dab-versionLatest" },
             React.createElement("span", { className: "dab-versionLabel" }, t("dialog.latest")),
             React.createElement("span", { className: "dab-versionValue" }, latest.version),
