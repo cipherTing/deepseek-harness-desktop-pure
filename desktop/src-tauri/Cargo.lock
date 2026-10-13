@@ -705,7 +705,7 @@ dependencies = [
 
 [[package]]
 name = "deepseek-harness-desktop"
-version = "0.1.21"
+version = "0.1.22"
 dependencies = [
  "gio",
  "objc2-app-kit",
