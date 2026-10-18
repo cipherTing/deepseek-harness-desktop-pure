@@ -1,5 +1,8 @@
+import { globSync } from 'node:fs'
 import { defineConfig } from 'tsdown'
 import { typertPlugin } from './packages/typert/generator/lib/types/tsdown-plugin.js'
+import { WORKSPACE_TYPERT_FACES } from './scripts/typert-faces.ts'
+import { workspacePackageGlobs } from './scripts/workspace-package-globs.ts'
 
 function isBuildFaceClient(value: unknown): boolean {
   if (value === undefined || value === 'host') return false
@@ -15,8 +18,9 @@ function isBuildFaceClient(value: unknown): boolean {
  */
 export default defineConfig(({ env }) => {
   const client = isBuildFaceClient(env?.DSH_BUILD_FACE)
+  const packages = workspacePackageGlobs(globSync(['vendor/*/package.json', 'packages/*/*/package.json'], { cwd: import.meta.dirname }))
   return {
-    workspace: ['vendor/*', 'packages/*/*', 'apps/cli'],
+    workspace: [...packages, 'apps/cli'],
     entry: client ? '' : ['lib/types/{index,startup}.js'],
     outDir: 'lib',
     format: ['esm'],
@@ -25,6 +29,6 @@ export default defineConfig(({ env }) => {
     fixedExtension: false,
     dts: false,
     clean: false,
-    plugins: client ? [] : [typertPlugin({ mode: 'workspace', faces: ['host'] })],
+    plugins: client ? [] : [typertPlugin({ mode: 'workspace', faces: WORKSPACE_TYPERT_FACES })],
   }
 })

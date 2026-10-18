@@ -128,7 +128,7 @@ test('Tauri prepares the bundle exactly once', () => {
 
   assert.equal(desktopPackage.scripts.dev, 'tauri dev')
   assert.equal(desktopPackage.scripts.build, 'tauri build')
-  assert.equal(desktopPackage.scripts['build:harness'], 'pnpm dlx npm@11.18.0 --prefix .. run build')
+  assert.equal(desktopPackage.scripts['build:harness'], 'pnpm -C .. run build')
   assert.equal(existsSync(new URL('../scripts/build-desktop.mjs', import.meta.url)), false)
   assert.match(desktopPackage.scripts['build:runtime'], /pnpm run deploy:runtime/)
   assert.deepEqual(tauriConfig.build.beforeDevCommand, {

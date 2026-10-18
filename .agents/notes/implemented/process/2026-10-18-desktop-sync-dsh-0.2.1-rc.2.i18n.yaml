@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-18-desktop-sync-dsh-0.2.1-rc.2.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-10-18-desktop-sync-dsh-0.2.1-rc.2.md
+/agent-note-desktop-adaptation-for-deepseek-harness-0-2-1-rc-2:
+  en: 168ea3a6e3fedd22
+  zh: b4543638b416ee95
+/agent-note-desktop-adaptation-for-deepseek-harness-0-2-1-rc-2/problem:
+  en: ac6142d99e6878de
+  zh: 6e36e873976bf529
+/agent-note-desktop-adaptation-for-deepseek-harness-0-2-1-rc-2/decision:
+  en: e3d62750fbd76260
+  zh: 0eb250d090ec1b60
+/agent-note-desktop-adaptation-for-deepseek-harness-0-2-1-rc-2/alternatives-considered:
+  en: 6f0456c354405d53
+  zh: 19173a43f0ad019e
+/agent-note-desktop-adaptation-for-deepseek-harness-0-2-1-rc-2/consequences:
+  en: 34317b9a8d00b983
+  zh: 5cd014a65c825f19
+/agent-note-desktop-adaptation-for-deepseek-harness-0-2-1-rc-2/verification:
+  en: f831744d3612d994
+  zh: dcaeb22506fa5ec5
