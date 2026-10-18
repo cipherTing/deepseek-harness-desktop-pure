@@ -148,15 +148,13 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
         working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
 
-      - name: Build and upload Desktop package
-        uses: tauri-apps/tauri-action@v1
-        with:
-          projectPath: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
-          tauriScript: pnpm tauri
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
-          releaseAssetNamePattern: deepdive-${{ matrix.platform }}-[version][ext]
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: deepdive-${{ matrix.platform }}-[version]-[bundle]
+      # The bundle is built here rather than through tauri-action so the signed
+      # updater archive stays on disk for upload: the action's workflow artifact
+      # carries only the installer bundles it recognizes, which would leave a
+      # release without the in-app update payload.
+      - name: Build Desktop package
+        shell: bash
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
         env:
           DESKTOP_SKIP_BUNDLE: '1'
           # Signs the updater archive with the minisign key the app verifies
@@ -164,16 +162,18 @@ jobs:
           # keeps a release from shipping an update the app would reject.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundle }}
 
-      # tauri-action's workflow artifacts carry the bundles it recognizes; the
-      # signed updater archive is uploaded here explicitly so a release can
-      # never ship the installers without the in-app update payload.
-      - name: Upload updater artifacts
+      - name: Upload Desktop packages
         uses: actions/upload-artifact@v4
         with:
-          name: deepdive-${{ matrix.platform }}-${{ needs.metadata.outputs.version }}-updater
+          name: deepdive-${{ matrix.platform }}-${{ needs.metadata.outputs.version }}-bundle
           if-no-files-found: error
           path: |
+            ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
             ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.tar.gz
             ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip
             ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
@@ -204,9 +204,8 @@ jobs:
           TAG: ${{ needs.metadata.outputs.tag }}
         run: |
           shopt -s nullglob
-          # Artifacts land either flat (tauri-action) or under the build path
-          # (the explicit updater upload), so collect each file by name at any
-          # depth. The loops avoid `mapfile`, which macOS Bash 3.2 lacks.
+          # The upload keeps the build-path layout, so collect each file by name
+          # at any depth. The loops avoid `mapfile`, which macOS Bash 3.2 lacks.
           dmg=(); while IFS= read -r f; do dmg+=("$f"); done < <(find release-input -name '*.dmg')
           exe=(); while IFS= read -r f; do exe+=("$f"); done < <(find release-input -name '*.exe')
           deb=(); while IFS= read -r f; do deb+=("$f"); done < <(find release-input -name '*.deb')
