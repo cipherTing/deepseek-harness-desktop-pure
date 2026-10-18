@@ -159,6 +159,11 @@ jobs:
           workflowArtifactNamePattern: deepdive-${{ matrix.platform }}-[version]-[bundle]
         env:
           DESKTOP_SKIP_BUNDLE: '1'
+          # Signs the updater archive with the minisign key the app verifies
+          # against `plugins.updater.pubkey`. Unset keys fail the build, which
+          # keeps a release from shipping an update the app would reject.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
   release:
     name: Publish v${{ needs.metadata.outputs.version }}
@@ -183,15 +188,31 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.metadata.outputs.version }}
+          TAG: ${{ needs.metadata.outputs.tag }}
         run: |
           shopt -s nullglob
           dmg=(release-input/*.dmg)
           exe=(release-input/*.exe)
           deb=(release-input/*.deb)
           appimage=(release-input/*.AppImage)
+          mac_updater=(release-input/*.app.tar.gz)
+          mac_updater_sig=(release-input/*.app.tar.gz.sig)
+          windows_updater=(release-input/*.nsis.zip)
+          windows_updater_sig=(release-input/*.nsis.zip.sig)
+          linux_updater=(release-input/*.AppImage.tar.gz)
+          linux_updater_sig=(release-input/*.AppImage.tar.gz.sig)
 
           if [[ "${#dmg[@]}" -ne 1 || "${#exe[@]}" -ne 1 || "${#deb[@]}" -ne 1 || "${#appimage[@]}" -ne 1 ]]; then
             echo "::error::Expected exactly one DMG, one EXE, one DEB and one AppImage artifact."
+            find release-input -maxdepth 2 -type f -print
+            exit 1
+          fi
+          # The in-app updater only installs a signed archive, so a release
+          # without one would leave every installed copy on the old version.
+          if [[ "${#mac_updater[@]}" -ne 1 || "${#mac_updater_sig[@]}" -ne 1
+            || "${#windows_updater[@]}" -ne 1 || "${#windows_updater_sig[@]}" -ne 1
+            || "${#linux_updater[@]}" -ne 1 || "${#linux_updater_sig[@]}" -ne 1 ]]; then
+            echo "::error::Expected one signed updater archive per platform."
             find release-input -maxdepth 2 -type f -print
             exit 1
           fi
@@ -201,6 +222,12 @@ jobs:
           cp "${exe[0]}" "release-assets/deepdive-windows-x64-$VERSION.exe"
           cp "${deb[0]}" "release-assets/deepdive-linux-x64-$VERSION.deb"
           cp "${appimage[0]}" "release-assets/deepdive-linux-x64-$VERSION.AppImage"
+          cp "${mac_updater[0]}" "release-assets/deepdive-macos-arm64-$VERSION.app.tar.gz"
+          cp "${mac_updater_sig[0]}" "release-assets/deepdive-macos-arm64-$VERSION.app.tar.gz.sig"
+          cp "${windows_updater[0]}" "release-assets/deepdive-windows-x64-$VERSION.nsis.zip"
+          cp "${windows_updater_sig[0]}" "release-assets/deepdive-windows-x64-$VERSION.nsis.zip.sig"
+          cp "${linux_updater[0]}" "release-assets/deepdive-linux-x64-$VERSION.AppImage.tar.gz"
+          cp "${linux_updater_sig[0]}" "release-assets/deepdive-linux-x64-$VERSION.AppImage.tar.gz.sig"
 
       - name: Prepare bilingual release notes
         shell: bash
@@ -214,6 +241,35 @@ jobs:
             printf '%s\n\n' '## Release Notes'
             printf '%s\n' "$RELEASE_NOTES_EN"
           } > release-notes.md
+
+      # `latest.json` is the endpoint in `plugins.updater.endpoints`, so it names
+      # this release's signed archives and nothing else.
+      - name: Write updater manifest
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+        run: |
+          node -e '
+            const { readFileSync, writeFileSync } = require("node:fs")
+            const version = process.env.VERSION
+            const base = `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${process.env.TAG}`
+            const entry = (name) => ({
+              signature: readFileSync(`release-assets/${name}.sig`, "utf8").trim(),
+              url: `${base}/${name}`,
+            })
+            const manifest = {
+              version,
+              notes: readFileSync("release-notes.md", "utf8").trim(),
+              pub_date: new Date().toISOString(),
+              platforms: {
+                "darwin-aarch64": entry(`deepdive-macos-arm64-${version}.app.tar.gz`),
+                "windows-x86_64": entry(`deepdive-windows-x64-${version}.nsis.zip`),
+                "linux-x86_64": entry(`deepdive-linux-x64-${version}.AppImage.tar.gz`),
+              },
+            }
+            writeFileSync("release-assets/latest.json", `${JSON.stringify(manifest, null, 2)}\n`)
+          '
 
       - name: Publish GitHub Release
         shell: bash

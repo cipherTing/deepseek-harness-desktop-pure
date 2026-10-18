@@ -17,6 +17,7 @@ use tauri::{webview::Cookie, AppHandle, Manager, RunEvent, WebviewUrl, WebviewWi
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::UpdaterExt;
 use tokio::{
     sync::{mpsc, oneshot, Notify},
     time::timeout,
@@ -54,6 +55,21 @@ struct DesktopState {
      */
     stderr_tail: Mutex<Vec<u8>>,
     exiting: AtomicBool,
+    /**
+     * Progress of the running update install. The About section polls this
+     * while a download is in flight: the updater reports chunks to a Rust
+     * callback, and the loopback page cannot subscribe to a Rust channel.
+     */
+    update_progress: Mutex<UpdateProgress>,
+}
+
+/** Bytes downloaded so far for the running update install. */
+#[derive(Default, Clone, Serialize)]
+struct UpdateProgress {
+    downloaded: u64,
+    total: Option<u64>,
+    /** Whether a download is still running; false before the first and after the last. */
+    active: bool,
 }
 
 impl DesktopState {
@@ -658,6 +674,85 @@ async fn desktop_save_session(
     result.map(|()| DesktopSaveResult::FileSaved)
 }
 
+/** One available release, as the About section renders it. */
+#[derive(Serialize)]
+struct DesktopUpdateInfo {
+    version: String,
+    notes: String,
+    date: Option<String>,
+}
+
+/**
+ * Ask the update endpoint configured in `tauri.conf.json` whether a newer
+ * release exists. The page never chooses the endpoint or the signing key.
+ * @param app - handle that resolves the registered updater plugin.
+ * @returns the release to offer, or `null` when this build is current.
+ */
+#[tauri::command]
+async fn desktop_check_update(app: AppHandle) -> Result<Option<DesktopUpdateInfo>, String> {
+    let updater = app.updater().map_err(|error| error.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => Ok(Some(DesktopUpdateInfo {
+            version: update.version.clone(),
+            notes: update.body.clone().unwrap_or_default(),
+            date: update.date.map(|date| date.to_string()),
+        })),
+        Ok(None) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/**
+ * Download, verify, and install the pending release, then restart into it. The
+ * updater checks the minisign signature against `plugins.updater.pubkey` before
+ * installing, so a tampered download fails here instead of on the next launch.
+ * @param app - handle that resolves the updater and carries the restart.
+ */
+#[tauri::command]
+async fn desktop_install_update(app: AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|error| error.to_string())?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "no update is available".to_string())?;
+    set_update_progress(
+        &app,
+        UpdateProgress {
+            downloaded: 0,
+            total: None,
+            active: true,
+        },
+    );
+    let progress_handle = app.clone();
+    let installed = update
+        .download_and_install(
+            move |chunk, total| {
+                let state = progress_handle.state::<DesktopState>();
+                let mut progress = state.update_progress.lock().unwrap();
+                progress.downloaded += chunk as u64;
+                progress.total = total;
+            },
+            || {},
+        )
+        .await;
+    set_update_progress(&app, UpdateProgress::default());
+    installed.map_err(|error| error.to_string())?;
+    app.restart();
+}
+
+/** Progress of the running update install, polled by the About section. */
+#[tauri::command]
+fn desktop_update_progress(state: tauri::State<'_, DesktopState>) -> UpdateProgress {
+    state.update_progress.lock().unwrap().clone()
+}
+
+/** Replace the recorded update progress. */
+fn set_update_progress(app: &AppHandle, next: UpdateProgress) {
+    let state = app.state::<DesktopState>();
+    *state.update_progress.lock().unwrap() = next;
+}
+
 fn temporary_export_path(target: &Path) -> PathBuf {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -971,6 +1066,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(DesktopState::default())
         .invoke_handler(tauri::generate_handler![
             desktop_open_external_url,
@@ -981,6 +1077,9 @@ pub fn run() {
             desktop_reveal_file,
             desktop_save_file_as,
             desktop_save_session,
+            desktop_check_update,
+            desktop_install_update,
+            desktop_update_progress,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -1042,11 +1141,21 @@ pub fn run() {
                             false
                         })
                         .on_new_window(move |target, _features| {
-                            // The shell owns exactly one window: a `window.open`
-                            // or `target="_blank"` request reaches the system
-                            // browser, and dropping it silently is why product
-                            // controls like the account "Contact us" link and the
-                            // sidebar browser's external button did nothing.
+                            // The account sign-in flow preopens an `about:blank`
+                            // tab and navigates it once the Host returns the
+                            // authorization URL. Denying that preopen leaves the
+                            // handle null, so the flow would never reach its
+                            // authorization page and would fall back to
+                            // copy-the-link. Allowing it gives the tab a real
+                            // window, which carries no capability because only
+                            // "main" is listed. Every other request still reaches
+                            // the system browser: the shell owns one product
+                            // window, and dropping those silently is why controls
+                            // like the account "Contact us" link and the sidebar
+                            // browser's external button did nothing.
+                            if target.scheme() == "about" {
+                                return tauri::webview::NewWindowResponse::Allow;
+                            }
                             if target.scheme() == "http" || target.scheme() == "https" {
                                 let _ = popup_handle
                                     .opener()

@@ -76,7 +76,6 @@ function loadClientUi({
   activate = true,
   ignoredVersion,
 } = {}) {
-  const releaseTag = `v${releaseVersion}`
   dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
     url: 'http://127.0.0.1:41000/',
   })
@@ -91,7 +90,12 @@ function loadClientUi({
     })
   }
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
-  let releaseFetches = 0
+  // The shell owns the update endpoint and the signature check, so the page
+  // only sees this bridge surface; record what the page asks it to do.
+  let releaseChecks = 0
+  let installs = 0
+  let installFails = false
+  let progress = { downloaded: 0, total: null, active: false }
   globalThis.fetch = async (input) => {
     const url = String(input)
     if (url === '/desktop-info.json') {
@@ -102,29 +106,22 @@ function loadClientUi({
         author: 'cipherTing',
       })
     }
-    if (url.endsWith('/repos/cipherTing/deepseek-harness-desktop-pure/releases/latest')) {
-      releaseFetches += 1
-      return response({
-        tag_name: releaseTag,
-        html_url: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/tag/${releaseTag}`,
-        body: releaseBody,
-        assets: [{
-          name: `deepdive-macos-arm64-${releaseVersion}.dmg`,
-          browser_download_url: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-macos-arm64-${releaseVersion}.dmg`,
-        }, {
-          name: `deepdive-windows-x64-${releaseVersion}.exe`,
-          browser_download_url: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-windows-x64-${releaseVersion}.exe`,
-        }, {
-          name: `deepdive-linux-x64-${releaseVersion}.AppImage`,
-          browser_download_url: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-linux-x64-${releaseVersion}.AppImage`,
-        }, {
-          name: `deepdive-linux-x64-${releaseVersion}.deb`,
-          browser_download_url: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-linux-x64-${releaseVersion}.deb`,
-        }],
-      })
-    }
     throw new Error(`unexpected fetch: ${url}`)
   }
+  Object.defineProperty(globalThis, '__DSH_DESKTOP_UPDATE__', {
+    configurable: true,
+    value: Object.freeze({
+      check: async () => {
+        releaseChecks += 1
+        return { version: releaseVersion, notes: releaseBody, date: null }
+      },
+      install: async () => {
+        installs += 1
+        if (installFails) throw new Error('install failed')
+      },
+      progress: async () => progress,
+    }),
+  })
 
   let handoff
   dom.window.__ModuleLoader__ = {
@@ -191,7 +188,18 @@ function loadClientUi({
   }
   if (activate) plugin.apply(context)
   const t = locale.bind()
-  return { components, t, locale, slots, plugin, ignored, releaseFetches: () => releaseFetches }
+  return {
+    components,
+    t,
+    locale,
+    slots,
+    plugin,
+    ignored,
+    releaseChecks: () => releaseChecks,
+    installs: () => installs,
+    setInstallFails: (value) => { installFails = value },
+    setProgress: (value) => { progress = value },
+  }
 }
 
 test('Desktop client UI waits for locale, slots, and the settings scope before registering its contributions', async () => {
@@ -232,7 +240,7 @@ test('Desktop client UI waits for locale, slots, and the settings scope before r
 
 test('update badge opens release details only after the user clicks it', async () => {
   const notes = '## 更新日志\n\n- 支持展示 GitHub 更新内容。\n- 第二条更新。'
-  const { components, t } = loadClientUi({ releaseBody: notes })
+  const { components, t, installs } = loadClientUi({ releaseBody: notes })
   const UpdateBadge = components.get('settings.update')
   assert.equal(typeof UpdateBadge, 'function')
 
@@ -248,11 +256,9 @@ test('update badge opens release details only after the user clicks it', async (
   assert.equal(view.getByTestId('release-markdown').textContent, notes)
   const notesScroller = dialog.querySelector('.dab-releaseNotes')
   assert.ok(notesScroller)
-  const start = view.getByRole('link', { name: /开始更新/ })
-  assert.equal(
-    start.getAttribute('href'),
-    'https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/v0.2.0/deepdive-macos-arm64-0.2.0.dmg',
-  )
+  const start = view.getByRole('button', { name: /开始更新/ })
+  assert.ok(view.getByTestId('modal-footer').contains(start))
+  assert.equal(installs(), 0)
   assert.match(clientSource, /\.dab-releaseNotes\{[^}]*max-height:[^}]*overflow-y:auto[^}]*overscroll-behavior:contain/)
   assert.match(clientSource, /\.dab-updateDialogContent\{[^}]*min-height:0[^}]*flex:1 1 auto[^}]*overflow:hidden/)
   assert.match(clientSource, /\.dab-releaseSection\{[^}]*min-height:0[^}]*flex:1 1 auto/)
@@ -284,7 +290,7 @@ test('skipping the shown release hides the badge and stores the version', async 
 test('the ignored release stays quiet while a newer release shows the badge', async () => {
   const quiet = loadClientUi({ ignoredVersion: 'v0.2.0' })
   const quietView = render(React.createElement(quiet.components.get('settings.update'), { wide: true, t: quiet.t }))
-  await waitFor(() => assert.ok(quiet.releaseFetches() > 0))
+  await waitFor(() => assert.ok(quiet.releaseChecks() > 0))
   assert.equal(quietView.queryByRole('button', { name: '更新' }), null)
   cleanup()
 
@@ -322,39 +328,32 @@ test('manual update check reports the release without opening the dialog', async
   await waitFor(() => assert.ok(view.getByRole('dialog', { name: 'DeepDive 更新' })))
 })
 
-test('Windows update action targets the matching installer asset', async () => {
-  const { components, t } = loadClientUi({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-  })
+test('the update dialog installs through the shell and reports download progress', async () => {
+  const { components, t, installs, setProgress } = loadClientUi()
+  setProgress({ downloaded: 50, total: 200, active: true })
   const UpdateBadge = components.get('settings.update')
   const view = render(React.createElement(UpdateBadge, { wide: true, t }))
   fireEvent.click(await view.findByRole('button', { name: '更新' }))
+  const dialog = await view.findByRole('dialog', { name: 'DeepDive 更新' })
 
-  const start = await view.findByRole('link', { name: /开始更新/ })
-  assert.equal(
-    start.getAttribute('href'),
-    'https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/v0.2.0/deepdive-windows-x64-0.2.0.exe',
-  )
+  fireEvent.click(view.getByRole('button', { name: /开始更新/ }))
+
+  await waitFor(() => assert.match(dialog.textContent, /正在下载更新 25%/))
+  assert.equal(installs(), 1)
 })
 
-test('Linux x64 update action targets the AppImage asset', async () => {
-  const { components, t } = loadClientUi({ userAgent: 'Mozilla/5.0 (X11; Linux x86_64)' })
+test('a failed install keeps the dialog open with a retry', async () => {
+  const { components, t, setInstallFails } = loadClientUi()
   const UpdateBadge = components.get('settings.update')
   const view = render(React.createElement(UpdateBadge, { wide: true, t }))
   fireEvent.click(await view.findByRole('button', { name: '更新' }))
-  const start = await view.findByRole('link', { name: /开始更新/ })
-  assert.equal(start.getAttribute('href'),
-    'https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/v0.2.0/deepdive-linux-x64-0.2.0.AppImage')
-})
+  const dialog = await view.findByRole('dialog', { name: 'DeepDive 更新' })
+  setInstallFails(true)
 
-test('unsupported Linux architecture links to release details', async () => {
-  const { components, t } = loadClientUi({ userAgent: 'Mozilla/5.0 (X11; Linux aarch64)' })
-  const UpdateBadge = components.get('settings.update')
-  const view = render(React.createElement(UpdateBadge, { wide: true, t }))
-  fireEvent.click(await view.findByRole('button', { name: '更新' }))
-  const start = await view.findByRole('link', { name: /开始更新/ })
-  assert.equal(start.getAttribute('href'),
-    'https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/tag/v0.2.0')
+  fireEvent.click(view.getByRole('button', { name: /开始更新/ }))
+
+  await waitFor(() => assert.match(dialog.textContent, /更新失败/))
+  assert.ok(view.getByRole('button', { name: /重试更新/ }))
 })
 
 test('Desktop file drops scope the overlay without replacing DSH admission', () => {

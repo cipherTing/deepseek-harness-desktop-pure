@@ -497,7 +497,8 @@ test('Desktop update affordance stacks below settings and follows theme contrast
   assert.match(settingsCss, /\.triggerColumn\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/s)
   assert.match(clientUi, /\.dab-badge\{position:static/)
   assert.match(clientUi, /require\("@deepseek-ai\/dsh-client-ui-primitives"\)/)
-  assert.match(clientUi, /\.dab-startLink\{[^}]*background:var\(--dsw-alias-button-primary-fill\);[^}]*color:var\(--dsw-alias-label-primary-foreground\)/)
+  // The install action is a themed primitives button, not a raw download link.
+  assert.match(clientUi, /variant: "primary",\s*icon: React\.createElement\(IconDownloadOutlineRegular, \{ size: 16 \}\)/)
   assert.match(clientUi, /\.dab-releaseNotes\{[^}]*max-height:[^}]*overflow-y:auto[^}]*overscroll-behavior:contain/)
   assert.match(clientUi, /React\.createElement\(MarkdownText, \{ text: latest\.notes \}\)/)
 })

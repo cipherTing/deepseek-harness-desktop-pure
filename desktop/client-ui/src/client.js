@@ -58,9 +58,6 @@ window.__ModuleLoader__.load({
       ".dab-releaseNotes :is(p,ul,ol){font-size:13px;line-height:21px}",
       ".dab-releaseNotes :is(ul,ol){padding-left:20px}",
       ".dab-releaseNotesEmpty{margin:0;font-size:13px;line-height:21px;color:var(--dsw-alias-label-caption)}",
-      ".dab-startLink{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:36px;padding:0 14px;border-radius:18px;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground);font-size:14px;line-height:22px;text-decoration:none}",
-      ".dab-startLink:hover{background:var(--dsw-alias-button-primary-hover);text-decoration:none}",
-      ".dab-startLinkIcon{display:inline-flex;width:16px;height:16px;align-items:center;justify-content:center}",
       "html.ddu-file-drag-active body>[role=status]{inset:var(--ddu-drop-top) var(--ddu-drop-right) var(--ddu-drop-bottom) var(--ddu-drop-left);background-color:var(--dsw-alias-bg-mask-drop);backdrop-filter:blur(18px) saturate(1.06);-webkit-backdrop-filter:blur(18px) saturate(1.06)}",
       "html.ddu-file-drag-active body>[role=status]>div{padding:28px 52px;border:1px solid var(--dsw-alias-border-l2);border-radius:24px;background:var(--dsw-alias-bg-layer-1);box-shadow:var(--dsw-shadow-lv3);animation:ddu-drop-focus-in 180ms cubic-bezier(.2,.8,.2,1)}",
       "html.ddu-file-drag-active body>[role=status] svg{transform:translateY(-2px) scale(1.04)}",
@@ -107,6 +104,10 @@ window.__ModuleLoader__.load({
       "dialog.emptyNotes": "此版本未提供更新说明。",
       "dialog.later": "稍后",
       "dialog.start": "开始更新",
+      "dialog.installing": "正在下载更新…",
+      "dialog.installingPercent": "正在下载更新 {percent}%",
+      "dialog.retry": "重试更新",
+      "dialog.installFailed": "更新失败，请稍后重试或到项目地址手动下载。",
       "dialog.ignore": "忽略本次版本",
       "dialog.ignoreHint": "忽略后可在「设置 → 关于 DeepDive」继续更新",
     };
@@ -134,6 +135,10 @@ window.__ModuleLoader__.load({
       "dialog.emptyNotes": "No release notes were provided for this version.",
       "dialog.later": "Later",
       "dialog.start": "Start update",
+      "dialog.installing": "Downloading update…",
+      "dialog.installingPercent": "Downloading update {percent}%",
+      "dialog.retry": "Retry update",
+      "dialog.installFailed": "The update failed. Retry later or download it from the repository.",
       "dialog.ignore": "Skip this version",
       "dialog.ignoreHint": "You can update later in Settings → About DeepDive",
     };
@@ -180,17 +185,18 @@ window.__ModuleLoader__.load({
       }
       return false;
     }
-    function releasesUrl(repository) {
-      const match = String(repository).match(/github\.com\/([^/]+)\/([^/\s#]+)/);
-      if (match === null) return null;
-      return `https://api.github.com/repos/${match[1]}/${match[2].replace(/\.git$/, "")}/releases/latest`;
+    /**
+     * Update surface the desktop bridge publishes. It owns the Tauri command
+     * names, so this bundle never touches the host IPC object directly.
+     */
+    function desktopUpdater() {
+      return globalThis.__DSH_DESKTOP_UPDATE__ ?? null;
     }
-    function releaseAssetName(version) {
-      const normalized = String(version).replace(/^v/i, "");
-      if (navigator.userAgent.includes("Windows")) return `deepdive-windows-x64-${normalized}.exe`;
-      if (navigator.userAgent.includes("Macintosh")) return `deepdive-macos-arm64-${normalized}.dmg`;
-      if (/Linux (?:x86_64|x64)/.test(navigator.userAgent)) return `deepdive-linux-x64-${normalized}.AppImage`;
-      return null;
+    /** Release page for one version, for the copy the dialog shows. */
+    function releasePageUrl(repository, version) {
+      const match = String(repository ?? "").match(/github\.com\/([^/]+)\/([^/\s#]+)/);
+      if (match === null) return "";
+      return `https://github.com/${match[1]}/${match[2].replace(/\.git$/, "")}/releases/tag/${version}`;
     }
     function fileTransfer(event) {
       const dataTransfer = event.dataTransfer;
@@ -274,31 +280,21 @@ window.__ModuleLoader__.load({
       };
     }
     /**
-     * Bounds one release lookup: without it a stalled connection leaves the
-     * check button disabled until the platform's own long default timeout.
+     * Ask the shell for the newest release. The shell owns the update endpoint
+     * and verifies the download signature, so this only maps its answer into
+     * what the About section renders.
      */
-    const UPDATE_CHECK_TIMEOUT_MS = 15000;
     async function fetchLatest(repository) {
-      const url = releasesUrl(repository);
-      if (url === null) return null;
+      const updater = desktopUpdater();
+      if (updater === null) return null;
       try {
-        const response = await fetch(url, {
-          headers: { Accept: "application/vnd.github+json" },
-          signal: AbortSignal.timeout(UPDATE_CHECK_TIMEOUT_MS),
-        });
-        if (!response.ok) return null;
-        const data = await response.json();
-        if (typeof data?.tag_name !== "string" || typeof data?.html_url !== "string") return null;
-        const expectedAsset = releaseAssetName(data.tag_name);
-        const asset = expectedAsset === null || !Array.isArray(data.assets)
-          ? null
-          : data.assets.find((candidate) => candidate?.name === expectedAsset
-            && typeof candidate?.browser_download_url === "string");
+        const found = await updater.check();
+        if (found === null) return null;
+        const version = `v${String(found.version).replace(/^v/i, "")}`;
         return {
-          version: data.tag_name,
-          htmlUrl: data.html_url,
-          downloadUrl: asset?.browser_download_url ?? data.html_url,
-          notes: typeof data.body === "string" ? data.body.trim() : "",
+          version,
+          htmlUrl: releasePageUrl(repository, version),
+          notes: typeof found.notes === "string" ? found.notes.trim() : "",
         };
       } catch {
         return null;
@@ -345,22 +341,62 @@ window.__ModuleLoader__.load({
     }
 
     // ── components ─────────────────────────────────────────────────────────
+    /**
+     * Update dialog. `install` is null before the user starts, `{ percent }`
+     * while the shell downloads, and `{ failed: true }` after a failure; a
+     * successful install restarts the application before it can report back.
+     */
     function UpdateDialog({ latest, info, t, onClose, onIgnore }) {
+      const [install, setInstall] = React.useState(null);
+      const poll = React.useRef(null);
+      React.useEffect(() => () => {
+        if (poll.current !== null) clearInterval(poll.current);
+      }, []);
+      const start = () => {
+        const updater = desktopUpdater();
+        if (updater === null || (install !== null && install.failed === false)) return;
+        setInstall({ percent: null, failed: false });
+        poll.current = setInterval(() => {
+          void updater.progress().then((progress) => {
+            setInstall((current) => (current === null || current.failed
+              ? current
+              : {
+                failed: false,
+                percent: progress.total === null || progress.total === 0
+                  ? null
+                  : Math.min(100, Math.round((progress.downloaded / progress.total) * 100)),
+              }));
+          }).catch(() => {});
+        }, 500);
+        // A successful install restarts the application, so only a rejection
+        // returns control here; it keeps the dialog open for a retry.
+        void updater.install().then(
+          () => {},
+          () => {
+            if (poll.current !== null) clearInterval(poll.current);
+            setInstall({ percent: null, failed: true });
+          },
+        );
+      };
+      const installing = install !== null && install.failed !== true;
+      const startLabel = installing
+        ? (install.percent === null
+          ? t("dialog.installing")
+          : t("dialog.installingPercent", { percent: install.percent }))
+        : (install === null ? t("dialog.start") : t("dialog.retry"));
       const footer = React.createElement(React.Fragment, null,
         React.createElement("div", { className: "dab-ignoreGroup" },
           React.createElement(Button, { variant: "outline", onClick: onIgnore }, t("dialog.ignore")),
-          React.createElement("span", { className: "dab-status" }, t("dialog.ignoreHint")),
+          React.createElement("span", { className: "dab-status" },
+            install !== null && install.failed === true ? t("dialog.installFailed") : t("dialog.ignoreHint")),
         ),
         React.createElement(Button, { variant: "outline", onClick: onClose }, t("dialog.later")),
-        React.createElement("a", {
-          className: "dab-startLink",
-          href: latest.downloadUrl,
-          target: "_self",
-        },
-          React.createElement("span", { className: "dab-startLinkIcon" },
-            React.createElement(IconDownloadOutlineRegular, { size: 16 })),
-          t("dialog.start"),
-        ),
+        React.createElement(Button, {
+          variant: "primary",
+          icon: React.createElement(IconDownloadOutlineRegular, { size: 16 }),
+          disabled: installing,
+          onClick: start,
+        }, startLabel),
       );
       return React.createElement(Modal, {
         open: true,
@@ -472,7 +508,6 @@ window.__ModuleLoader__.load({
           if (!live || found === null) return;
           setLatest((previous) => previous?.version === found.version
             && previous?.notes === found.notes
-            && previous?.downloadUrl === found.downloadUrl
             ? previous
             : found);
         };

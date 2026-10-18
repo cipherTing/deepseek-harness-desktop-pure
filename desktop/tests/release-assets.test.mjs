@@ -9,7 +9,13 @@ const workflow = readFileSync(new URL('../../.github/workflows/build-desktop.yml
 const block = workflow.match(/name: Prepare versioned release assets[\s\S]*?run: \|\n([\s\S]*?)(?=\n      - name:)/)?.[1]
 assert.ok(block, 'release asset preparation step is missing')
 const script = block.split('\n').map(line => line.replace(/^          /, '')).join('\n')
-const inputs = ['mac.dmg', 'windows.exe', 'linux.deb', 'linux.AppImage']
+const bundles = ['mac.dmg', 'windows.exe', 'linux.deb', 'linux.AppImage']
+const updater = [
+  'mac.app.tar.gz', 'mac.app.tar.gz.sig',
+  'windows.nsis.zip', 'windows.nsis.zip.sig',
+  'linux.AppImage.tar.gz', 'linux.AppImage.tar.gz.sig',
+]
+const inputs = [...bundles, ...updater]
 const options = { skip: process.platform === 'win32' && 'Release staging uses Bash in the Ubuntu publish job' }
 
 function run(t, names) {
@@ -25,7 +31,7 @@ function run(t, names) {
   return { directory, result }
 }
 
-test('release assets retain all four packages under versioned names', options, (t) => {
+test('release assets retain every package and signed updater archive', options, (t) => {
   const { directory, result } = run(t, inputs)
   assert.equal(result.status, 0, result.stderr)
   const expected = [
@@ -33,6 +39,12 @@ test('release assets retain all four packages under versioned names', options, (
     ['deepdive-windows-x64-1.2.3.exe', 'windows.exe'],
     ['deepdive-linux-x64-1.2.3.deb', 'linux.deb'],
     ['deepdive-linux-x64-1.2.3.AppImage', 'linux.AppImage'],
+    ['deepdive-macos-arm64-1.2.3.app.tar.gz', 'mac.app.tar.gz'],
+    ['deepdive-macos-arm64-1.2.3.app.tar.gz.sig', 'mac.app.tar.gz.sig'],
+    ['deepdive-windows-x64-1.2.3.nsis.zip', 'windows.nsis.zip'],
+    ['deepdive-windows-x64-1.2.3.nsis.zip.sig', 'windows.nsis.zip.sig'],
+    ['deepdive-linux-x64-1.2.3.AppImage.tar.gz', 'linux.AppImage.tar.gz'],
+    ['deepdive-linux-x64-1.2.3.AppImage.tar.gz.sig', 'linux.AppImage.tar.gz.sig'],
   ]
   assert.deepEqual(readdirSync(join(directory, 'release-assets')).sort(), expected.map(([name]) => name).sort())
   for (const [name, content] of expected) {
@@ -40,11 +52,21 @@ test('release assets retain all four packages under versioned names', options, (
   }
 })
 
-for (const omitted of inputs) {
+for (const omitted of bundles) {
   test(`release preparation rejects a missing ${omitted}`, options, (t) => {
     const { result } = run(t, inputs.filter(name => name !== omitted))
     assert.equal(result.status, 1)
     assert.match(result.stdout, /Expected exactly one DMG, one EXE, one DEB and one AppImage artifact/)
+  })
+}
+
+// The in-app updater refuses an unsigned archive, so a release without one
+// would silently strand every installed copy on the old version.
+for (const omitted of updater) {
+  test(`release preparation rejects a missing ${omitted}`, options, (t) => {
+    const { result } = run(t, inputs.filter(name => name !== omitted))
+    assert.equal(result.status, 1)
+    assert.match(result.stdout, /Expected one signed updater archive per platform/)
   })
 }
 

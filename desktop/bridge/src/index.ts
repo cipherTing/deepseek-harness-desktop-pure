@@ -12,6 +12,31 @@ document.documentElement.dataset.dshDesktop = 'true'
 
 type DesktopSaveResult = 'file-saved' | 'cancelled'
 
+/** One release the updater offers, as the About section renders it. */
+interface DesktopUpdateInfo {
+  readonly version: string
+  readonly notes: string
+  readonly date: string | null
+}
+
+/** Bytes downloaded so far for the running update install. */
+interface DesktopUpdateProgress {
+  readonly downloaded: number
+  readonly total: number | null
+  readonly active: boolean
+}
+
+/**
+ * Update surface the Desktop client UI consumes. It keeps the Tauri command
+ * names on this side so the hand-written client bundle never touches
+ * `__TAURI_INTERNALS__` directly.
+ */
+interface DesktopUpdater {
+  check(): Promise<DesktopUpdateInfo | null>
+  install(): Promise<void>
+  progress(): Promise<DesktopUpdateProgress>
+}
+
 interface DownloadCarrier {
   save(url: string, filename: string): Promise<DesktopSaveResult>
 }
@@ -383,6 +408,15 @@ function installMacOSOverlayTitleBar(): void {
     })
   }, true)
 }
+
+Object.defineProperty(globalThis, '__DSH_DESKTOP_UPDATE__', {
+  configurable: true,
+  value: Object.freeze({
+    check: () => invoke<DesktopUpdateInfo | null>('desktop_check_update'),
+    install: () => invoke<void>('desktop_install_update'),
+    progress: () => invoke<DesktopUpdateProgress>('desktop_update_progress'),
+  } satisfies DesktopUpdater),
+})
 
 const carrier: DownloadCarrier = {
   // The shared carrier hands over a document-relative Host route; the Rust

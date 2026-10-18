@@ -4,12 +4,14 @@
   "description": "The main Harness window can call only application-owned Desktop bridge commands, and only while it is served from the loopback web host.",
   "windows": ["main"],
   "permissions": [
-    "core:default",
+    "core:event:default",
+    "core:window:default",
+    "core:path:default",
     "core:path:deny-resolve",
     "core:path:deny-resolve-directory",
+    "core:app:default",
     "core:window:allow-start-dragging",
     "core:window:allow-toggle-maximize",
-    "opener:allow-open-url",
     "allow-desktop-open-external-url",
     "allow-desktop-open-file",
     "allow-desktop-file-handlers",
@@ -17,7 +19,10 @@
     "allow-desktop-copy-text",
     "allow-desktop-reveal-file",
     "allow-desktop-save-file-as",
-    "allow-desktop-save-session"
+    "allow-desktop-save-session",
+    "allow-desktop-check-update",
+    "allow-desktop-install-update",
+    "allow-desktop-update-progress"
   ],
   "remote": {
     "urls": ["http://127.0.0.1:*"]

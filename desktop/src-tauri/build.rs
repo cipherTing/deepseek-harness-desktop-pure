@@ -9,6 +9,9 @@ fn main() {
             "desktop_reveal_file",
             "desktop_save_file_as",
             "desktop_save_session",
+            "desktop_check_update",
+            "desktop_install_update",
+            "desktop_update_progress",
         ]),
     ))
     .expect("failed to generate Tauri Desktop permissions");

@@ -20,6 +20,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "../assets/deepseek.png",
       "../assets/deepseek.icns",
@@ -41,6 +42,14 @@
         "type": "downloadBootstrapper",
         "silent": true
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM3Rjg2RkREODBDQjM3QzgKUldUSU44dUEzVy80TjJWVUc4WFJpMlliak02NkhPc0lGWTlzUUIzR1ltcjhwV0hIeDVXaXdVQUcK"
     }
   }
 }
