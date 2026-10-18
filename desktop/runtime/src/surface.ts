@@ -71,6 +71,28 @@ function resolveDesktopInfo(): DesktopInfo {
   }
 }
 
+/**
+ * Policy for the served page. Tauri's `security.csp` is injected on Tauri's own
+ * protocol responses, and this WebView loads the loopback HTTP host instead, so
+ * the policy has to travel as an index meta row. It keeps `object-src` and
+ * `base-uri` closed while leaving the sources the client graph needs: inline
+ * bootstrap scripts, blob workers, same-origin `EventSource`/WebSocket
+ * transports, and preview frames.
+ */
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws://127.0.0.1:* wss://127.0.0.1:* http://127.0.0.1:* https:",
+  "frame-src 'self' blob: data: https:",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self' https:",
+].join('; ')
+
 export function apply(ctx: Context): void {
   const info = resolveDesktopInfo()
   ctx.inject(['systemPrompt'], (promptCtx) => {
@@ -106,7 +128,14 @@ export function apply(ctx: Context): void {
   // served document's opening head tag and tolerates that tag's attributes,
   // where a raw string tap silently disappears if the tag ever changes.
   ctx.effect(() => ctx.on('webserver/index-inject', (table: IndexInjection[]) => {
+    // First row in the table so the browser reads the policy before any other
+    // injected resource.
     table.push(
+      {
+        kind: 'html',
+        placement: 'head',
+        html: `<meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}">`,
+      },
       { kind: 'style', text: 'html,body{overscroll-behavior:none}' },
       { kind: 'script-src', placement: 'head', src: '/desktop-bridge.js' },
     )

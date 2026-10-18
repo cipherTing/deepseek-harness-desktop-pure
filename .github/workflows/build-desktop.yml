@@ -165,6 +165,19 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
+      # tauri-action's workflow artifacts carry the bundles it recognizes; the
+      # signed updater archive is uploaded here explicitly so a release can
+      # never ship the installers without the in-app update payload.
+      - name: Upload updater artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepdive-${{ matrix.platform }}-${{ needs.metadata.outputs.version }}-updater
+          if-no-files-found: error
+          path: |
+            ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.tar.gz
+            ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip
+            ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
+
   release:
     name: Publish v${{ needs.metadata.outputs.version }}
     if: github.ref == 'refs/heads/master'
@@ -191,16 +204,19 @@ jobs:
           TAG: ${{ needs.metadata.outputs.tag }}
         run: |
           shopt -s nullglob
-          dmg=(release-input/*.dmg)
-          exe=(release-input/*.exe)
-          deb=(release-input/*.deb)
-          appimage=(release-input/*.AppImage)
-          mac_updater=(release-input/*.app.tar.gz)
-          mac_updater_sig=(release-input/*.app.tar.gz.sig)
-          windows_updater=(release-input/*.nsis.zip)
-          windows_updater_sig=(release-input/*.nsis.zip.sig)
-          linux_updater=(release-input/*.AppImage.tar.gz)
-          linux_updater_sig=(release-input/*.AppImage.tar.gz.sig)
+          # Artifacts land either flat (tauri-action) or under the build path
+          # (the explicit updater upload), so collect each file by name at any
+          # depth. The loops avoid `mapfile`, which macOS Bash 3.2 lacks.
+          dmg=(); while IFS= read -r f; do dmg+=("$f"); done < <(find release-input -name '*.dmg')
+          exe=(); while IFS= read -r f; do exe+=("$f"); done < <(find release-input -name '*.exe')
+          deb=(); while IFS= read -r f; do deb+=("$f"); done < <(find release-input -name '*.deb')
+          appimage=(); while IFS= read -r f; do appimage+=("$f"); done < <(find release-input -name '*.AppImage')
+          mac_updater=(); while IFS= read -r f; do mac_updater+=("$f"); done < <(find release-input -name '*.app.tar.gz')
+          mac_updater_sig=(); while IFS= read -r f; do mac_updater_sig+=("$f"); done < <(find release-input -name '*.app.tar.gz.sig')
+          windows_updater=(); while IFS= read -r f; do windows_updater+=("$f"); done < <(find release-input -name '*.nsis.zip')
+          windows_updater_sig=(); while IFS= read -r f; do windows_updater_sig+=("$f"); done < <(find release-input -name '*.nsis.zip.sig')
+          linux_updater=(); while IFS= read -r f; do linux_updater+=("$f"); done < <(find release-input -name '*.AppImage.tar.gz')
+          linux_updater_sig=(); while IFS= read -r f; do linux_updater_sig+=("$f"); done < <(find release-input -name '*.AppImage.tar.gz.sig')
 
           if [[ "${#dmg[@]}" -ne 1 || "${#exe[@]}" -ne 1 || "${#deb[@]}" -ne 1 || "${#appimage[@]}" -ne 1 ]]; then
             echo "::error::Expected exactly one DMG, one EXE, one DEB and one AppImage artifact."
