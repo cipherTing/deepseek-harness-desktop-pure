@@ -105,6 +105,11 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.zh.md', upstream: ['cordis'] },
   { file: 'docs/user/guide/schedule.md', upstream: ['cordis'] },
   { file: 'docs/user/guide/schedule.zh.md', upstream: ['cordis'] },
+  // The `cordis` delegation preset keeps its id in the CLI bundle-transition
+  // scenario and in the upgrade guide that retires its schedule tools.
+  { file: 'apps/cli/tests/optional-bundle-transitions.e2e.ts', upstream: ['cordis'] },
+  { file: 'docs/upgrade-guide/v0.2.1-alpha.1/subagent-preset-composition/guide.md', upstream: ['cordis'] },
+  { file: 'docs/upgrade-guide/v0.2.1-alpha.1/subagent-preset-composition/guide.zh.md', upstream: ['cordis'] },
   // Inspector's quoted `cordis/tree` observation topic is a wire id, not a
   // package subpath. The three real framework imports use exact edits below so
   // forward and reverse rescoping remain complete.

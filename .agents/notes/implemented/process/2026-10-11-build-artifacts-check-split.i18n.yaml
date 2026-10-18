@@ -1,0 +1,40 @@
+# Bilingual-pair consistency record for 2026-10-11-build-artifacts-check-split.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-10-11-build-artifacts-check-split.md
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently:
+  en: b1a98fdd8008dce1
+  zh: 15bdc2f2c2584226
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently/problem:
+  en: 1bd90c44b96c0d45
+  zh: a304f74ab02d811b
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently/decision:
+  en: a15c7c13f167e5ac
+  zh: 63bcc2ef60c2f344
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently/decision/commands:
+  en: f1031ef98fc3c3cc
+  zh: bc36b2e2e5fe6fe8
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently/decision/steps-and-dependencies:
+  en: c18ef3de0aa2ab0b
+  zh: 329d76acac74cb3b
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently/decision/scheduling-failure-and-output:
+  en: 4b324f92307d3691
+  zh: e0cf4411a747f7e5
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently/decision/callers:
+  en: 7f21186e149c122a
+  zh: 008e2708d8d5caeb
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently/decision/measurements:
+  en: 51297b48708f695d
+  zh: 8311d9ab609b7972
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently/decision/completeness-and-lossless-evidence:
+  en: 3cd40e0db9a2c89a
+  zh: 3f708be239779d0a
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently/decision/intentional-trade-offs-not-lossless:
+  en: ad371cc93ffc79cb
+  zh: 43c6906f6ed32af3
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently/alternatives-considered:
+  en: 52ecfbe23471c6d4
+  zh: ca68eeeaf1e57827
+/agent-note-split-build-artifacts-and-build-check-with-build-running-both-concurrently/consequences:
+  en: 083467f68d0f03ed
+  zh: 93400e9994b8c645
