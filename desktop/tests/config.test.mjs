@@ -56,16 +56,17 @@ test('Desktop workflow builds any manual ref and releases only one frozen master
   assert.match(workflow, /RELEASE_NOTES_ZH: \$\{\{ inputs\.release_notes_zh \}\}/)
   assert.match(workflow, /RELEASE_NOTES_EN: \$\{\{ inputs\.release_notes_en \}\}/)
   assert.match(workflow, /name: Prepare the Harness bundle\n\s+run: pnpm run bundle:prepare/)
-  assert.match(workflow, /uses: tauri-apps\/tauri-action@v1/)
-  assert.match(workflow, /uploadWorkflowArtifacts: true/)
-  assert.match(workflow, /releaseAssetNamePattern: deepdive-\$\{\{ matrix\.platform \}\}-\[version\]\[ext\]/)
+  assert.match(workflow, /name: Build Desktop package\n\s+shell: bash/)
+  assert.match(workflow, /pnpm tauri build --target \$\{\{ matrix\.target \}\} --bundles \$\{\{ matrix\.bundle \}\}/)
+  assert.match(workflow, /TAURI_SIGNING_PRIVATE_KEY: \$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY \}\}/)
+  assert.match(workflow, /name: Upload Desktop packages/)
+  assert.match(workflow, /name: deepdive-\$\{\{ matrix\.platform \}\}-\$\{\{ needs\.metadata\.outputs\.version \}\}-bundle/)
   assert.match(workflow, /pattern: deepdive-\*-\$\{\{ needs\.metadata\.outputs\.version \}\}-\*/)
   assert.match(workflow, /platform: macos-arm64/)
   assert.match(workflow, /platform: windows-x64/)
   assert.match(workflow, /platform: linux-x64/)
   assert.match(workflow, /runner: ubuntu-22\.04/)
   assert.match(workflow, /bundle: deb,appimage/)
-  assert.match(workflow, /workflowArtifactNamePattern: deepdive-\$\{\{ matrix\.platform \}\}-\[version\]-\[bundle\]/)
   assert.match(workflow, /uses: actions\/download-artifact@[0-9a-f]{40} # v8/)
   assert.match(workflow, /merge-multiple: true/)
   assert.match(workflow, /Expected exactly one DMG, one EXE, one DEB and one AppImage artifact/)
@@ -115,11 +116,13 @@ test('Windows packaging keeps the longest Inspector resource below the NSIS sour
     assert.equal(build.steps.find((step) => step.name === name)['working-directory'], source)
   }
 
-  for (const name of ['Prepare the Harness bundle', 'Run Desktop node tests', 'Run Desktop Rust tests']) {
+  for (const name of ['Prepare the Harness bundle', 'Run Desktop node tests', 'Run Desktop Rust tests', 'Build Desktop package']) {
     assert.equal(build.steps.find((step) => step.name === name)['working-directory'], `${source}/desktop`)
   }
-  assert.equal(build.steps.find((step) => step.uses === 'tauri-apps/tauri-action@v1').with.projectPath,
-    `${source}/desktop`)
+  // The bundle is built by the workflow itself, so the signed updater archive
+  // stays on disk for the artifact upload.
+  assert.match(build.steps.find((step) => step.name === 'Build Desktop package').run,
+    /pnpm tauri build --target \$\{\{ matrix\.target \}\} --bundles \$\{\{ matrix\.bundle \}\}/)
 })
 
 test('Tauri prepares the bundle exactly once', () => {
