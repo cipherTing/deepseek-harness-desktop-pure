@@ -338,8 +338,16 @@ impl SidecarPeer {
     }
 }
 
-fn is_loopback_hostname(hostname: &str) -> bool {
-    hostname == "127.0.0.1" || hostname == "localhost" || hostname == "[::1]"
+/**
+ * Whether a readiness host is the one the sidecar and the capability agree on.
+ *
+ * The capability's `remote` entry matches `http://127.0.0.1:*` exactly, so a
+ * `localhost` launch URL would load a page whose every Desktop command is
+ * denied. Rejecting it here turns that silent loss of function into a startup
+ * failure instead.
+ */
+fn is_sidecar_host(hostname: &str) -> bool {
+    hostname == "127.0.0.1"
 }
 
 /** Return whether a navigation stays on the currently serving sidecar origin. */
@@ -786,7 +794,7 @@ fn parse_ready_url(message: &InboundMessage) -> Result<String, String> {
         .is_some_and(|(name, value)| name == "token" && !value.is_empty())
         && query.next().is_none();
     if parsed.scheme() != "http"
-        || !is_loopback_hostname(hostname)
+        || !is_sidecar_host(hostname)
         || !parsed.username().is_empty()
         || parsed.password().is_some()
         || parsed.path() != "/"
@@ -1266,15 +1274,13 @@ mod tests {
             parse_ready_url(&ready("http://127.0.0.1:5173/?token=launch-token")).unwrap(),
             "http://127.0.0.1:5173/?token=launch-token"
         );
-        assert_eq!(
-            parse_ready_url(&ready("http://localhost:5173?token=launch-token")).unwrap(),
-            "http://localhost:5173/?token=launch-token"
-        );
         for bad in [
             "http://127.0.0.1:5173",                    // missing launch token
             "http://127.0.0.1/?token=x",                // no explicit port
             "https://127.0.0.1:5173/?token=x",          // not http
             "http://192.168.1.10:5173/?token=x",        // not loopback
+            "http://localhost:5173/?token=x",           // capability matches 127.0.0.1 only
+            "http://[::1]:5173/?token=x",               // capability matches 127.0.0.1 only
             "http://127.0.0.1:5173/path?token=x",       // not the origin root
             "http://127.0.0.1:5173/?token=",            // empty launch token
             "http://127.0.0.1:5173/?token=x&extra=true", // extra query field
