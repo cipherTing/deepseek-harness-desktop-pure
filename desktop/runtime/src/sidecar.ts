@@ -157,7 +157,11 @@ async function serve(): Promise<void> {
   // against it, and profile boot installs that installation's runtime
   // resolution — the harness closure plus the Desktop runtime packages — before
   // any plugin import.
-  const profile = appBoot.loadProfile('dsh', 'web', runtimeManifest)
+  // A launch the shell marked as recovery skips the user profile layer, so a
+  // plugin the user installed cannot keep the application from starting. The
+  // Desktop overlay still applies: it carries the carrier's own composition.
+  const safeMode = process.env.DSH_DESKTOP_SAFE_MODE === '1'
+  const profile = appBoot.loadProfile('dsh', 'web', runtimeManifest, undefined, { userLayer: !safeMode })
   const running = await profileBoot.runProfile({
     environment: appBoot.loadLayeredEnv('dsh'),
     profile: 'web',

@@ -125,6 +125,22 @@ test('Windows packaging keeps the longest Inspector resource below the NSIS sour
     /pnpm tauri build --target \$\{\{ matrix\.target \}\} --bundles \$\{\{ matrix\.bundle \}\}/)
 })
 
+test('Desktop startup failures leave a report and offer safe mode', () => {
+  const shell = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  const sidecar = readFileSync(new URL('../runtime/src/sidecar.ts', import.meta.url), 'utf8')
+
+  // The failure dialog writes a report into the platform log directory and
+  // offers a restart that skips the user profile layer.
+  assert.match(shell, /fn write_crash_report/)
+  assert.match(shell, /app_log_dir\(\)/)
+  assert.match(shell, /MessageDialogButtons::OkCancelCustom/)
+  assert.match(shell, /set_var\(SAFE_MODE_ENV, "1"\)/)
+  assert.match(shell, /fn prune_crash_reports/)
+  // The sidecar honours that launch flag by dropping only the user layer.
+  assert.match(sidecar, /const safeMode = process\.env\.DSH_DESKTOP_SAFE_MODE === '1'/)
+  assert.match(sidecar, /\{ userLayer: !safeMode \}/)
+})
+
 test('Tauri prepares the bundle exactly once', () => {
   const desktopPackage = readJson(new URL('../package.json', import.meta.url))
   const tauriConfig = readJson(new URL('../src-tauri/tauri.conf.json', import.meta.url))
@@ -265,7 +281,7 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   // boot's runtime resolution on the deploy root manifest — this carrier's own
   // installation — and installs no module-fallback links of its own.
   assert.doesNotMatch(sidecar, /healProfilesModuleFallback|resolutionMode/)
-  assert.match(sidecar, /loadProfile\('dsh', 'web', runtimeManifest\)/)
+  assert.match(sidecar, /loadProfile\('dsh', 'web', runtimeManifest, undefined, \{ userLayer: !safeMode \}\)/)
   assert.match(sidecar, /resolvedProfile: \{ profile, installAnchor: runtimeManifest \}/)
   assert.match(sidecar, /runProfile\(\{\n\s+environment: appBoot\.loadLayeredEnv\('dsh'\),\n\s+profile: 'web',/)
   // The shell owns one window, so a window.open request must reach the system

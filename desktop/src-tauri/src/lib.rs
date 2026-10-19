@@ -15,7 +15,7 @@ use rmpv::Value;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tauri::{webview::Cookie, AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_clipboard_manager::ClipboardExt;
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 use tokio::{
@@ -38,6 +38,17 @@ const EXPORT_TIMEOUT: Duration = Duration::from_secs(600);
 const STDERR_TAIL_LIMIT: usize = 4_096;
 /** Characters of that tail shown in a failure dialog. */
 const STDERR_DIALOG_LIMIT: usize = 1_200;
+/**
+ * Environment variable that makes the next launch skip the user profile layer.
+ *
+ * The startup failure dialog sets it and restarts, so a user-installed plugin
+ * that breaks the profile cannot lock the user out of their own application.
+ * It applies to that one launch: the value lives in the process environment,
+ * never on disk.
+ */
+const SAFE_MODE_ENV: &str = "DSH_DESKTOP_SAFE_MODE";
+/** Crash reports retained in the log directory before the oldest is dropped. */
+const CRASH_REPORTS_KEPT: usize = 5;
 #[derive(Default)]
 struct DesktopState {
     peer: RwLock<Option<Arc<SidecarPeer>>>,
@@ -1016,14 +1027,93 @@ fn failure_message(state: &DesktopState, summary: &str) -> String {
     }
 }
 
+/** Window title, marked when this launch skipped the user profile layer. */
+fn window_title() -> &'static str {
+    if std::env::var(SAFE_MODE_ENV).is_ok() {
+        "DeepDive (safe mode)"
+    } else {
+        "DeepDive"
+    }
+}
+
 /** Show a modal error on the main thread, then exit with the given code. */
 fn show_error_and_exit(app: &AppHandle, message: impl Into<String>, code: i32) {
     let message = message.into();
+    let body = match write_crash_report(app, &message) {
+        Some(path) => format!("{message}\n\nDiagnostic report\n{}", path.display()),
+        None => message,
+    };
+    let (sender, receiver) = std::sync::mpsc::channel();
     let for_dialog = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let _ = for_dialog.dialog().message(message).blocking_show();
+        let safe_mode = for_dialog
+            .dialog()
+            .message(body)
+            .title("DeepDive")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Restart in safe mode".to_string(),
+                "Quit".to_string(),
+            ))
+            .blocking_show();
+        let _ = sender.send(safe_mode);
     });
+    if receiver.recv().unwrap_or(false) {
+        std::env::set_var(SAFE_MODE_ENV, "1");
+        app.restart();
+    }
     app.exit(code);
+}
+
+/**
+ * Persist one startup failure with the retained sidecar stderr and return the
+ * report path.
+ *
+ * A Finder-launched or Windows GUI build has no console, so without this the
+ * only copy of a failure is a dialog the user has to retype. Reports stay in the
+ * platform log directory, never in Harness data.
+ */
+fn write_crash_report(app: &AppHandle, message: &str) -> Option<PathBuf> {
+    let directory = app.path().app_log_dir().ok()?;
+    std::fs::create_dir_all(&directory).ok()?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let path = directory.join(format!("desktop-crash-{stamp}.log"));
+    let tail = {
+        let state = app.state::<DesktopState>();
+        let bytes = state.stderr_tail.lock().unwrap().clone();
+        String::from_utf8_lossy(&bytes).to_string()
+    };
+    let report = format!(
+        "DeepDive {} ({} {}) at {stamp}\n\n{message}\n\n--- sidecar stderr (tail) ---\n{tail}\n",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+    );
+    std::fs::write(&path, report).ok()?;
+    prune_crash_reports(&directory);
+    Some(path)
+}
+
+/** Keep only the newest reports so a crash loop cannot fill the log directory. */
+fn prune_crash_reports(directory: &Path) {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    let mut reports: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("desktop-crash-"))
+        })
+        .collect();
+    reports.sort();
+    while reports.len() >= CRASH_REPORTS_KEPT {
+        let oldest = reports.remove(0);
+        let _ = std::fs::remove_file(oldest);
+    }
 }
 
 async fn stop_sidecar(app: &AppHandle) {
@@ -1120,7 +1210,7 @@ pub fn run() {
                             "main",
                             WebviewUrl::External(parsed),
                         )
-                        .title("DeepDive")
+                        .title(window_title())
                         .inner_size(1280.0, 820.0)
                         .min_inner_size(900.0, 640.0)
                         // The browser composer owns image intake and needs DOM `File`
