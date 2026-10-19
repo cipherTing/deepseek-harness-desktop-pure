@@ -108,6 +108,7 @@ window.__ModuleLoader__.load({
       "dialog.installingPercent": "正在下载更新 {percent}%",
       "dialog.retry": "重试更新",
       "dialog.installFailed": "更新失败，请稍后重试或到项目地址手动下载。",
+      "dialog.manual": "手动下载",
       "dialog.ignore": "忽略本次版本",
       "dialog.ignoreHint": "忽略后可在「设置 → 关于 DeepDive」继续更新",
     };
@@ -139,6 +140,7 @@ window.__ModuleLoader__.load({
       "dialog.installingPercent": "Downloading update {percent}%",
       "dialog.retry": "Retry update",
       "dialog.installFailed": "The update failed. Retry later or download it from the repository.",
+      "dialog.manual": "Manual download",
       "dialog.ignore": "Skip this version",
       "dialog.ignoreHint": "You can update later in Settings → About DeepDive",
     };
@@ -384,12 +386,20 @@ window.__ModuleLoader__.load({
           ? t("dialog.installing")
           : t("dialog.installingPercent", { percent: install.percent }))
         : (install === null ? t("dialog.start") : t("dialog.retry"));
+      // The manual route stays available next to the in-app one: it works even
+      // when the update source, the signature check, or the replacement step
+      // fails, and it is the only route on a machine that blocks the install.
+      const manualDownload = () => {
+        if (latest.htmlUrl === "") return;
+        window.open(latest.htmlUrl, "_blank");
+      };
       const footer = React.createElement(React.Fragment, null,
         React.createElement("div", { className: "dab-ignoreGroup" },
           React.createElement(Button, { variant: "outline", onClick: onIgnore }, t("dialog.ignore")),
           React.createElement("span", { className: "dab-status" },
             install !== null && install.failed === true ? t("dialog.installFailed") : t("dialog.ignoreHint")),
         ),
+        React.createElement(Button, { variant: "outline", onClick: manualDownload }, t("dialog.manual")),
         React.createElement(Button, { variant: "outline", onClick: onClose }, t("dialog.later")),
         React.createElement(Button, {
           variant: "primary",

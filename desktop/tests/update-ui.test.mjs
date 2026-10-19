@@ -271,6 +271,17 @@ test('update badge opens release details only after the user clicks it', async (
   const ignore = view.getByRole('button', { name: '忽略本次版本' })
   assert.ok(view.getByTestId('modal-footer').contains(ignore))
   assert.match(dialog.textContent, /忽略后可在「设置 → 关于 DeepDive」继续更新/)
+  // The manual route sits beside the in-app one, so a blocked or failed
+  // replacement still has a way out; it opens the release page.
+  const opened = []
+  const realOpen = globalThis.window.open
+  globalThis.window.open = (url) => { opened.push(url); return null }
+  try {
+    fireEvent.click(view.getByRole('button', { name: '手动下载' }))
+  } finally {
+    globalThis.window.open = realOpen
+  }
+  assert.deepEqual(opened, ['https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/tag/v0.2.0'])
 })
 
 test('skipping the shown release hides the badge and stores the version', async () => {
