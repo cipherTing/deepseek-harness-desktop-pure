@@ -78,7 +78,9 @@ jobs:
           - platform: macos-arm64
             runner: macos-14
             target: aarch64-apple-darwin
-            bundle: dmg
+            # `app` is what produces the signed `.app.tar.gz` the updater
+            # installs; `dmg` alone builds only the download image.
+            bundle: app,dmg
           - platform: windows-x64
             runner: windows-latest
             target: x86_64-pc-windows-msvc
