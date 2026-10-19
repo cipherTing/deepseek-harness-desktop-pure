@@ -138,6 +138,41 @@ function stalledEntries(ctx: DesktopRuntimeContext): string[] {
   return stalled
 }
 
+/** One live agent's interruptible state, as the quit inspection reads it. */
+interface QuitInspectionAgents {
+  list(): readonly {
+    readonly id: string
+    readonly status: string
+    readonly inbox: { readonly nextTurn: readonly unknown[]; readonly nextStep: readonly unknown[] }
+  }[]
+}
+
+/** Background job roster, as the quit inspection reads it. */
+interface QuitInspectionJobs {
+  list(agentId?: string): readonly { readonly status: string }[]
+}
+
+/**
+ * Whether stopping the Host now would interrupt work: a generating or
+ * tool-running agent (including turns waiting for approval), queued inbox
+ * messages, or a running or stopping background job. This mirrors the check the
+ * upstream Desktop host performs, so the shell can ask before it exits.
+ * @param ctx - Booted profile context carrying the agent and job services.
+ * @returns true when any of those conditions holds.
+ */
+function hasActiveTasks(ctx: DesktopRuntimeContext): boolean {
+  const agents = ctx.get('agents') as QuitInspectionAgents | undefined
+  const jobs = ctx.get('jobs') as QuitInspectionJobs | undefined
+  if (agents === undefined || jobs === undefined) return false
+  const live = agents.list()
+  if (live.some(agent => agent.status === 'running'
+    || agent.inbox.nextTurn.length > 0 || agent.inbox.nextStep.length > 0)) {
+    return true
+  }
+  return [undefined, ...live].some(agent => jobs.list(agent?.id)
+    .some(job => job.status === 'running' || job.status === 'stopping'))
+}
+
 async function handleRequest(
   running: RunningProfile,
   method: string,
@@ -146,6 +181,9 @@ async function handleRequest(
     await running.shutdown.shutdown(0)
     setTimeout(() => { process.exit(0) }, 10)
     return {}
+  }
+  if (method === 'inspect') {
+    return { activeTasks: hasActiveTasks(running.ctx as DesktopRuntimeContext) }
   }
   throw new Error(`unknown Desktop request ${JSON.stringify(method)}`)
 }

@@ -33,5 +33,11 @@
     - id: desktop-settings-controller
       name: '@deepseek-ai/dsh-desktop-runtime/settings-controller'
 
+    # Ordinary Web leaves Office authoring composition to its carrier, so
+    # Desktop mounts the official skills over this deploy's bundled LibreOffice
+    # Kit engine (render and PDF export) here.
+    - id: desktop-office
+      name: '@deepseek-ai/dsh-desktop-runtime/office'
+
     - id: desktop-client-ui
       name: '@deepseek-ai/dsh-desktop-client-ui'

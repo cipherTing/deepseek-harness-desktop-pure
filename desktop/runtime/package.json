@@ -12,6 +12,7 @@
   "exports": {
     ".": "./lib/sidecar.mjs",
     "./surface": "./lib/surface.mjs",
+    "./office": "./lib/office.mjs",
     "./directory-picker": "./lib/directory-picker.mjs",
     "./settings-controller": "./lib/settings-controller.mjs",
     "./package.json": "./package.json"

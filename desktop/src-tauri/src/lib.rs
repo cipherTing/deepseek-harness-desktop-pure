@@ -1152,6 +1152,63 @@ fn begin_graceful_exit(app: &AppHandle, exit_code: i32) {
     });
 }
 
+/**
+ * Ask the sidecar whether stopping now would interrupt work.
+ *
+ * A sidecar that cannot answer within a few seconds must not block quitting, so
+ * every failure answers "nothing running".
+ * @param app - handle that resolves the current sidecar peer.
+ * @returns true when an agent, queued message, or background job is still live.
+ */
+async fn sidecar_has_active_tasks(app: &AppHandle) -> bool {
+    let peer = {
+        let state = app.state::<DesktopState>();
+        let peer = state.peer.read().unwrap().clone();
+        drop(state);
+        peer
+    };
+    let Some(peer) = peer else {
+        return false;
+    };
+    match timeout(
+        Duration::from_secs(3),
+        peer.request::<Value, Value>("inspect", &Value::Nil),
+    )
+    .await
+    {
+        Ok(Ok(value)) => value.as_map().is_some_and(|entries| {
+            entries
+                .iter()
+                .any(|(key, value)| key.as_str() == Some("activeTasks") && value.as_bool() == Some(true))
+        }),
+        _ => false,
+    }
+}
+
+/**
+ * Ask whether to quit while work is running. The modal runs on the main thread
+ * and its answer comes back through a channel, matching the failure dialog.
+ * @param app - handle that owns the dialog.
+ * @returns true when the user chose to quit anyway.
+ */
+fn confirm_quit_with_active_tasks(app: &AppHandle) -> bool {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let for_dialog = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let quit = for_dialog
+            .dialog()
+            .message("A turn or background job is still running. Quitting stops it.")
+            .title(window_title())
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Quit".to_string(),
+                "Keep running".to_string(),
+            ))
+            .blocking_show();
+        let _ = sender.send(quit);
+    });
+    receiver.recv().unwrap_or(true)
+}
+
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -1299,7 +1356,16 @@ pub fn run() {
             let state = app.state::<DesktopState>();
             if !state.exiting.load(Ordering::SeqCst) {
                 api.prevent_exit();
-                begin_graceful_exit(app, code.unwrap_or(0));
+                let exit_code = code.unwrap_or(0);
+                let handle = app.clone();
+                // Quitting interrupts a running turn or job, so ask first; an
+                // idle application still closes without a prompt.
+                tauri::async_runtime::spawn(async move {
+                    if sidecar_has_active_tasks(&handle).await && !confirm_quit_with_active_tasks(&handle) {
+                        return;
+                    }
+                    begin_graceful_exit(&handle, exit_code);
+                });
             }
         }
     });

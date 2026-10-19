@@ -141,6 +141,22 @@ test('Desktop startup failures leave a report and offer safe mode', () => {
   assert.match(sidecar, /\{ userLayer: !safeMode \}/)
 })
 
+test('Desktop asks before quitting while work is running', () => {
+  const shell = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  const sidecar = readFileSync(new URL('../runtime/src/sidecar.ts', import.meta.url), 'utf8')
+
+  // The exit path asks the Host, then the user, before it tears anything down;
+  // an idle application still closes without a prompt.
+  assert.match(shell, /async fn sidecar_has_active_tasks/)
+  assert.match(shell, /fn confirm_quit_with_active_tasks/)
+  assert.match(shell, /sidecar_has_active_tasks\(&handle\)\.await/)
+  assert.match(shell, /peer\.request::<Value, Value>\("inspect", &Value::Nil\)/)
+  // The Host answers with the predicate the upstream Desktop host also used.
+  assert.match(sidecar, /if \(method === 'inspect'\)/)
+  assert.match(sidecar, /function hasActiveTasks/)
+  assert.match(sidecar, /agent\.inbox\.nextTurn\.length > 0 \|\| agent\.inbox\.nextStep\.length > 0/)
+})
+
 test('Tauri prepares the bundle exactly once', () => {
   const desktopPackage = readJson(new URL('../package.json', import.meta.url))
   const tauriConfig = readJson(new URL('../src-tauri/tauri.conf.json', import.meta.url))

@@ -31,6 +31,7 @@ await build({
   entryPoints: {
     sidecar: resolve(runtime, 'src/sidecar.ts'),
     surface: resolve(runtime, 'src/surface.ts'),
+    office: resolve(runtime, 'src/office.ts'),
     'directory-picker': resolve(runtime, 'src/directory-picker.ts'),
     'settings-controller': resolve(runtime, 'src/settings-controller.ts'),
   },
