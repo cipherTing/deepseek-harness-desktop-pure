@@ -158,6 +158,32 @@ async function runSidecarSmoke(launchMode) {
     assert.match(clientUiSource, /DeepDive/)
     assert.match(clientUiSource, /sidebar\.brand\.name/)
 
+    // The carrier-owned Office composition: the Desktop row activates against
+    // the deployed LibreOffice Kit, and its skills reach a real Session.
+    const remote = async (method, args) => {
+      const response = await authenticatedFetch(`${origin}/api/${method}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          type: 'client-request', rpcId: `desktop-${method}`, method, payload: { args },
+        }),
+      })
+      assert.equal(response.status, 200, `${method} must answer`)
+      return (await response.json()).result
+    }
+    const inventory = await remote('pluginInventory/list', {})
+    assert.equal(inventory.ok, true, JSON.stringify(inventory))
+    const officeEntry = inventory.value.entries.find(entry => entry.entryId === 'include:desktop-office')
+    assert.equal(officeEntry?.fiberPhase, 'active', 'desktop overlay must activate the Office row')
+    const created = await remote('session/create', { request: {} })
+    assert.equal(created.ok, true, JSON.stringify(created))
+    const catalog = await remote('skills/list', { request: { sessionId: created.value.sessionId } })
+    assert.equal(catalog.ok, true, JSON.stringify(catalog))
+    const skillNames = catalog.value.skills.map(skill => skill.name)
+    for (const name of ['office', 'office-docx', 'office-xlsx', 'office-pptx', 'office-render', 'office-export-pdf']) {
+      assert.ok(skillNames.includes(name), `desktop Office skill ${name} must reach a Session catalog`)
+    }
+
     // The /api transport and the system bridge roundtrip over real HTTP.
     const pickBody = Buffer.from(JSON.stringify({
       type: 'client-request', rpcId: 'desktop-picker', method: 'directoryPicker/pick', payload: { args: {} },
