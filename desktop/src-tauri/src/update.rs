@@ -61,7 +61,10 @@ pub(crate) struct UpdateMonitor {
 /** What the deployed manifest says about this installation. */
 struct Installation {
     version: String,
+    /** Published release document; absent until a release publishes one. */
     feed: Option<String>,
+    /** Release API for the same latest release, read when the feed is absent. */
+    api: Option<String>,
 }
 
 /** The published feed document; every field is optional so a truncated one cannot panic. */
@@ -105,6 +108,7 @@ fn resolve_manifest(app: &AppHandle) -> Installation {
     let unreadable = Installation {
         version: "0.0.0".into(),
         feed: None,
+        api: None,
     };
     let Some(path) = app.path().resource_dir().ok().map(|root| root.join("rt/package.json")) else {
         return unreadable;
@@ -124,21 +128,20 @@ fn resolve_manifest(app: &AppHandle) -> Installation {
         .get("repository")
         .and_then(|value| value.get("url").or(Some(value)))
         .and_then(|value| value.as_str());
+    let slug = repository.and_then(repository_slug);
     Installation {
         version,
-        feed: repository.and_then(feed_url),
+        feed: slug.as_ref().map(|(owner, name)| feed_url(owner, name)),
+        api: slug.as_ref().map(|(owner, name)| api_url(owner, name)),
     }
 }
 
 /**
- * Derive the published feed endpoint from a GitHub repository URL.
- *
- * `releases/latest/download/latest.json` is GitHub's stable redirect to the
- * newest release's asset, so the feed address never has to change.
+ * Split a GitHub repository URL into its owner and name.
  * @param repository - `repository.url` from the deployed manifest.
- * @returns the absolute feed URL, or `None` for a non-GitHub origin.
+ * @returns the two path segments, or `None` for a non-GitHub origin.
  */
-fn feed_url(repository: &str) -> Option<String> {
+fn repository_slug(repository: &str) -> Option<(String, String)> {
     let tail = repository.split("github.com/").nth(1)?;
     let mut parts = tail.trim_end_matches(".git").split('/');
     let owner = parts.next()?;
@@ -146,9 +149,35 @@ fn feed_url(repository: &str) -> Option<String> {
     if owner.is_empty() || name.is_empty() {
         return None;
     }
-    Some(format!(
-        "https://github.com/{owner}/{name}/releases/latest/download/latest.json"
-    ))
+    Some((owner.to_string(), name.to_string()))
+}
+
+/**
+ * The release document a published release carries.
+ *
+ * `releases/latest/download/latest.json` is GitHub's stable redirect to the
+ * newest release's asset, so the feed address never has to change.
+ * @param owner - repository owner.
+ * @param name - repository name.
+ * @returns the absolute feed URL.
+ */
+fn feed_url(owner: &str, name: &str) -> String {
+    format!("https://github.com/{owner}/{name}/releases/latest/download/latest.json")
+}
+
+/**
+ * The same release, read through the release API.
+ *
+ * A release published before the feed existed carries no `latest.json`, and the
+ * redirect above then answers 404. The API describes that same release, so an
+ * installation still learns about newer builds; the policy floor stays a feed
+ * field, because only the feed carries one.
+ * @param owner - repository owner.
+ * @param name - repository name.
+ * @returns the absolute API URL for the newest release.
+ */
+fn api_url(owner: &str, name: &str) -> String {
+    format!("https://api.github.com/repos/{owner}/{name}/releases/latest")
 }
 
 /**
@@ -279,6 +308,66 @@ fn fetch_feed(url: &str) -> Option<FeedDocument> {
 }
 
 /**
+ * Read the newest release through the release API.
+ * @param url - release API endpoint for this repository.
+ * @returns the same facts the feed would carry, or `None` on any failure.
+ */
+fn fetch_release(url: &str) -> Option<FeedDocument> {
+    let agent = ureq::AgentBuilder::new().timeout(REQUEST_TIMEOUT).build();
+    let response = agent
+        .get(url)
+        .set("Accept", "application/vnd.github+json")
+        .set("User-Agent", "DeepDive-Desktop")
+        .call()
+        .ok()?;
+    let document: serde_json::Value = serde_json::from_str(&response.into_string().ok()?).ok()?;
+    release_document(&document)
+}
+
+/**
+ * Project a release API response onto the feed's fields.
+ *
+ * The installer links are keyed by platform so the page picks one without
+ * knowing the release's asset names.
+ * @param document - release API response.
+ * @returns the release facts, or `None` when the response names no release.
+ */
+fn release_document(document: &serde_json::Value) -> Option<FeedDocument> {
+    let version = document.get("tag_name")?.as_str()?.to_string();
+    let mut assets = std::collections::BTreeMap::new();
+    for asset in document.get("assets")?.as_array()? {
+        let Some(name) = asset.get("name").and_then(|value| value.as_str()) else { continue };
+        let Some(link) = asset.get("browser_download_url").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        // Only the installers a page can offer; checksums and blockmaps stay out.
+        let key = if name.contains("macos") {
+            "macos"
+        } else if name.contains("windows") {
+            "windows"
+        } else if name.ends_with(".AppImage") {
+            "linuxAppImage"
+        } else if name.ends_with(".deb") {
+            "linuxDeb"
+        } else {
+            continue;
+        };
+        assets.insert(key.to_string(), link.to_string());
+    }
+    Some(FeedDocument {
+        version: Some(version),
+        notes: document.get("body").and_then(|value| value.as_str()).map(str::to_string),
+        page: document
+            .get("html_url")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        assets: (!assets.is_empty()).then_some(assets),
+        mandatory_minimum: None,
+        mandatory: None,
+    })
+}
+
+/**
  * Compute what one feed document means for this installation.
  * @param installation - installed version and feed the document came from.
  * @param document - fetched feed document.
@@ -363,8 +452,14 @@ fn announce(app: &AppHandle, state: &UpdateState) {
  */
 pub(crate) fn poll_now(app: &AppHandle) -> bool {
     let installation = resolve_manifest(app);
-    let Some(url) = installation.feed.clone() else { return false };
-    let Some(document) = fetch_feed(&url) else { return false };
+    // A release published before the feed existed answers 404 there; the
+    // release API still describes it, so the check reports that release.
+    let document = installation
+        .feed
+        .as_deref()
+        .and_then(fetch_feed)
+        .or_else(|| installation.api.as_deref().and_then(fetch_release));
+    let Some(document) = document else { return false };
     let state = app.state::<crate::DesktopState>();
     let mut guard = state.updates.state.lock().unwrap();
     let announce_now = absorb(&installation, document, &mut guard);
@@ -487,6 +582,7 @@ mod tests {
         Installation {
             version: installed.into(),
             feed: None,
+            api: None,
         }
     }
 
@@ -520,16 +616,66 @@ mod tests {
     }
 
     #[test]
-    fn a_github_repository_yields_the_published_feed_address() {
+    fn a_github_repository_yields_the_published_feed_and_api_addresses() {
+        let slug = repository_slug("https://github.com/owner/name").unwrap();
         assert_eq!(
-            feed_url("https://github.com/owner/name").as_deref(),
-            Some("https://github.com/owner/name/releases/latest/download/latest.json"),
+            feed_url(&slug.0, &slug.1),
+            "https://github.com/owner/name/releases/latest/download/latest.json",
         );
         assert_eq!(
-            feed_url("git+https://github.com/owner/name.git").as_deref(),
-            Some("https://github.com/owner/name/releases/latest/download/latest.json"),
+            api_url(&slug.0, &slug.1),
+            "https://api.github.com/repos/owner/name/releases/latest",
         );
-        assert!(feed_url("https://example.test/owner/name").is_none());
+        let dotted = repository_slug("git+https://github.com/owner/name.git").unwrap();
+        assert_eq!(dotted, ("owner".to_string(), "name".to_string()));
+        assert!(repository_slug("https://example.test/owner/name").is_none());
+    }
+
+    #[test]
+    fn a_release_api_response_is_read_as_the_feed_document() {
+        let response = serde_json::json!({
+            "tag_name": "v0.3.0",
+            "body": "## 更新日志\n\n- 一条说明。",
+            "html_url": "https://github.com/owner/name/releases/tag/v0.3.0",
+            "assets": [
+                {
+                    "name": "deepdive-macos-arm64-0.3.0.dmg",
+                    "browser_download_url": "https://example.test/macos.dmg",
+                },
+                {
+                    "name": "deepdive-windows-x64-0.3.0.exe",
+                    "browser_download_url": "https://example.test/windows.exe",
+                },
+                {
+                    "name": "deepdive-linux-x64-0.3.0.AppImage",
+                    "browser_download_url": "https://example.test/appimage",
+                },
+                {
+                    "name": "deepdive-linux-x64-0.3.0.deb",
+                    "browser_download_url": "https://example.test/deb",
+                },
+                {
+                    "name": "deepdive-linux-x64-0.3.0.AppImage.sha256",
+                    "browser_download_url": "https://example.test/sha256",
+                },
+            ],
+        });
+        let document = release_document(&response).unwrap();
+        assert_eq!(document.version.as_deref(), Some("v0.3.0"));
+        assert_eq!(document.page.as_deref(), Some("https://github.com/owner/name/releases/tag/v0.3.0"));
+        let assets = document.assets.unwrap();
+        assert_eq!(assets.len(), 4);
+        assert_eq!(assets["macos"], "https://example.test/macos.dmg");
+        assert_eq!(assets["windows"], "https://example.test/windows.exe");
+        assert_eq!(assets["linuxAppImage"], "https://example.test/appimage");
+        assert_eq!(assets["linuxDeb"], "https://example.test/deb");
+        // Only the feed carries policy, so a release API document never blocks.
+        assert!(document.mandatory_minimum.is_none());
+    }
+
+    #[test]
+    fn a_release_api_response_without_a_tag_names_no_release() {
+        assert!(release_document(&serde_json::json!({ "assets": [] })).is_none());
     }
 
     #[test]
