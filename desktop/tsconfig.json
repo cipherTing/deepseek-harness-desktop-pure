@@ -12,7 +12,15 @@
     "skipLibCheck": true,
     "noEmit": true,
     "types": ["node"],
-    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    // The bridge speaks the client's shortcut protocol instead of restating
+    // it, so the three workspace sources it reaches are resolved from source.
+    // Paths are relative to this file, where `paths` resolves without `baseUrl`.
+    "paths": {
+      "@deepseek-ai/dsh-client-shortcuts/protocol": ["../packages/client/shortcuts/src/protocol.ts"],
+      "@deepseek-ai/dsh-util-values": ["../packages/util/values/src/index.ts"],
+      "@deepseek-ai/dsh-util-crypto": ["../packages/util/crypto/src/index.ts"]
+    }
   },
   "include": [
     "bridge/src/**/*.ts",

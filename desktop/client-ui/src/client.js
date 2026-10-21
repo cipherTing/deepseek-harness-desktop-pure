@@ -96,6 +96,14 @@ window.__ModuleLoader__.load({
       "about.checkFailed": "检查更新失败（网络不可用）",
       "about.updateFound": "发现新版本 {version}",
       "about.view": "查看更新",
+      "about.cli": "命令行工具 dsh",
+      "about.cliInstalled": "已安装",
+      "about.cliMissing": "未安装",
+      "about.cliInstall": "安装",
+      "about.cliRemove": "移除",
+      "about.cliInstalledHint": "已写入 {path}",
+      "about.cliOnPathHint": "{path}（所在目录不在 PATH 中）",
+      "about.cliFailed": "操作失败",
       "drop.release": "松开即可添加",
       "drop.blocked": "当前无法添加",
       "badge.update": "更新",
@@ -123,6 +131,14 @@ window.__ModuleLoader__.load({
       "about.checkFailed": "Update check failed (network unavailable)",
       "about.updateFound": "New version available: {version}",
       "about.view": "View update",
+      "about.cli": "Command-line tool dsh",
+      "about.cliInstalled": "Installed",
+      "about.cliMissing": "Not installed",
+      "about.cliInstall": "Install",
+      "about.cliRemove": "Remove",
+      "about.cliInstalledHint": "Written to {path}",
+      "about.cliOnPathHint": "{path} (its directory is not on PATH)",
+      "about.cliFailed": "The operation failed",
       "drop.release": "Release to add",
       "drop.blocked": "Cannot add now",
       "badge.update": "Update",
@@ -139,58 +155,40 @@ window.__ModuleLoader__.load({
     };
 
     // ── helpers ────────────────────────────────────────────────────────────
-    function compareNumericIdentifier(a, b) {
-      if (a.length !== b.length) return a.length > b.length ? 1 : -1;
-      if (a === b) return 0;
-      return a > b ? 1 : -1;
+    /**
+     * Render one version with the tag spelling every surface uses.
+     * @param value - version text with or without the tag prefix.
+     * @returns the `v`-prefixed form, or a placeholder when nothing is known.
+     */
+    function displayVersion(value) {
+      return `v${stripVersion(value) || "?"}`;
     }
-    function parseVersion(value) {
-      const match = String(value).trim().match(
-        /^[vV]?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
-      );
-      if (match === null) return null;
-      const prerelease = match[4] === undefined ? [] : match[4].split(".");
-      if (prerelease.some((part) => /^\d+$/.test(part) && part.length > 1 && part.startsWith("0"))) return null;
-      return {
-        core: [match[1], match[2], match[3]],
-        prerelease,
-      };
+    /**
+     * Drop the tag prefix one version text may or may not carry.
+     * @param value - version text from the shell or from the stored preference.
+     * @returns the bare version, or an empty string when nothing is known.
+     */
+    function stripVersion(value) {
+      if (value === undefined || value === null) return "";
+      return String(value).replace(/^v/i, "");
     }
-    function isNewer(candidate, baseline) {
-      const a = parseVersion(candidate);
-      const b = parseVersion(baseline);
-      if (a === null || b === null) return false;
-      for (let i = 0; i < a.core.length; i++) {
-        const comparison = compareNumericIdentifier(a.core[i], b.core[i]);
-        if (comparison !== 0) return comparison > 0;
-      }
-      if (a.prerelease.length === 0 || b.prerelease.length === 0) {
-        return a.prerelease.length === 0 && b.prerelease.length > 0;
-      }
-      for (let i = 0; i < Math.max(a.prerelease.length, b.prerelease.length); i++) {
-        const da = a.prerelease[i];
-        const db = b.prerelease[i];
-        if (da === undefined || db === undefined) return da !== undefined;
-        if (da === db) continue;
-        const aNumeric = /^\d+$/.test(da);
-        const bNumeric = /^\d+$/.test(db);
-        if (aNumeric && bNumeric) return compareNumericIdentifier(da, db) > 0;
-        if (aNumeric !== bNumeric) return !aNumeric;
-        return da > db;
-      }
-      return false;
-    }
-    function releasesUrl(repository) {
-      const match = String(repository).match(/github\.com\/([^/]+)\/([^/\s#]+)/);
-      if (match === null) return null;
-      return `https://api.github.com/repos/${match[1]}/${match[2].replace(/\.git$/, "")}/releases/latest`;
-    }
-    function releaseAssetName(version) {
-      const normalized = String(version).replace(/^v/i, "");
-      if (navigator.userAgent.includes("Windows")) return `deepdive-windows-x64-${normalized}.exe`;
-      if (navigator.userAgent.includes("Macintosh")) return `deepdive-macos-arm64-${normalized}.dmg`;
-      if (/Linux (?:x86_64|x64)/.test(navigator.userAgent)) return `deepdive-linux-x64-${normalized}.AppImage`;
-      return null;
+    /**
+     * Installer link for this platform from the release's asset map.
+     *
+     * The shell reads the release feed, so the page never compares versions or
+     * picks an asset out of a second document: it renders what the shell found.
+     * @param release - release facts reported by the shell.
+     * @returns the installer link, or the release page when this platform has none.
+     */
+    function downloadUrlFor(release) {
+      const assets = release.assets ?? {};
+      const agent = navigator.userAgent;
+      const asset = agent.includes("Windows")
+        ? assets.windows
+        : agent.includes("Macintosh")
+          ? assets.macos
+          : /Linux (?:x86_64|x64)/.test(agent) ? assets.linuxAppImage : undefined;
+      return asset ?? release.page ?? "#";
     }
     function fileTransfer(event) {
       const dataTransfer = event.dataTransfer;
@@ -273,37 +271,6 @@ window.__ModuleLoader__.load({
         window.removeEventListener("dragend", reset);
       };
     }
-    /**
-     * Bounds one release lookup: without it a stalled connection leaves the
-     * check button disabled until the platform's own long default timeout.
-     */
-    const UPDATE_CHECK_TIMEOUT_MS = 15000;
-    async function fetchLatest(repository) {
-      const url = releasesUrl(repository);
-      if (url === null) return null;
-      try {
-        const response = await fetch(url, {
-          headers: { Accept: "application/vnd.github+json" },
-          signal: AbortSignal.timeout(UPDATE_CHECK_TIMEOUT_MS),
-        });
-        if (!response.ok) return null;
-        const data = await response.json();
-        if (typeof data?.tag_name !== "string" || typeof data?.html_url !== "string") return null;
-        const expectedAsset = releaseAssetName(data.tag_name);
-        const asset = expectedAsset === null || !Array.isArray(data.assets)
-          ? null
-          : data.assets.find((candidate) => candidate?.name === expectedAsset
-            && typeof candidate?.browser_download_url === "string");
-        return {
-          version: data.tag_name,
-          htmlUrl: data.html_url,
-          downloadUrl: asset?.browser_download_url ?? data.html_url,
-          notes: typeof data.body === "string" ? data.body.trim() : "",
-        };
-      } catch {
-        return null;
-      }
-    }
     function useDesktopInfo() {
       const [info, setInfo] = React.useState(null);
       React.useEffect(() => {
@@ -380,7 +347,7 @@ window.__ModuleLoader__.load({
             React.createElement(IconChevronRightOutlineRegular, { size: 14 })),
           React.createElement("div", { className: "dab-versionCell dab-versionLatest" },
             React.createElement("span", { className: "dab-versionLabel" }, t("dialog.latest")),
-            React.createElement("span", { className: "dab-versionValue" }, latest.version),
+            React.createElement("span", { className: "dab-versionValue" }, displayVersion(latest.version)),
           ),
         ),
         React.createElement("section", { className: "dab-releaseSection" },
@@ -394,8 +361,64 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // ── dsh command installation ───────────────────────────────────────────
+    /**
+     * The shell owns the launcher: it decides where the file belongs, writes it
+     * from the packaged Node and CLI paths, and removes only a file it still
+     * recognises. This hook only asks and reports.
+     * @returns the launcher state and the two operations over it.
+     */
+    function useCliCommand() {
+      const bridge = globalThis.dshDesktop?.cli;
+      const [status, setStatus] = React.useState(null);
+      const [busy, setBusy] = React.useState(false);
+      const [failed, setFailed] = React.useState(false);
+      const refresh = React.useCallback(() => {
+        if (bridge === undefined) return;
+        void bridge.status().then(setStatus, () => { setFailed(true); });
+      }, [bridge]);
+      React.useEffect(refresh, [refresh]);
+      const run = React.useCallback((operation) => {
+        if (bridge === undefined || busy) return;
+        setBusy(true);
+        setFailed(false);
+        void (operation === "install" ? bridge.install() : bridge.remove())
+          .then(setStatus, () => { setFailed(true); })
+          .finally(() => { setBusy(false); });
+      }, [bridge, busy]);
+      return { available: bridge !== undefined, status, busy, failed, run };
+    }
+
+    function CliCommandRow({ cli, t }) {
+      if (!cli.available) return null;
+      const installed = cli.status?.installed === true;
+      const hint = cli.failed
+        ? t("about.cliFailed")
+        : installed
+          ? t(cli.status.onPath ? "about.cliInstalledHint" : "about.cliOnPathHint", { path: cli.status.path })
+          : "";
+      return React.createElement(React.Fragment, null,
+        React.createElement("div", { className: "dab-row" },
+          React.createElement("span", null, t("about.cli")),
+          React.createElement("span", null, installed ? t("about.cliInstalled") : t("about.cliMissing")),
+        ),
+        React.createElement("div", { className: "dab-check" },
+          React.createElement("button", {
+            type: "button",
+            className: "dab-button",
+            disabled: cli.busy || cli.status === null,
+            onClick: () => { cli.run(installed ? "remove" : "install"); },
+          }, installed ? t("about.cliRemove") : t("about.cliInstall")),
+          hint !== "" && React.createElement("span", {
+            className: cli.failed ? "dab-status dab-statusWarn" : "dab-status",
+          }, hint),
+        ),
+      );
+    }
+
     function AboutSection({ close, t }) {
       const info = useDesktopInfo();
+      const cli = useCliCommand();
       const [checking, setChecking] = React.useState(false);
       const [status, setStatus] = React.useState(null);
       const [latest, setLatest] = React.useState(null);
@@ -406,15 +429,25 @@ window.__ModuleLoader__.load({
         setDialogOpen(false);
         setChecking(true);
         setStatus("checking");
-        const found = await fetchLatest(info.repository);
-        setChecking(false);
-        if (found === null) {
+        let found;
+        try {
+          found = await globalThis.dshDesktop.release.check();
+        } catch (error) {
+          // The shell reports a feed it could not read; the button says so
+          // instead of pretending the installation is current.
+          void error;
+          setChecking(false);
           setStatus("failed");
           return;
         }
-        setLatest(found);
-        if (isNewer(found.version, info.desktopVersion)) setStatus("update");
-        else setStatus("uptodate");
+        setChecking(false);
+        if (found.latest === undefined) {
+          setLatest(null);
+          setStatus("uptodate");
+          return;
+        }
+        setLatest({ ...found, version: found.latest, downloadUrl: downloadUrlFor(found) });
+        setStatus("update");
       };
 
       return React.createElement("div", { className: "dab-section" },
@@ -436,12 +469,13 @@ window.__ModuleLoader__.load({
             React.createElement("span", null, t("about.author")),
             React.createElement("span", null, info?.author ?? "—"),
           ),
+          React.createElement(CliCommandRow, { cli, t }),
           React.createElement("div", { className: "dab-check" },
             React.createElement("button", { type: "button", className: "dab-button", disabled: checking, onClick: () => { void check(); } }, t("about.check")),
             status === "checking" && React.createElement("span", { className: "dab-status" }, t("about.checking")),
-            status === "uptodate" && React.createElement("span", { className: "dab-status" }, t("about.upToDate", { version: latest?.version ?? "" })),
+            status === "uptodate" && React.createElement("span", { className: "dab-status" }, t("about.upToDate", { version: displayVersion(info?.desktopVersion) })),
             status === "failed" && React.createElement("span", { className: "dab-status dab-statusWarn" }, t("about.checkFailed")),
-            status === "update" && React.createElement("span", { className: "dab-status dab-statusWarn" }, t("about.updateFound", { version: latest?.version ?? "" })),
+            status === "update" && React.createElement("span", { className: "dab-status dab-statusWarn" }, t("about.updateFound", { version: displayVersion(latest?.version) })),
             status === "update" && React.createElement("button", {
               type: "button",
               className: "dab-button",
@@ -467,28 +501,39 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         if (info === null) return;
         let live = true;
+        // The shell owns the schedule; the badge only re-reads its answer, so a
+        // badge and a native reminder can never name different releases.
         const poll = async () => {
-          const found = await fetchLatest(info.repository);
-          if (!live || found === null) return;
-          setLatest((previous) => previous?.version === found.version
-            && previous?.notes === found.notes
-            && previous?.downloadUrl === found.downloadUrl
+          let found;
+          try {
+            found = await globalThis.dshDesktop.release.state();
+          } catch (error) {
+            void error;
+            return;
+          }
+          if (!live || found.latest === undefined) return;
+          const next = { ...found, version: found.latest, downloadUrl: downloadUrlFor(found) };
+          setLatest((previous) => previous?.version === next.version
+            && previous?.notes === next.notes
+            && previous?.downloadUrl === next.downloadUrl
             ? previous
-            : found);
+            : next);
         };
         void poll();
-        const interval = setInterval(() => { void poll(); }, 30 * 60 * 1000);
+        const interval = setInterval(() => { void poll(); }, 5 * 60 * 1000);
         return () => { live = false; clearInterval(interval); };
       }, [info]);
 
-      if (latest === null || !isNewer(latest.version, info?.desktopVersion)) return null;
-      // The ignored release stays quiet; a newer release replaces it.
-      if (ignored === latest.version) return null;
+      if (latest === null) return null;
+      // The ignored release stays quiet; a newer release replaces it. The stored
+      // preference predates the shell's unprefixed version, so both spellings
+      // name the same release.
+      if (ignored !== undefined && stripVersion(ignored) === stripVersion(latest.version)) return null;
       return React.createElement(React.Fragment, null,
         React.createElement("button", {
           type: "button",
           className: wide ? "dab-badge" : "dab-badge dab-badgeRail",
-          title: t("about.updateFound", { version: latest.version }),
+          title: t("about.updateFound", { version: displayVersion(latest.version) }),
           "aria-label": t("badge.update"),
           onClick: () => { setOpen(true); },
         }, wide ? t("badge.update") : "·"),

@@ -9,6 +9,30 @@ const runtime = resolve(desktop, 'runtime')
 const outdir = resolve(runtime, 'lib')
 const deployDir = resolve(desktop, 'src-tauri/rt')
 
+/**
+ * Resolve the bridge's workspace imports from source.
+ *
+ * The bridge speaks the client's shortcut protocol instead of restating it, so
+ * two things follow from the source tree rather than a published `lib/`: the
+ * protocol module and the two zero-dependency utilities it reaches. `desktop`
+ * declares no workspace dependencies, matching `tsconfig.json`'s path map.
+ */
+const bridgeWorkspaceSources = {
+  '@deepseek-ai/dsh-client-shortcuts/protocol': resolve(root, 'packages/client/shortcuts/src/protocol.ts'),
+  '@deepseek-ai/dsh-util-values': resolve(root, 'packages/util/values/src/index.ts'),
+  '@deepseek-ai/dsh-util-crypto': resolve(root, 'packages/util/crypto/src/index.ts'),
+}
+
+const bridgeWorkspacePlugin = {
+  name: 'desktop-bridge-workspace-sources',
+  setup(build) {
+    // esbuild evaluates filters as Go regular expressions, which accept no
+    // JavaScript flags.
+    build.onResolve({ filter: /^@deepseek-ai\/dsh-(client-shortcuts\/protocol|util-values|util-crypto)$/ },
+      args => ({ path: bridgeWorkspaceSources[args.path] }))
+  },
+}
+
 await rm(outdir, { recursive: true, force: true })
 await mkdir(outdir, { recursive: true })
 await writeProfileBootBridge()
@@ -33,6 +57,7 @@ await build({
     surface: resolve(runtime, 'src/surface.ts'),
     'directory-picker': resolve(runtime, 'src/directory-picker.ts'),
     'settings-controller': resolve(runtime, 'src/settings-controller.ts'),
+    cli: resolve(runtime, 'src/cli.ts'),
   },
   outdir,
   entryNames: '[name]',
@@ -87,6 +112,7 @@ async function writeBridgeScriptModule() {
     minify: true,
     write: false,
     logLevel: 'info',
+    plugins: [bridgeWorkspacePlugin],
   })
   const bridgeSource = result.outputFiles[0].text
   await writeFile(

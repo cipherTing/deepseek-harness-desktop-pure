@@ -16,6 +16,7 @@ afterEach(() => {
     delete globalThis[name]
   }
   delete globalThis.fetch
+  delete globalThis.dshDesktop
   delete globalThis.IS_REACT_ACT_ENVIRONMENT
 })
 
@@ -75,6 +76,9 @@ function loadClientUi({
   userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
   activate = true,
   ignoredVersion,
+  cli,
+  releaseAvailable = true,
+  releaseUnreachable = false,
 } = {}) {
   const releaseTag = `v${releaseVersion}`
   dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
@@ -91,7 +95,32 @@ function loadClientUi({
     })
   }
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
-  let releaseFetches = 0
+  // The shell owns the release feed; the stub answers from this test's release
+  // facts and counts reads, so a badge cannot quietly poll by itself.
+  let releaseReads = 0
+  const releaseReport = () => ({
+    version: currentVersion,
+    ...releaseAvailable ? {
+      latest: releaseVersion.replace(/^v/i, ''),
+      notes: releaseBody,
+      page: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/tag/${releaseTag}`,
+      assets: {
+        macos: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-macos-arm64-${releaseVersion}.dmg`,
+        windows: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-windows-x64-${releaseVersion}.exe`,
+        linuxAppImage: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-linux-x64-${releaseVersion}.AppImage`,
+        linuxDeb: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-linux-x64-${releaseVersion}.deb`,
+      },
+    } : {},
+  })
+  const release = {
+    state: async () => { releaseReads += 1; return releaseReport() },
+    check: async () => {
+      releaseReads += 1
+      if (releaseUnreachable) throw new Error('the release feed is unreachable')
+      return releaseReport()
+    },
+  }
+  globalThis.dshDesktop = { release, ...cli === undefined ? {} : { cli } }
   globalThis.fetch = async (input) => {
     const url = String(input)
     if (url === '/desktop-info.json') {
@@ -100,27 +129,6 @@ function loadClientUi({
         kernelVersion: '0.1.1-rc.2',
         repository: 'https://github.com/cipherTing/deepseek-harness-desktop-pure',
         author: 'cipherTing',
-      })
-    }
-    if (url.endsWith('/repos/cipherTing/deepseek-harness-desktop-pure/releases/latest')) {
-      releaseFetches += 1
-      return response({
-        tag_name: releaseTag,
-        html_url: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/tag/${releaseTag}`,
-        body: releaseBody,
-        assets: [{
-          name: `deepdive-macos-arm64-${releaseVersion}.dmg`,
-          browser_download_url: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-macos-arm64-${releaseVersion}.dmg`,
-        }, {
-          name: `deepdive-windows-x64-${releaseVersion}.exe`,
-          browser_download_url: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-windows-x64-${releaseVersion}.exe`,
-        }, {
-          name: `deepdive-linux-x64-${releaseVersion}.AppImage`,
-          browser_download_url: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-linux-x64-${releaseVersion}.AppImage`,
-        }, {
-          name: `deepdive-linux-x64-${releaseVersion}.deb`,
-          browser_download_url: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-linux-x64-${releaseVersion}.deb`,
-        }],
       })
     }
     throw new Error(`unexpected fetch: ${url}`)
@@ -191,7 +199,7 @@ function loadClientUi({
   }
   if (activate) plugin.apply(context)
   const t = locale.bind()
-  return { components, t, locale, slots, plugin, ignored, releaseFetches: () => releaseFetches }
+  return { components, t, locale, slots, plugin, ignored, cli, releaseReads: () => releaseReads }
 }
 
 test('Desktop client UI waits for locale, slots, and the settings scope before registering its contributions', async () => {
@@ -278,17 +286,17 @@ test('skipping the shown release hides the badge and stores the version', async 
 
   await waitFor(() => assert.equal(view.queryByRole('button', { name: '更新' }), null))
   assert.equal(view.queryByRole('dialog'), null)
-  assert.deepEqual(ignored.writes, ['v0.2.0'])
+  assert.deepEqual(ignored.writes, ['0.2.0'])
 })
 
 test('the ignored release stays quiet while a newer release shows the badge', async () => {
-  const quiet = loadClientUi({ ignoredVersion: 'v0.2.0' })
+  const quiet = loadClientUi({ ignoredVersion: '0.2.0' })
   const quietView = render(React.createElement(quiet.components.get('settings.update'), { wide: true, t: quiet.t }))
-  await waitFor(() => assert.ok(quiet.releaseFetches() > 0))
+  await waitFor(() => assert.ok(quiet.releaseReads() > 0))
   assert.equal(quietView.queryByRole('button', { name: '更新' }), null)
   cleanup()
 
-  const newer = loadClientUi({ ignoredVersion: 'v0.2.0', releaseVersion: '0.3.0' })
+  const newer = loadClientUi({ ignoredVersion: '0.2.0', releaseVersion: '0.3.0' })
   const newerView = render(React.createElement(newer.components.get('settings.update'), { wide: true, t: newer.t }))
   assert.ok(await newerView.findByRole('button', { name: '更新' }))
 })
@@ -320,6 +328,55 @@ test('manual update check reports the release without opening the dialog', async
   assert.equal(view.queryByRole('dialog'), null)
   fireEvent.click(view.getByRole('button', { name: '查看更新' }))
   await waitFor(() => assert.ok(view.getByRole('dialog', { name: 'DeepDive 更新' })))
+})
+
+test('the About section installs the dsh command and reports where it landed', async () => {
+  const calls = []
+  const state = {
+    path: '/home/user/.local/bin/dsh',
+    installed: false,
+    present: false,
+    onPath: true,
+  }
+  const cli = {
+    status: async () => ({ ...state }),
+    install: async () => { calls.push('install'); return { ...state, installed: true, present: true } },
+    remove: async () => { calls.push('remove'); return { ...state } },
+  }
+  const { components, t } = loadClientUi({ cli })
+  const AboutSection = components.get('settings.section')
+
+  const view = render(React.createElement(AboutSection, { t }))
+  // "Not installed" is also the pre-report label, so the click waits for the
+  // report that enables the button rather than that label.
+  await waitFor(() => { assert.equal(view.getByRole('button', { name: '安装' }).disabled, false) })
+  fireEvent.click(view.getByRole('button', { name: '安装' }))
+  await waitFor(() => { assert.deepEqual(calls, ['install']) })
+  await view.findByRole('button', { name: '移除' })
+  // The installed state names the launcher the shell wrote.
+  assert.ok(view.getByText(text => text.includes('/home/user/.local/bin/dsh')))
+})
+
+test('an installation outside PATH says so instead of claiming success', async () => {
+  const cli = {
+    status: async () => ({ path: '/opt/deepdive/dsh', installed: true, present: true, onPath: false }),
+    install: async () => ({ path: '/opt/deepdive/dsh', installed: true, present: true, onPath: false }),
+    remove: async () => ({ path: '/opt/deepdive/dsh', installed: true, present: true, onPath: false }),
+  }
+  const { components, t } = loadClientUi({ cli })
+  const AboutSection = components.get('settings.section')
+  const view = render(React.createElement(AboutSection, { t }))
+  await view.findByText('已安装')
+  assert.ok(view.getByText('/opt/deepdive/dsh（所在目录不在 PATH 中）'))
+})
+
+test('a shell without the command bridge renders no command row', async () => {
+  const { components, t } = loadClientUi()
+  const AboutSection = components.get('settings.section')
+  const view = render(React.createElement(AboutSection, { t }))
+  await view.findByText('0.1.6')
+  assert.equal(view.queryByRole('button', { name: '安装' }), null)
+  assert.equal(view.queryByText('命令行工具 dsh'), null)
 })
 
 test('Windows update action targets the matching installer asset', async () => {
@@ -426,38 +483,35 @@ test('Desktop leaves file-type admission and drop propagation to DSH', () => {
   assert.equal(downstreamDrops, 3)
 })
 
-test('stable releases supersede prereleases without allowing a prerelease downgrade', async () => {
-  const stableView = loadClientUi({ currentVersion: '0.2.0-rc.1', releaseVersion: '0.2.0' })
-  const StableBadge = stableView.components.get('settings.update')
-  const first = render(React.createElement(StableBadge, { wide: true, t: stableView.t }))
-  await first.findByRole('button', { name: '更新' })
-  cleanup()
-  dom.window.close()
-
-  const prereleaseView = loadClientUi({ currentVersion: '0.2.0', releaseVersion: '0.2.0-rc.1' })
-  const PrereleaseAbout = prereleaseView.components.get('settings.section')
-  const second = render(React.createElement(PrereleaseAbout, { t: prereleaseView.t }))
-  await second.findByText('0.2.0')
-  fireEvent.click(second.getByRole('button', { name: '检查更新' }))
-  await second.findByText('已是最新版本（v0.2.0-rc.1）')
-  assert.equal(second.queryByRole('button', { name: '查看更新' }), null)
-})
-
-test('numeric prerelease identifiers follow SemVer precedence', async () => {
-  const { components, t } = loadClientUi({ currentVersion: '0.2.0-rc.1', releaseVersion: '0.2.0-rc.2' })
+test('a shell that knows no newer release leaves the badge hidden', async () => {
+  const { components, t } = loadClientUi({ releaseAvailable: false })
   const UpdateBadge = components.get('settings.update')
   const view = render(React.createElement(UpdateBadge, { wide: true, t }))
-  await view.findByRole('button', { name: '更新' })
+  await waitFor(() => assert.equal(view.queryByRole('button', { name: '更新' }), null))
 })
 
-test('version comparison does not lose precision for large SemVer identifiers', async () => {
-  const { components, t } = loadClientUi({
-    currentVersion: '9007199254740992.0.0',
-    releaseVersion: '9007199254740993.0.0',
-  })
-  const UpdateBadge = components.get('settings.update')
-  const view = render(React.createElement(UpdateBadge, { wide: true, t }))
-  await view.findByRole('button', { name: '更新' })
+test('a manual check the shell cannot complete reports the failure', async () => {
+  const { components, t } = loadClientUi({ releaseUnreachable: true })
+  const AboutSection = components.get('settings.section')
+  const view = render(React.createElement(AboutSection, { t }))
+  await view.findByText('0.1.6')
+
+  fireEvent.click(view.getByRole('button', { name: '检查更新' }))
+
+  await view.findByText('检查更新失败（网络不可用）')
+  assert.equal(view.queryByRole('button', { name: '查看更新' }), null)
+})
+
+test('a manual check naming no newer release reports the current version', async () => {
+  const { components, t } = loadClientUi({ releaseAvailable: false })
+  const AboutSection = components.get('settings.section')
+  const view = render(React.createElement(AboutSection, { t }))
+  await view.findByText('0.1.6')
+
+  fireEvent.click(view.getByRole('button', { name: '检查更新' }))
+
+  await view.findByText('已是最新版本（v0.1.6）')
+  assert.equal(view.queryByRole('button', { name: '查看更新' }), null)
 })
 
 /**

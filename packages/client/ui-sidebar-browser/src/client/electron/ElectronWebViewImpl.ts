@@ -1,24 +1,40 @@
-/** Electron navigation and guest lifetime, independent from DOM placement. */
+/** Desktop guest navigation and lifetime, independent from DOM placement. */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { DesktopBrowserBridge, DesktopBrowserLeaseId } from '../../types.ts'
-import type { ElectronWebviewPresentation, WebviewElement } from './ElectronWebviewPresentation.ts'
+import type {
+  DesktopBrowserBridge, DesktopBrowserEvent, DesktopBrowserGuestState, DesktopBrowserLeaseId, DesktopBrowserRect,
+} from '../../types.ts'
+import type { AnchorBounds, ElectronWebviewPresentation, GuestAnchor } from './ElectronWebviewPresentation.ts'
 import { emptyBrowserFrame, type BrowserFrame, type BrowserFrameState, type BrowserLoadError } from '../browser/BrowserFrame.ts'
 import type { BrowserPageOptions } from '../browser/BrowserPage.ts'
 import { browserAddressCheckpoint, currentBrowserTarget } from '../browser/BrowserPersistence.ts'
 import { parseBrowserAddress, type BrowserTarget } from '../browser/url.ts'
 
-interface NavigationEvent extends Event { readonly isMainFrame: boolean }
-interface LoadFailureEvent extends NavigationEvent {
-  readonly errorCode: number
-  readonly errorDescription: string
+/** Host errors that mean the user replaced the navigation, not that it failed. */
+const CANCELLED_ERRORS = ['ERR_ABORTED', 'Load request cancelled', 'NSURLErrorCancelled']
+
+/** Cached guest state before the host has reported anything. */
+const UNOBSERVED: DesktopBrowserGuestState = {
+  url: '', title: '', loading: true, canGoBack: false, canGoForward: false,
 }
 
-/** Owns native history and translates Electron observations into common frame state. */
+/** Whether a host navigation rejection is the user's own replacement of it. */
+function isCancellation(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return CANCELLED_ERRORS.some(name => message.includes(name))
+}
+
+/**
+ * Owns native history and translates host observations into common frame state.
+ *
+ * Every gate reads a cached snapshot rather than awaiting the host: Back,
+ * Forward, Reload and address submission decide synchronously whether they may
+ * run, so the cache is the frame's only state source and host events refresh it.
+ */
 export class ElectronWebViewImpl implements BrowserFrame {
   private readonly store: SnapshotStore<BrowserFrameState>
   private readonly lifetime = new AbortController()
   private guestLifetime: AbortController | undefined
-  private element: WebviewElement | undefined
+  private anchor: GuestAnchor | undefined
   private lease: DesktopBrowserLeaseId | undefined
   private workspaceKey: string | undefined
   private initializing: Promise<void> | undefined
@@ -29,13 +45,18 @@ export class ElectronWebViewImpl implements BrowserFrame {
   private checkpoint: BrowserTarget | undefined
   private disposal: Promise<void> | undefined
   private attachment: AbortController | undefined
+  private stopFollowing: (() => void) | undefined
+  private placement: Promise<void> = Promise.resolve()
+  private placementPending: DesktopBrowserRect | undefined
   private readonly releases = new Set<Promise<void>>()
+  /** Last state the host reported for this guest, read synchronously by every gate. */
+  private observed: DesktopBrowserGuestState = UNOBSERVED
 
   /**
    * @param options - saved address, persistence and source-tab opening callback.
-   * @param bridge - main-process guest operations.
+   * @param bridge - shell-owned guest operations.
    * @param workspace - resolves the storage account once for this frame lifetime.
-   * @param presentation - tag and Sidebar placement adapter.
+   * @param presentation - anchor and Sidebar placement adapter.
    */
   constructor(private readonly options: BrowserPageOptions, private readonly bridge: DesktopBrowserBridge,
     private readonly workspace: (signal: AbortSignal) => Promise<string>,
@@ -85,14 +106,14 @@ export class ElectronWebViewImpl implements BrowserFrame {
     else this.initialize()
   }
 
-  /** Move backward through Chromium history. */
+  /** Move backward when the host reports an available history entry. */
   goBack(): void {
-    if (this.store.getSnapshot().canGoBack) this.navigate('goBack')
+    if (this.store.getSnapshot().canGoBack) this.command('back')
   }
 
-  /** Move forward through Chromium history. */
+  /** Move forward when the host reports an available history entry. */
   goForward(): void {
-    if (this.store.getSnapshot().canGoForward) this.navigate('goForward')
+    if (this.store.getSnapshot().canGoForward) this.command('forward')
   }
 
   /** Reload the actual current page, or retry failed guest creation. */
@@ -105,7 +126,7 @@ export class ElectronWebViewImpl implements BrowserFrame {
       this.store.set({ ...current, loading: true, error: undefined })
       if (this.ready) this.loadPending()
       else this.initialize()
-    } else this.navigate('reload')
+    } else this.command('reload')
   }
 
   /** @returns after pending initialization and the owned guest have been released. */
@@ -119,18 +140,20 @@ export class ElectronWebViewImpl implements BrowserFrame {
     return this.disposal
   }
 
-  private navigate(command: 'goBack' | 'goForward' | 'reload'): void {
-    if (this.lifetime.signal.aborted || !this.ready || this.element === undefined) return
+  private command(operation: 'reload' | 'back' | 'forward'): void {
+    const lease = this.lease
+    if (this.lifetime.signal.aborted || !this.ready || lease === undefined) return
     this.revision++
     this.pending = undefined
     this.store.set({ ...this.store.getSnapshot(), loading: true, error: undefined })
-    try { this.element[command]() }
-    catch (error) { this.commandFailed(error) }
+    void this.bridge.command(lease, operation).catch((error: unknown) => {
+      if (!this.lifetime.signal.aborted) this.commandFailed(error)
+    })
   }
 
   private initialize(): void {
     const attachment = this.attachment
-    if (attachment === undefined || this.initializing !== undefined || this.element !== undefined || this.lifetime.signal.aborted) return
+    if (attachment === undefined || this.initializing !== undefined || this.anchor !== undefined || this.lifetime.signal.aborted) return
     const signal = AbortSignal.any([this.lifetime.signal, attachment.signal])
     this.initializing = this.createGuest(signal).catch(async (error: unknown) => {
       await this.dropGuest()
@@ -150,85 +173,126 @@ export class ElectronWebViewImpl implements BrowserFrame {
     this.lease = reservation.lease
     this.guestLifetime = new AbortController()
     const signal = AbortSignal.any([attachmentSignal, this.guestLifetime.signal])
-    const element = this.presentation.createElement(reservation)
-    this.element = element
+    const anchor = this.presentation.createElement(reservation)
+    this.anchor = anchor
     const unsubscribeOpen = this.bridge.onOpenRequested(reservation.lease, (url) => {
-      if (this.element === element && !signal.aborted) this.options.openRequested(url)
+      if (this.anchor === anchor && !signal.aborted) this.options.openRequested(url)
     })
     signal.addEventListener('abort', unsubscribeOpen, { once: true })
-    element.addEventListener('dom-ready', () => {
-      this.ready = true
-      this.observe(this.store.getSnapshot().address !== 'requested')
-      this.loadPending()
-    }, { signal })
-    element.addEventListener('did-navigate', () => { this.observe(true) }, { signal })
-    element.addEventListener('did-navigate-in-page', (event) => {
-      if ((event as NavigationEvent).isMainFrame) this.observe(true)
-    }, { signal })
-    element.addEventListener('did-start-navigation', (event) => {
-      if ((event as NavigationEvent).isMainFrame) {
-        this.store.set({ ...this.store.getSnapshot(), loading: true, error: undefined })
-      }
-    }, { signal })
-    for (const name of ['did-start-loading', 'did-stop-loading', 'page-title-updated']) {
-      element.addEventListener(name, () => {
-        this.observe(name === 'page-title-updated' && this.store.getSnapshot().address === 'observed')
-      }, { signal })
-    }
-    element.addEventListener('did-fail-load', (event) => {
-      const failure = event as LoadFailureEvent
-      if (failure.isMainFrame && failure.errorCode !== -3) {
-        this.failed({ code: failure.errorCode, description: failure.errorDescription })
-      }
-    }, { signal })
-    for (const name of ['render-process-gone', 'destroyed']) {
-      element.addEventListener(name, () => { void this.dropGuest(); this.failed() }, { signal })
-    }
-    this.presentation.present(element)
+    const unsubscribeEvents = this.bridge.onEvent((event) => {
+      if (this.lease !== reservation.lease || signal.aborted) return
+      this.receive(event)
+    })
+    signal.addEventListener('abort', unsubscribeEvents, { once: true })
+    this.presentation.present(anchor)
+    this.stopFollowing = this.presentation.follow((bounds) => { this.follow(reservation.lease, bounds) })
+    signal.addEventListener('abort', () => {
+      this.stopFollowing?.()
+      this.stopFollowing = undefined
+      // The guest leaves with the attachment; hiding is what the shell needs
+      // when the frame itself outlives this presentation.
+      void this.bridge.setVisible(reservation.lease, false).catch((error: unknown) => {
+        console.error('Desktop browser visibility failed', error)
+      })
+    }, { once: true })
+    // The guest starts blank, so the first document commit is the bootstrap
+    // document rather than a user navigation.
+    this.ready = true
+    this.firstDocument = true
+    await this.refresh()
+    this.loadPending()
   }
 
   private loadPending(): void {
     const target = this.pending
-    const element = this.element
-    if (!this.ready || target === undefined || element === undefined) return
+    const lease = this.lease
+    if (!this.ready || target === undefined || lease === undefined) return
     const revision = this.revision
     this.pending = undefined
-    void element.loadURL(target.url).catch((error: unknown) => {
-      if (this.element !== element || this.lifetime.signal.aborted || this.revision !== revision) return
-      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ERR_ABORTED') return
+    void this.bridge.navigate(lease, target.url).catch((error: unknown) => {
+      if (this.lease !== lease || this.lifetime.signal.aborted || this.revision !== revision) return
+      if (isCancellation(error)) return
       if (this.store.getSnapshot().error === undefined) this.commandFailed(error)
     })
   }
 
-  private observe(committed: boolean): void {
-    if (!this.ready || this.element === undefined || this.lifetime.signal.aborted) return
-    try { this.observeReady(this.element, committed) }
+  /** Apply one host notification to the cached state, then republish frame state. */
+  private receive(event: DesktopBrowserEvent): void {
+    if (this.lifetime.signal.aborted || event.lease !== this.lease) return
+    this.observed = event.state
+    const committed = event.kind === 'navigated' || event.kind === 'load-finished'
+      || (event.kind === 'title' && this.store.getSnapshot().address === 'observed')
+    try { this.observe(committed) }
     catch (error) { this.commandFailed(error) }
   }
 
-  private observeReady(element: WebviewElement, committed: boolean): void {
+  /** Re-read the host's cached state once, then publish it as an observation. */
+  private async refresh(): Promise<void> {
+    const lease = this.lease
+    if (lease === undefined) return
+    try {
+      this.observed = await this.bridge.state(lease)
+    } catch (error) {
+      if (!this.lifetime.signal.aborted) this.commandFailed(error)
+      return
+    }
+    if (this.lease !== lease || this.lifetime.signal.aborted) return
+    this.observe(this.store.getSnapshot().address !== 'requested')
+  }
+
+  /** Synchronous projection of the cached host state into frame state. */
+  private observe(committed: boolean): void {
+    if (!this.ready || this.anchor === undefined || this.lifetime.signal.aborted) return
     const current = this.store.getSnapshot()
-    const parsed = committed ? parseBrowserAddress(element.getURL()) : undefined
+    // A blank or unreadable address is not an observation: the requested
+    // address stays authoritative until the guest reports a real one.
+    const parsed = committed && this.observed.url !== '' ? parseBrowserAddress(this.observed.url) : undefined
     if (parsed?.ok && this.firstDocument) {
       // The lease-bearing bootstrap document is not a user history entry.
-      element.clearHistory()
       this.firstDocument = false
     }
     let target = current.target
     let address = current.address
     if (parsed?.ok) {
-      target = { ...parsed.target, title: element.getTitle() || parsed.target.title }
+      target = { ...parsed.target, title: this.observed.title || parsed.target.title }
       address = 'observed'
       this.presentation.show(target.title)
     }
-    const loading = current.error === undefined && element.isLoading()
-    const canGoBack = element.canGoBack()
-    const canGoForward = element.canGoForward()
+    const loading = current.error === undefined && this.observed.loading
+    const canGoBack = this.observed.canGoBack
+    const canGoForward = this.observed.canGoForward
     if (target?.url !== current.target?.url || target?.title !== current.target?.title || address !== current.address
       || loading !== current.loading || canGoBack !== current.canGoBack || canGoForward !== current.canGoForward) {
       this.store.set({ ...current, target, address, loading, canGoBack, canGoForward })
     }
     if (parsed?.ok && target !== undefined) this.persist(target)
+  }
+
+  /**
+   * Move the guest over the anchor, coalescing placements that arrive while
+   * one is in flight so a drag cannot queue one command per frame.
+   * @param lease - the guest this frame owns.
+   * @param bounds - the anchor's current box, or `undefined` while off screen.
+   */
+  private follow(lease: DesktopBrowserLeaseId, bounds: AnchorBounds | undefined): void {
+    if (this.lifetime.signal.aborted || lease !== this.lease) return
+    if (bounds === undefined) {
+      void this.bridge.setVisible(lease, false).catch((error: unknown) => {
+        console.error('Desktop browser visibility failed', error)
+      })
+      return
+    }
+    this.placementPending = bounds
+    this.placement = this.placement.then(async () => {
+      const next = this.placementPending
+      this.placementPending = undefined
+      if (next === undefined || this.lease !== lease || this.lifetime.signal.aborted) return
+      try {
+        await this.bridge.place(lease, next, true)
+      } catch (error) {
+        console.error('Desktop browser placement failed', error)
+      }
+    })
   }
 
   private persist(target: BrowserTarget): void {
@@ -252,10 +316,13 @@ export class ElectronWebViewImpl implements BrowserFrame {
   private dropGuest(): Promise<void> {
     this.guestLifetime?.abort()
     this.guestLifetime = undefined
+    this.stopFollowing?.()
+    this.stopFollowing = undefined
     this.presentation.clear()
-    this.element = undefined
+    this.anchor = undefined
     this.ready = false
     this.firstDocument = true
+    this.observed = UNOBSERVED
     const lease = this.lease
     this.lease = undefined
     return lease === undefined ? Promise.resolve() : this.release(lease)

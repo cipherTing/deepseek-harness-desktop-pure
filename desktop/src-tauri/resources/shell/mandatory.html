@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeepDive 需要更新</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f8fa;
+        --fg: #0f1115;
+        --muted: #5b6270;
+        --line: #dfe2e8;
+        --accent: #4d6bfe;
+        --accent-fg: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #17181c;
+          --fg: #eceef2;
+          --muted: #9aa1ae;
+          --line: #2c2f36;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        padding: 28px 30px 24px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+          'Microsoft YaHei', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+      }
+      h1 {
+        margin: 0;
+        font-size: 19px;
+        line-height: 1.35;
+        font-weight: 600;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+      dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 14px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      dt {
+        color: var(--muted);
+      }
+      dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
+      }
+      .notes {
+        min-height: 0;
+        flex: 1 1 auto;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        white-space: pre-wrap;
+        color: var(--fg);
+      }
+      .notes:empty {
+        display: none;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+      }
+      button {
+        height: 34px;
+        padding: 0 16px;
+        border-radius: 9px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--fg);
+        font: inherit;
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: transparent;
+        background: var(--accent);
+        color: var(--accent-fg);
+        font-weight: 600;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.55;
+      }
+      .error {
+        color: #c0392b;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>这个版本的 DeepDive 已停止支持</h1>
+    <p>请下载并安装新版本后继续使用。当前窗口会在你确认后关闭。</p>
+    <dl>
+      <dt>当前版本</dt>
+      <dd id="installed">—</dd>
+      <dt>最低版本</dt>
+      <dd id="minimum">—</dd>
+      <dt>最新版本</dt>
+      <dd id="latest">—</dd>
+    </dl>
+    <div class="notes" id="notes"></div>
+    <div class="actions">
+      <button type="button" class="primary" id="download">打开下载页面</button>
+      <button type="button" id="ack">我已了解</button>
+    </div>
+    <p class="error" id="error" hidden></p>
+    <script type="module" src="./mandatory.js"></script>
+  </body>
+</html>

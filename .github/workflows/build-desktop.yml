@@ -11,6 +11,10 @@ on:
         description: Concise English Markdown bullet list of high-level user-facing changes. Required when publishing from master.
         required: false
         type: string
+      mandatory_min_version:
+        description: Optional. Lowest Desktop version still allowed to run; older installations are blocked until they update. Leave empty for a normal release.
+        required: false
+        type: string
 
 concurrency:
   group: desktop-release
@@ -183,6 +187,7 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.metadata.outputs.version }}
+          MANDATORY_MIN_VERSION: ${{ inputs.mandatory_min_version }}
         run: |
           shopt -s nullglob
           dmg=(release-input/*.dmg)
@@ -214,6 +219,38 @@ jobs:
             printf '%s\n\n' '## Release Notes'
             printf '%s\n' "$RELEASE_NOTES_EN"
           } > release-notes.md
+
+      - name: Prepare the update feed
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          MANDATORY_MIN_VERSION: ${{ inputs.mandatory_min_version }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          # A published release asset, addressed by `releases/latest/download/latest.json`:
+          # the installed shell polls exactly this address, so the feed's location
+          # never has to change with a tag.
+          node - "$VERSION" "$MANDATORY_MIN_VERSION" "$RELEASE_TAG" "$REPOSITORY" <<'NODE' > release-assets/latest.json
+          const [, , version, mandatory, tag, repository] = process.argv
+          const notes = require('node:fs').readFileSync('release-notes.md', 'utf8')
+          const floor = mandatory.trim()
+          const download = name => `https://github.com/${repository}/releases/download/${tag}/${name}`
+          process.stdout.write(`${JSON.stringify({
+            version,
+            notes,
+            page: `https://github.com/${repository}/releases/tag/${tag}`,
+            // The page links straight at the installer for its platform, so the
+            // asset names the previous step fixed are also the feed's links.
+            assets: {
+              macos: download(`deepdive-macos-arm64-${version}.dmg`),
+              windows: download(`deepdive-windows-x64-${version}.exe`),
+              linuxAppImage: download(`deepdive-linux-x64-${version}.AppImage`),
+              linuxDeb: download(`deepdive-linux-x64-${version}.deb`),
+            },
+            ...(floor === '' ? {} : { mandatoryMinVersion: floor }),
+          }, null, 2)}\n`)
+          NODE
 
       - name: Publish GitHub Release
         shell: bash

@@ -1,5 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import type { DesktopKeyboardApi, DesktopShortcutsApi } from '@deepseek-ai/dsh-client-shortcuts/protocol'
+import { installShortcuts } from './shortcuts.ts'
 
 document.documentElement.dataset.dshDesktop = 'true'
 
@@ -10,7 +13,124 @@ document.documentElement.dataset.dshDesktop = 'true'
  * generic save carrier installed before the client plugin tree boots.
  */
 
+/**
+ * The upstream client branches on `'dshDesktop' in globalThis` to select its
+ * Desktop behavior, so this object is the carrier's product API rather than a
+ * shim: every member exists because a client plugin reads it.
+ */
+interface DshDesktop {
+  readonly protocolVersion: 1
+  /** @returns the local machine description for the feedback questionnaire. */
+  readonly deviceInfo: () => Promise<string>
+  /** Native carrier for the Sidebar Browser tabs. */
+  readonly browser: DesktopBrowserBridge
+  /** Device-local shortcut preferences and the input that consumes them. */
+  readonly shortcuts: DesktopShortcutsApi
+  readonly keyboard: DesktopKeyboardApi
+  /** The `dsh` launcher in the user's PATH. */
+  readonly cli: DesktopCliApi
+  /** The release the shell's feed poll remembers. */
+  readonly release: DesktopReleaseApi
+}
+
+/** Release facts the shell reports; `latest` is absent when this build is current. */
+interface DesktopReleaseReport {
+  readonly version: string
+  readonly latest?: string
+  readonly notes?: string
+  readonly page?: string
+  /** Installer link per platform key, as the release workflow published them. */
+  readonly assets?: Readonly<Record<string, string>>
+}
+
+/** The feed state, read from the shell rather than polled by the page. */
+interface DesktopReleaseApi {
+  state(): Promise<DesktopReleaseReport>
+  check(): Promise<DesktopReleaseReport>
+}
+
+/** Install state of the `dsh` command the shell wrote. */
+interface DesktopCliStatus {
+  /** Absolute launcher path this installation owns or would write. */
+  readonly path: string
+  /** Whether the file at `path` is the one this installation wrote. */
+  readonly installed: boolean
+  /** Whether any file already occupies `path`. */
+  readonly present: boolean
+  /** Whether the launcher's directory is on this process's PATH. */
+  readonly onPath: boolean
+  /** Desktop version that wrote the launcher. */
+  readonly version?: string
+}
+
+/** Launcher management; every member reports the resulting state. */
+interface DesktopCliApi {
+  status(): Promise<DesktopCliStatus>
+  install(): Promise<DesktopCliStatus>
+  remove(): Promise<DesktopCliStatus>
+}
+
+/**
+ * Onboarding capability. The upstream Electron preload exposes the same two
+ * members from its native welcome window; here the page owns the whole
+ * onboarding flow, so `setActive` only records the overlay's visibility.
+ */
+interface DshOnboarding {
+  /** @returns whether any configured model route holds a usable credential. */
+  readonly hasApiKey: () => Promise<boolean>
+  /** @param active - whether the onboarding overlay currently covers the app. */
+  readonly setActive: (active: boolean) => void
+}
+
 type DesktopSaveResult = 'file-saved' | 'cancelled'
+
+/** Lease-scoped navigation state the guest host caches between events. */
+interface DesktopBrowserGuestState {
+  readonly url: string
+  readonly title: string
+  readonly loading: boolean
+  readonly canGoBack: boolean
+  readonly canGoForward: boolean
+}
+
+/** One guest lifecycle or navigation notification. */
+interface DesktopBrowserEvent {
+  readonly lease: string
+  readonly kind: 'load-started' | 'load-finished' | 'navigated' | 'title'
+}
+
+/** Main-approved identity of one guest reservation. */
+type DesktopBrowserLeaseId = string & { readonly __brand: 'DesktopBrowserLeaseId' }
+
+interface DesktopBrowserReservation {
+  readonly lease: DesktopBrowserLeaseId
+  readonly partition: string
+}
+
+/**
+ * Native Sidebar Browser carrier. One guest is a borderless window glued to an
+ * address the page reports, so every member names that address instead of a
+ * DOM element: the page owns layout, the shell owns the window.
+ */
+interface DesktopBrowserBridge {
+  acquire(workspace: string): Promise<DesktopBrowserReservation>
+  release(lease: DesktopBrowserLeaseId): Promise<void>
+  onOpenRequested(lease: DesktopBrowserLeaseId, listener: (url: string) => void): () => void
+  navigate(lease: DesktopBrowserLeaseId, url: string): Promise<void>
+  /** @param command - one history or reload operation. */
+  command(lease: DesktopBrowserLeaseId, command: 'reload' | 'back' | 'forward'): Promise<void>
+  state(lease: DesktopBrowserLeaseId): Promise<DesktopBrowserGuestState>
+  onEvent(listener: (event: DesktopBrowserEvent) => void): () => void
+  /**
+   * @param lease - guest to move.
+   * @param rect - address in CSS pixels relative to the main window client area.
+   * @param visible - whether the guest is on screen after moving.
+   */
+  place(lease: DesktopBrowserLeaseId, rect: { x: number; y: number; width: number; height: number },
+    visible: boolean): Promise<void>
+  /** @param visible - whether the guest window is on screen. */
+  setVisible(lease: DesktopBrowserLeaseId, visible: boolean): Promise<void>
+}
 
 interface DownloadCarrier {
   save(url: string, filename: string): Promise<DesktopSaveResult>
@@ -57,7 +177,6 @@ const MACOS_TITLE_BAR_HEIGHT = 30
  * this token would otherwise collide with the traffic lights. Portalled
  * overlays use the separate overlay token with the shared 20px safe inset.
  */
-const MACOS_FRAME_TOP_CLEARANCE = 48
 const TITLE_BAR_INTERACTIVE_SELECTOR = [
   'a',
   'button',
@@ -363,14 +482,6 @@ function installLinkInteractions(): void {
 /** Restore native title-bar gestures over the macOS overlay title bar. */
 function installMacOSOverlayTitleBar(): void {
   if (!navigator.userAgent.includes('Macintosh')) return
-  document.documentElement.style.setProperty(
-    '--dsh-frame-top-clearance',
-    `${MACOS_FRAME_TOP_CLEARANCE}px`,
-  )
-  document.documentElement.style.setProperty(
-    '--dsh-frame-overlay-top',
-    'calc(var(--dsh-frame-top-clearance) + 20px)',
-  )
   window.addEventListener('mousedown', (event) => {
     if (event.buttons !== 1 || event.clientY > MACOS_TITLE_BAR_HEIGHT) return
     const target = event.target
@@ -403,6 +514,121 @@ Object.defineProperty(globalThis, '__DSH_DOWNLOAD_CARRIER__', {
   value: Object.freeze(carrier),
 })
 
+/**
+ * Mirror the window's fullscreen state onto the document root.
+ *
+ * The shared clearance rules drop the native window strip's inset while the
+ * window is fullscreen; only the carrier knows that state, so it publishes it
+ * on every transition and once at boot.
+ */
+function installFullscreenMark(): void {
+  const root = document.documentElement
+  const sync = (fullscreen: boolean): void => {
+    if (fullscreen) root.dataset.fullscreen = 'true'
+    else delete root.dataset.fullscreen
+  }
+  const appWindow = getCurrentWindow()
+  void appWindow.isFullscreen().then(sync, (error: unknown) => {
+    console.error('[desktop] fullscreen state unavailable:', error)
+  })
+  void appWindow.onResized(() => {
+    void appWindow.isFullscreen().then(sync, () => { /* A read failure keeps the last mark. */ })
+  })
+}
+
 installMacOSOverlayTitleBar()
+installFullscreenMark()
 installLinkMenuStyles()
 installLinkInteractions()
+
+/**
+ * Read the machine description once and cache it: the questionnaire is opened
+ * rarely and the answer cannot change while the process runs.
+ */
+let deviceInfoReading: Promise<string> | undefined
+
+const onboardingApi: DshOnboarding = {
+  hasApiKey: () => invoke<boolean>('desktop_credentials_present'),
+  setActive: () => {
+    // The native welcome window owned a second BrowserWindow whose lifetime
+    // this signal controlled. The onboarding overlay lives in this document,
+    // so nothing native has to be shown or hidden and there is nothing to do.
+  },
+}
+
+/**
+ * The guest host emits one event stream for every tab; subscribers are the
+ * per-tab bridges, which filter by lease and deliver only their own events.
+ */
+const browserEventListeners = new Set<(event: DesktopBrowserEvent) => void>()
+
+void listen<DesktopBrowserEvent>('desktop-browser-event', (event) => {
+  for (const listener of [...browserEventListeners]) {
+    try {
+      listener(event.payload)
+    } catch (error) {
+      console.error('[desktop] browser event handler failed:', error)
+    }
+  }
+})
+
+const browserApi: DesktopBrowserBridge = {
+  acquire: workspace => invoke<DesktopBrowserReservation>('desktop_browser_acquire', { workspace }),
+  release: lease => invoke<void>('desktop_browser_release', { lease }),
+  onOpenRequested: () => () => {
+    // The Electron guest already routes `window.open` through the main process
+    // and re-delivers it per guest. A guest here is an ordinary browser window
+    // whose popups are handled below, so no per-guest channel exists yet.
+  },
+  navigate: (lease, url) => invoke<void>('desktop_browser_navigate', { lease, url }),
+  command: (lease, command) => invoke<void>('desktop_browser_command', { lease, command }),
+  state: lease => invoke<DesktopBrowserGuestState>('desktop_browser_state', { lease }),
+  onEvent: (listener) => {
+    browserEventListeners.add(listener)
+    return () => { browserEventListeners.delete(listener) }
+  },
+  place: (lease, rect, visible) => invoke<void>('desktop_browser_bounds', {
+    lease, x: rect.x, y: rect.y, width: rect.width, height: rect.height, visible,
+  }),
+  setVisible: (lease, visible) => invoke<void>('desktop_browser_visible', { lease, visible }),
+}
+
+const shortcutCarrier = installShortcuts()
+// The shared stylesheets and the shortcut defaults both branch on this mark;
+// it is written here, ahead of every client module, because a later write would
+// leave the first render on the Web rules.
+document.documentElement.dataset.platform = shortcutCarrier.mark
+
+const releaseApi: DesktopReleaseApi = {
+  state: () => invoke<DesktopReleaseReport>('desktop_release_state'),
+  check: () => invoke<DesktopReleaseReport>('desktop_release_check'),
+}
+
+const cliApi: DesktopCliApi = {
+  status: () => invoke<DesktopCliStatus>('desktop_cli_status'),
+  install: () => invoke<DesktopCliStatus>('desktop_cli_install'),
+  remove: () => invoke<DesktopCliStatus>('desktop_cli_remove'),
+}
+
+const desktopApi: DshDesktop = {
+  protocolVersion: 1,
+  deviceInfo: () => {
+    deviceInfoReading ??= invoke<string>('desktop_device_info')
+    return deviceInfoReading
+  },
+  browser: browserApi,
+  shortcuts: shortcutCarrier.shortcuts,
+  keyboard: shortcutCarrier.keyboard,
+  cli: cliApi,
+  release: releaseApi,
+}
+
+Object.defineProperty(globalThis, 'dshDesktop', {
+  configurable: true,
+  value: Object.freeze(desktopApi),
+})
+
+Object.defineProperty(globalThis, 'dshOnboarding', {
+  configurable: true,
+  value: Object.freeze(onboardingApi),
+})

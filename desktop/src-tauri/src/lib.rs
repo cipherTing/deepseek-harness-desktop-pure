@@ -23,8 +23,14 @@ use tokio::{
 };
 use url::Url;
 
+mod browser_window;
+mod cli_command;
 mod file_handlers;
+mod keybindings;
+mod mandatory;
 mod sidecar_process;
+mod tray;
+mod update;
 
 use sidecar_process::{SidecarEvent, SidecarProcess};
 
@@ -54,6 +60,10 @@ struct DesktopState {
      */
     stderr_tail: Mutex<Vec<u8>>,
     exiting: AtomicBool,
+    /** Live Sidebar Browser guests, one native window per tab. */
+    browser: browser_window::BrowserRegistry,
+    /** Release feed schedule and its remembered answer. */
+    updates: update::UpdateMonitor,
 }
 
 impl DesktopState {
@@ -658,6 +668,57 @@ async fn desktop_save_session(
     result.map(|()| DesktopSaveResult::FileSaved)
 }
 
+/**
+ * Local machine description for the Desktop feedback questionnaire, composed by
+ * the sidecar so the bundled Node.js resolves the same OS facts a native read
+ * would. The page never learns anything beyond these five fields.
+ * @param state - carries the peer of the currently serving sidecar.
+ * @returns the machine description, or an error when the host is not running.
+ */
+#[tauri::command]
+async fn desktop_device_info(
+    state: tauri::State<'_, DesktopState>,
+) -> Result<String, String> {
+    #[derive(Deserialize)]
+    struct DeviceInfo {
+        #[serde(rename = "deviceInfo")]
+        device_info: String,
+    }
+    let peer = current_peer(&state)?;
+    let response: DeviceInfo = peer.request("device-info", &Value::Nil).await?;
+    Ok(response.device_info)
+}
+
+/**
+ * Whether any configured model route already holds a usable credential. The
+ * answer is a presence fact only — no value, reference name, or provider
+ * diagnostic crosses this command.
+ * @param state - carries the peer of the currently serving sidecar.
+ * @returns true when a credential is configured.
+ */
+#[tauri::command]
+async fn desktop_credentials_present(
+    state: tauri::State<'_, DesktopState>,
+) -> Result<bool, String> {
+    #[derive(Deserialize)]
+    struct Presence {
+        present: bool,
+    }
+    let peer = current_peer(&state)?;
+    let response: Presence = peer.request("credentials-present", &Value::Nil).await?;
+    Ok(response.present)
+}
+
+/** The serving sidecar peer, or a typed failure while the host is down. */
+fn current_peer(state: &tauri::State<'_, DesktopState>) -> Result<Arc<SidecarPeer>, String> {
+    state
+        .peer
+        .read()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "Desktop host is not running".to_string())
+}
+
 fn temporary_export_path(target: &Path) -> PathBuf {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -969,6 +1030,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .manage(DesktopState::default())
@@ -981,6 +1043,24 @@ pub fn run() {
             desktop_reveal_file,
             desktop_save_file_as,
             desktop_save_session,
+            desktop_device_info,
+            desktop_credentials_present,
+            browser_window::desktop_browser_acquire,
+            browser_window::desktop_browser_bounds,
+            browser_window::desktop_browser_visible,
+            browser_window::desktop_browser_navigate,
+            browser_window::desktop_browser_command,
+            browser_window::desktop_browser_state,
+            browser_window::desktop_browser_release,
+            cli_command::desktop_cli_status,
+            cli_command::desktop_cli_install,
+            cli_command::desktop_cli_remove,
+            keybindings::desktop_keybindings_read,
+            keybindings::desktop_keybindings_write,
+            update::desktop_release_state,
+            update::desktop_release_check,
+            mandatory::desktop_mandatory_state,
+            mandatory::desktop_mandatory_dismiss,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -1058,9 +1138,27 @@ pub fn run() {
                         let window = window
                             .title_bar_style(tauri::TitleBarStyle::Overlay)
                             .hidden_title(true)
-                            .decorations(true);
+                            .decorations(true)
+                            // The shared darwin rules paint the page transparent
+                            // so the window's sidebar material shows through,
+                            // exactly as the Electron product configures it.
+                            .transparent(true)
+                            .effects(tauri::window::EffectsBuilder::new()
+                                .effect(tauri::window::Effect::Sidebar)
+                                .state(tauri::window::EffectState::Active)
+                                .build());
                         match window.build() {
-                            Ok(_) => monitor_sidecar_exit(peer, exited, handle.clone()),
+                            Ok(_) => {
+                                // A tray with no icon leaves the user without a way
+                                // back from a hidden window, so a failed build is
+                                // reported instead of silently degrading.
+                                if let Err(error) = tray::install(&handle) {
+                                    eprintln!("DeepDive tray icon unavailable: {error}");
+                                }
+                                update::restore(&handle);
+                                update::ensure_started(&handle);
+                                monitor_sidecar_exit(peer, exited, handle.clone());
+                            }
                             Err(error) => {
                                 peer.terminate();
                                 clear_peer_if_current(&state, &peer);
@@ -1088,12 +1186,46 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build DeepDive");
     app.run(|app, event| {
-        if let RunEvent::ExitRequested { code, api, .. } = event {
-            let state = app.state::<DesktopState>();
-            if !state.exiting.load(Ordering::SeqCst) {
-                api.prevent_exit();
-                begin_graceful_exit(app, code.unwrap_or(0));
+        match event {
+            RunEvent::ExitRequested { code, api, .. } => {
+                let state = app.state::<DesktopState>();
+                if !state.exiting.load(Ordering::SeqCst) {
+                    api.prevent_exit();
+                    begin_graceful_exit(app, code.unwrap_or(0));
+                }
             }
+            // The page observes the same transitions and re-sends addresses,
+            // but a drag delivers fewer main-window events than the guest
+            // needs, so the native half re-applies the last known address.
+            RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_),
+                ..
+            } => {
+                if label == "main" {
+                    if let Some(window) = app.get_webview_window("main") {
+                        browser_window::follow(app, &window);
+                    }
+                }
+            }
+            // A close hides the window and keeps the sidecar running, or quits,
+            // depending on the answer the user gave once. A guest window closes
+            // on its own: the page owns its lease and releases it afterwards.
+            RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::CloseRequested { api, .. },
+                ..
+            } => {
+                let state = app.state::<DesktopState>();
+                if label == "main" && !state.exiting.load(Ordering::SeqCst) {
+                    api.prevent_close();
+                    tray::handle_close_request(app);
+                }
+            }
+            // Dock icon activation on macOS after every window was hidden.
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => tray::reveal(app),
+            _ => {}
         }
     });
 }

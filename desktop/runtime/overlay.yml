@@ -10,6 +10,12 @@
 - id: settings-controller
   disabled: true
 
+# The upstream bundle enables the sandboxed Browser tabs only for the Electron
+# product, and this carrier boots the plain `web` profile. The shell serves that
+# profile with its own native guest windows, so the row is enabled here.
+- id: ui-sidebar-browser
+  disabled: false
+
 # The Desktop prompt supersedes the Web-surface prompt. A patch replaces the
 # complete config, so every Web runtime field is restated here.
 - id: web-runtime

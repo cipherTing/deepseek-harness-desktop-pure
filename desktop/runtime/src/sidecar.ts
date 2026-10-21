@@ -1,6 +1,7 @@
 import { Console } from 'node:console'
 import { existsSync } from 'node:fs'
 import { createServer } from 'node:net'
+import { cpus, totalmem, version as osVersion } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -92,6 +93,31 @@ interface DesktopRuntimeContext {
   get(name: string): unknown
 }
 
+/** Credential presence facts the onboarding reader consumes — never a value. */
+interface CredentialsService {
+  describe(ref: string): Promise<{ configured: boolean }>
+}
+
+/** Settings surface that answers which credential reference a provider owns. */
+interface SettingsService {
+  describe(options?: { redactSecrets?: boolean }): readonly SettingsNamespaceRow[]
+}
+
+interface SettingsNamespaceRow {
+  ns: string
+  value: unknown
+}
+
+/** Provider directory entry naming the settings field that holds its key reference. */
+interface LlmConfigurableProviderRow {
+  settingsNs: string
+  settingsPath: readonly string[]
+}
+
+interface LlmService {
+  listConfigurableProviders(): readonly LlmConfigurableProviderRow[]
+}
+
 interface LoaderEntry {
   options: { name?: string }
   fiber?: { state?: number | string }
@@ -138,6 +164,78 @@ function stalledEntries(ctx: DesktopRuntimeContext): string[] {
   return stalled
 }
 
+/**
+ * Local machine description for the Desktop feedback questionnaire. Fields are
+ * `name=value` pairs separated by `; ` in platform, os, app_arch, cpu and
+ * memory_gib order; the upstream native welcome window produced the same five
+ * fields, and nothing here identifies the user or carries a credential.
+ * @returns the machine description, with unavailable fields omitted.
+ */
+function readDeviceInfo(): string {
+  const fields = [`platform=${process.platform}`]
+  collectDeviceField(fields, 'os', () => osVersion())
+  fields.push(`app_arch=${process.arch}`)
+  collectDeviceField(fields, 'cpu', () => cpus()[0]?.model)
+  collectDeviceField(fields, 'memory_gib', () => (totalmem() / 1024 ** 3).toFixed(1))
+  return fields.join('; ')
+}
+
+/**
+ * Append one optional device field, omitting it when its source is empty or fails.
+ * @param fields - collected fields, appended in call order.
+ * @param name - field name written before `=`.
+ * @param read - source of the field value.
+ */
+function collectDeviceField(fields: string[], name: string, read: () => string | undefined): void {
+  let value: string | undefined
+  try {
+    value = read()
+  } catch (_error) {
+    // A refused or unsupported source omits only its own field.
+    return
+  }
+  if (value !== undefined && value !== '') fields.push(`${name}=${value}`)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Whether any configured model route already holds a usable credential. This
+ * answers presence only: the reader never resolves a value, so a stored secret
+ * cannot reach the page through this path.
+ * @param ctx - booted profile context carrying the credential and settings services.
+ * @returns true when at least one configured provider reference reports configured.
+ */
+async function readCredentialPresence(ctx: DesktopRuntimeContext): Promise<boolean> {
+  const credentials = ctx.get('credentials') as CredentialsService | undefined
+  const settings = ctx.get('settings') as SettingsService | undefined
+  if (credentials === undefined || settings === undefined) return false
+  const namespaces = settings.describe({ redactSecrets: true })
+  const references = new Set<string>()
+  const addReference = (candidate: unknown): void => {
+    if (isRecord(candidate) && typeof candidate.apiKeyEnv === 'string' && candidate.apiKeyEnv !== '') {
+      references.add(candidate.apiKeyEnv)
+    }
+  }
+  for (const row of namespaces) addReference(row.value)
+  const llm = ctx.get('llm') as LlmService | undefined
+  for (const provider of llm?.listConfigurableProviders() ?? []) {
+    let value: unknown = namespaces.find(row => row.ns === provider.settingsNs)?.value
+    for (const key of provider.settingsPath) value = isRecord(value) ? value[key] : undefined
+    addReference(value)
+  }
+  for (const reference of references) {
+    try {
+      if ((await credentials.describe(reference)).configured) return true
+    } catch (_error) {
+      // One unreadable reference must not hide a configured sibling.
+    }
+  }
+  return false
+}
+
 async function handleRequest(
   running: RunningProfile,
   method: string,
@@ -146,6 +244,10 @@ async function handleRequest(
     await running.shutdown.shutdown(0)
     setTimeout(() => { process.exit(0) }, 10)
     return {}
+  }
+  if (method === 'device-info') return { deviceInfo: readDeviceInfo() }
+  if (method === 'credentials-present') {
+    return { present: await readCredentialPresence(running.ctx as DesktopRuntimeContext) }
   }
   throw new Error(`unknown Desktop request ${JSON.stringify(method)}`)
 }

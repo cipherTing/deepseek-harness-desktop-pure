@@ -17,7 +17,23 @@
     "allow-desktop-copy-text",
     "allow-desktop-reveal-file",
     "allow-desktop-save-file-as",
-    "allow-desktop-save-session"
+    "allow-desktop-save-session",
+    "allow-desktop-device-info",
+    "allow-desktop-credentials-present",
+    "allow-desktop-browser-acquire",
+    "allow-desktop-browser-bounds",
+    "allow-desktop-browser-visible",
+    "allow-desktop-browser-navigate",
+    "allow-desktop-browser-command",
+    "allow-desktop-browser-state",
+    "allow-desktop-browser-release",
+    "allow-desktop-cli-status",
+    "allow-desktop-cli-install",
+    "allow-desktop-cli-remove",
+    "allow-desktop-keybindings-read",
+    "allow-desktop-keybindings-write",
+    "allow-desktop-release-state",
+    "allow-desktop-release-check"
   ],
   "remote": {
     "urls": ["http://127.0.0.1:*"]

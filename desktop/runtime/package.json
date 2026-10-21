@@ -14,6 +14,7 @@
     "./surface": "./lib/surface.mjs",
     "./directory-picker": "./lib/directory-picker.mjs",
     "./settings-controller": "./lib/settings-controller.mjs",
+    "./cli": "./lib/cli.mjs",
     "./package.json": "./package.json"
   },
   "files": [

@@ -28,6 +28,16 @@ A conflict-free merge still needs review. A source diff or generated artifact ch
 
 The upstream `apps/desktop` and `apps/desktop-host` directories implement the official Electron Desktop product. They are not shared Harness packages. DeepDive keeps its Tauri product under `desktop/`; exclude Electron-only shell, Host, packaging, release, UI, and Electron-specific governance files from the reviewed integration tree. Keep upstream packages and client seams that have independent Web or Harness consumers, then verify that the workspace contains only the DeepDive Desktop package.
 
+## Review the sanctioned Desktop seams
+
+Three client-package surfaces are not upstream-clean, and a synchronization can silently break any of them because the merge result still compiles. Inspect each one against its fork-side consumer in `desktop/` after resolving conflicts:
+
+- the `settings.update` seat below `settings.trigger` in `packages/client/ui-settings`, rendered by `packages/client/ui-settings-general`, occupied only by the Desktop update badge;
+- the asynchronous save carrier in `packages/session-query/session-log-export`, whose default browser carrier the Web profile keeps;
+- the desktop carrier of `packages/client/ui-sidebar-browser` — `src/types.ts`, `src/client/electron/ElectronWebviewPresentation.ts`, `src/client/electron/ElectronWebViewImpl.ts`, and their four tests — which hosts the Browser tab in a native guest window instead of an Electron `<webview>`.
+
+Root [`AGENTS.md`](../../../AGENTS.md) states the extent of each. A change that moves browser behavior — URL handling, history gating, tab lifecycle, panel layout — into the carrier, or that makes the badge seat render outside Desktop, is a fork-scope violation rather than a merge artifact.
+
 ## Validate and merge the sync branch into master
 
 The sync branch is the reviewed integration artifact. Before landing it, verify its ancestry and tree:

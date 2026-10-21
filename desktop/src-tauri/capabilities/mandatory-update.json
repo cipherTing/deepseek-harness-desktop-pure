@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "mandatory-update",
+  "description": "The blocking update window loads a bundled document, so it may only read the release facts it renders and record that the user saw them.",
+  "windows": ["mandatory-update"],
+  "permissions": [
+    "core:default",
+    "allow-desktop-mandatory-state",
+    "allow-desktop-mandatory-dismiss"
+  ]
+}

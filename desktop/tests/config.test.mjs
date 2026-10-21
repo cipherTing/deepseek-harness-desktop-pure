@@ -363,10 +363,14 @@ test('Desktop uses the generic async save carrier instead of patching anchor cli
   assert.match(bridge, /new URL\(url, document\.baseURI\)\.toString\(\)/)
   assert.doesNotMatch(bridge, /document\.cookie/)
   assert.doesNotMatch(bridge, /HTMLAnchorElement\.prototype\.click/)
-  // No page-reachable command may read an arbitrary file, and the macOS overlay
-  // strip declares the shared clearance token the Electron host sets instead.
+  // No page-reachable command may read an arbitrary file.
   assert.doesNotMatch(bridge, /desktop_copy_file_contents/)
-  assert.match(bridge, /--dsh-frame-top-clearance/)
+  // The shared stylesheets scope the macOS overlay strip, the window material and
+  // the desktop shortcut rules by this mark, so the bridge must publish it and
+  // mirror the window's fullscreen state for the clearance rules.
+  assert.match(bridge, /dataset\.platform = shortcutCarrier\.mark/)
+  assert.match(bridge, /dataset\.fullscreen/)
+  assert.match(bridge, /onResized/)
 })
 
 test('Desktop injects its head rows through the web host index table', () => {
