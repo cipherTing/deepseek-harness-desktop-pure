@@ -113,7 +113,6 @@ window.__ModuleLoader__.load({
       "dialog.latest": "新版本",
       "dialog.notes": "更新内容",
       "dialog.emptyNotes": "此版本未提供更新说明。",
-      "dialog.later": "稍后",
       "dialog.start": "开始更新",
       "dialog.ignore": "忽略本次版本",
       "dialog.ignoreHint": "忽略后可在「设置 → 关于 DeepDive」继续更新",
@@ -148,7 +147,6 @@ window.__ModuleLoader__.load({
       "dialog.latest": "New version",
       "dialog.notes": "What's new",
       "dialog.emptyNotes": "No release notes were provided for this version.",
-      "dialog.later": "Later",
       "dialog.start": "Start update",
       "dialog.ignore": "Skip this version",
       "dialog.ignoreHint": "You can update later in Settings → About DeepDive",
@@ -158,10 +156,24 @@ window.__ModuleLoader__.load({
     /**
      * Render one version with the tag spelling every surface uses.
      * @param value - version text with or without the tag prefix.
-     * @returns the `v`-prefixed form, or a placeholder when nothing is known.
+     * @returns the `v`-prefixed form, or an em dash when nothing is known.
      */
     function displayVersion(value) {
-      return `v${stripVersion(value) || "?"}`;
+      const bare = stripVersion(value);
+      return bare === "" ? "—" : `v${bare}`;
+    }
+    /**
+     * The release the shell reported, or `undefined` when this build is current.
+     *
+     * The shell serialises an absent release as `null`, and an update surface
+     * that treated that as a release would offer an empty version.
+     * @param report - release report from the shell.
+     * @returns the bare version of the release to offer.
+     */
+    function reportedLatest(report) {
+      const latest = report === undefined || report === null ? undefined : report.latest;
+      if (typeof latest !== "string") return undefined;
+      return stripVersion(latest) === "" ? undefined : latest;
     }
     /**
      * Drop the tag prefix one version text may or may not carry.
@@ -318,7 +330,6 @@ window.__ModuleLoader__.load({
           React.createElement(Button, { variant: "outline", onClick: onIgnore }, t("dialog.ignore")),
           React.createElement("span", { className: "dab-status" }, t("dialog.ignoreHint")),
         ),
-        React.createElement(Button, { variant: "outline", onClick: onClose }, t("dialog.later")),
         React.createElement("a", {
           className: "dab-startLink",
           href: latest.downloadUrl,
@@ -441,12 +452,13 @@ window.__ModuleLoader__.load({
           return;
         }
         setChecking(false);
-        if (found.latest === undefined) {
+        const version = reportedLatest(found);
+        if (version === undefined) {
           setLatest(null);
           setStatus("uptodate");
           return;
         }
-        setLatest({ ...found, version: found.latest, downloadUrl: downloadUrlFor(found) });
+        setLatest({ ...found, version, downloadUrl: downloadUrlFor(found) });
         setStatus("update");
       };
 
@@ -511,8 +523,9 @@ window.__ModuleLoader__.load({
             void error;
             return;
           }
-          if (!live || found.latest === undefined) return;
-          const next = { ...found, version: found.latest, downloadUrl: downloadUrlFor(found) };
+          const version = reportedLatest(found);
+          if (!live || version === undefined) return;
+          const next = { ...found, version, downloadUrl: downloadUrlFor(found) };
           setLatest((previous) => previous?.version === next.version
             && previous?.notes === next.notes
             && previous?.downloadUrl === next.downloadUrl

@@ -79,6 +79,7 @@ function loadClientUi({
   cli,
   releaseAvailable = true,
   releaseUnreachable = false,
+  absentLatest = 'undefined',
 } = {}) {
   const releaseTag = `v${releaseVersion}`
   dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
@@ -100,6 +101,8 @@ function loadClientUi({
   let releaseReads = 0
   const releaseReport = () => ({
     version: currentVersion,
+    // The shell serialises an absent release as `null`; both spellings mean
+    // "this build is current" and neither may offer a version.
     ...releaseAvailable ? {
       latest: releaseVersion.replace(/^v/i, ''),
       notes: releaseBody,
@@ -110,7 +113,7 @@ function loadClientUi({
         linuxAppImage: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-linux-x64-${releaseVersion}.AppImage`,
         linuxDeb: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-linux-x64-${releaseVersion}.deb`,
       },
-    } : {},
+    } : { latest: absentLatest === 'null' ? null : undefined },
   })
   const release = {
     state: async () => { releaseReads += 1; return releaseReport() },
@@ -488,6 +491,23 @@ test('a shell that knows no newer release leaves the badge hidden', async () => 
   const UpdateBadge = components.get('settings.update')
   const view = render(React.createElement(UpdateBadge, { wide: true, t }))
   await waitFor(() => assert.equal(view.queryByRole('button', { name: '更新' }), null))
+})
+
+test('a release the shell serialises as null offers no update', async () => {
+  const { components, t } = loadClientUi({ releaseAvailable: false, absentLatest: 'null' })
+  const UpdateBadge = components.get('settings.update')
+  const badge = render(React.createElement(UpdateBadge, { wide: true, t }))
+  await waitFor(() => assert.equal(badge.queryByRole('button', { name: '更新' }), null))
+  await waitFor(() => assert.equal(badge.queryByRole('dialog'), null))
+  cleanup()
+
+  const AboutSection = components.get('settings.section')
+  const about = render(React.createElement(AboutSection, { t }))
+  await about.findByText('0.1.6')
+  fireEvent.click(about.getByRole('button', { name: '检查更新' }))
+  await about.findByText('已是最新版本（v0.1.6）')
+  assert.equal(about.queryByText(/^v\?$/), null)
+  assert.equal(about.queryByRole('dialog'), null)
 })
 
 test('a manual check the shell cannot complete reports the failure', async () => {
