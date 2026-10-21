@@ -78,20 +78,23 @@ fn plan(app: &AppHandle) -> Result<LauncherPlan, String> {
  * @returns the absolute launcher path.
  */
 fn launcher_path() -> Result<PathBuf, String> {
-    let home = std::env::var_os("HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from);
     #[cfg(windows)]
     {
         let local = std::env::var_os("LOCALAPPDATA")
             .filter(|value| !value.is_empty())
             .map(PathBuf::from)
             .ok_or_else(|| "LOCALAPPDATA is not set".to_string())?;
-        return Ok(local.join("DeepDive").join("bin").join("dsh.cmd"));
+        return Ok(local
+            .join("DeepDive")
+            .join("bin")
+            .join(format!("{LAUNCHER}.cmd")));
     }
     #[cfg(not(windows))]
     {
-        let home = home.ok_or_else(|| "HOME is not set".to_string())?;
+        let home = std::env::var_os("HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .ok_or_else(|| "HOME is not set".to_string())?;
         Ok(home.join(".local").join("bin").join(LAUNCHER))
     }
 }
@@ -389,20 +392,33 @@ mod tests {
 
     #[test]
     fn the_launcher_names_the_packaged_node_and_cli() {
+        // The paths have to be platform-shaped: the launcher body embeds them
+        // verbatim, and a `.cmd` file only ever names the packaged `node.exe`.
+        let (node, entry) = if cfg!(windows) {
+            (
+                PathBuf::from(r"C:\Program Files\DeepDive\node.exe"),
+                PathBuf::from(r"C:\Program Files\DeepDive\rt\lib\cli.mjs"),
+            )
+        } else {
+            (
+                PathBuf::from("/Applications/DeepDive.app/Contents/MacOS/node"),
+                PathBuf::from("/Applications/DeepDive.app/Contents/Resources/rt/lib/cli.mjs"),
+            )
+        };
         let plan = LauncherPlan {
-            path: PathBuf::from("/home/user/.local/bin/dsh"),
-            node: PathBuf::from("/Applications/DeepDive.app/Contents/MacOS/node"),
-            entry: PathBuf::from("/Applications/DeepDive.app/Contents/Resources/rt/lib/cli.mjs"),
+            path: PathBuf::from("launcher"),
+            node: node.clone(),
+            entry: entry.clone(),
             version: "0.2.0".into(),
         };
         let body = launcher_body(&plan);
+        assert!(body.contains(&node.to_string_lossy().into_owned()));
+        assert!(body.contains(&entry.to_string_lossy().into_owned()));
         if cfg!(windows) {
-            assert!(body.contains("node.exe") || body.contains("\\node"));
             assert!(body.contains("%*"));
+            assert!(body.contains("exit /b %ERRORLEVEL%"));
         } else {
             assert!(body.starts_with("#!/bin/sh\n"));
-            assert!(body.contains("/Applications/DeepDive.app/Contents/MacOS/node"));
-            assert!(body.contains("/Applications/DeepDive.app/Contents/Resources/rt/lib/cli.mjs"));
             assert!(body.contains("exec"));
             assert!(body.contains("\"$@\""));
             assert!(body.contains("0.2.0"));
