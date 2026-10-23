@@ -9,7 +9,7 @@ A bundled Node.js sidecar starts the standard `web` profile on a loopback port (
 - Do not add Harness features, change Harness behavior, or refactor unrelated upstream code.
 - Keep the smallest complete, extremely low-intrusion solution inside `desktop/`. A change elsewhere requires a concrete integration blocker and must be minimal; speculative abstractions, broad transport refactors, and Desktop-motivated cleanup are prohibited.
 - Use official Tauri plugins and APIs for system interaction when an official capability exists. Do not replace an official plugin with an ad hoc native bridge.
-- Releases bundle Node.js, pnpm, and Harness dependencies. Support macOS Apple Silicon, Windows x64, and Linux x64 on Ubuntu 22.04+/Debian 12+ with a graphical desktop.
+- Releases bundle Node.js, pnpm, and Harness dependencies. DeepDive Desktop supports macOS 13 or newer on Apple Silicon and Windows x64 only; Linux Desktop is unsupported.
 - `desktop/` contains packaging source and resources, never a Harness profile, workspace, configuration home, or user-data directory.
 
 ## Git and release authority
@@ -38,11 +38,11 @@ After verification, replace the sole value in [`desktop/UPSTREAM_COMMIT`](deskto
 
 - Desktop uses independent SemVer beginning at `0.1.0`; upstream tags and SHAs never determine versions or artifact names. `desktop/package.json` is the sole version source. Run `pnpm desktop:version:set -- <version>` to update its runtime manifest, `Cargo.toml`, and Desktop `Cargo.lock` entry, or `pnpm desktop:version:check` to verify them. Never change the upstream root version for a Desktop release.
 - From the repository root, use `pnpm desktop:dev` or `pnpm desktop:build`. Package names derive from the Desktop version.
-- `.github/workflows/build-desktop.yml` runs only by `workflow_dispatch`. Any fork ref may run the three-platform build for validation; only `master` may publish a Release. It freezes the dispatched commit SHA for all platforms and any release tag, never synchronizes upstream, and never changes versions.
+- `.github/workflows/build-desktop.yml` runs only by `workflow_dispatch`. Any fork ref may run the macOS and Windows builds for validation; only `master` may publish a Release. It freezes the dispatched commit SHA for all platforms and any release tag, never synchronizes upstream, and never changes versions.
 - Among checked-in workflow files, only `Build and release Desktop` may remain enabled in this fork. GitHub-managed dynamic security workflows such as `Dependency Graph` are repository settings, not upstream workflow files, and are audited separately. Keep upstream workflow files unchanged but disabled in GitHub Actions. After synchronization, disable newly introduced upstream workflows; do not enable upstream CI, docs, E2E, issue automation, or releases without explicit maintainer approval.
-- Artifacts are named `deepdive-macos-arm64-<version>.dmg`, `deepdive-windows-x64-<version>.exe`, and `deepdive-linux-x64-<version>.deb`/`.AppImage`.
+- Artifacts are named `deepdive-macos-arm64-<version>.dmg` and `deepdive-windows-x64-<version>.exe`.
 - After all builds pass, publish immutable tag/title `v<version>` with the bilingual Markdown notes supplied at `workflow_dispatch`: Chinese and English notes are both required only for a `master` publication and receive fixed section headings. Each language is a concise Markdown bullet list covering only high-level, user-facing changes; do not include implementation details, investigation history, internal terminology, or exhaustive change inventories. Bump the version instead of replacing an existing tag or release. Upstream traceability comes from tagged fork source plus `desktop/UPSTREAM_COMMIT`, not duplicated release prose.
-- Windows packaging uses the system Evergreen WebView2 Runtime with Tauri's `downloadBootstrapper` fallback. Do not bundle the offline WebView2 installer.
+- Windows packaging requires Evergreen WebView2 Runtime 138.0.3351.48 or newer and uses Tauri's `downloadBootstrapper` fallback when it is absent. Do not bundle the offline WebView2 installer.
 
 ## Runtime and path invariants
 

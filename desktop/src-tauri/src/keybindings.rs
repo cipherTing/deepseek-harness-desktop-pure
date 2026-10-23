@@ -19,7 +19,10 @@ const KEYBINDINGS_FILE: &str = "keybindings.json";
  * @returns the document path, creating the directory on first use.
  */
 fn document_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let directory = app.path().app_config_dir().map_err(|error| error.to_string())?;
+    let directory = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?;
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
     Ok(directory.join(KEYBINDINGS_FILE))
 }

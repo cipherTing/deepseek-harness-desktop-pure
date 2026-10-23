@@ -20,7 +20,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["dmg", "nsis"],
     "icon": [
       "../assets/deepseek.png",
       "../assets/deepseek.icns",
@@ -33,7 +33,7 @@
       "rt/**/*"
     ],
     "macOS": {
-      "minimumSystemVersion": "11.0",
+      "minimumSystemVersion": "13.0",
       "signingIdentity": "-",
       "entitlements": "node-entitlements.plist"
     },

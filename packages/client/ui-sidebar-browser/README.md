@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Browse HTTP(S) pages, including loopback services, inside independent right-Sidebar tabs. Web uses an iframe with application-managed history; Desktop uses Electron `<webview>` with native navigation history and retained pages. The package never injects Electron or Node access into visited content.
+Browse HTTP(S) pages, including loopback services, inside independent right-Sidebar tabs. Web uses an iframe with application-managed history; DeepDive Desktop uses Tauri native child WebViews with native navigation history and one in-memory storage partition per workspace for the lifetime of the application. Visited pages receive no Electron or Node access.
 
 ## Table of Contents
 
@@ -66,11 +66,11 @@ Web records toolbar submissions and typed tab opens. A navigation state machine 
 
 ### Controller
 
-Each tab's `BrowserController` owns address validation, commands and explicit restoration. `BrowserFrame` supplies carrier-neutral navigation state; `IframeImpl` uses `BrowserNavigation`, while `ElectronWebViewImpl` observes Chromium history. `BrowserPresentation` owns physical DOM attachment. Slot injection supplies `useBrowserState` and plain callbacks, keeping provider objects and observables out of the React body.
+Each tab's `BrowserController` owns address validation, commands and explicit restoration. `BrowserFrame` supplies carrier-neutral navigation state; `IframeImpl` uses `BrowserNavigation`, while the legacy-named `ElectronWebViewImpl` reads guest state through `DesktopBrowserBridge`. In DeepDive Desktop, the Tauri Rust host creates the native child WebView and the page-side bridge exposes its scoped operations. `BrowserPresentation` owns DOM attachment for the Web iframe and the Desktop anchor. Slot injection supplies `useBrowserState` and plain callbacks, keeping provider objects and observables out of the React body.
 
-Desktop's main process approves guest leases and enforces attachment, navigation and permission policy. Preload exposes only scoped Browser operations. Shared declarations use the standard `/types` export with `import type`; the Host and Client compile through separate tsconfig files. Desktop Browser tabs declare `keepMounted`, so Sidebar preserves their DOM across tab changes, Session switches, collapse and floating.
+The Tauri Rust host approves guest leases and enforces attachment, navigation and permission policy. Its page-side Desktop bridge exposes only scoped Browser operations; Electron preload behavior belongs to an Electron host and is not used by DeepDive Desktop. When the native guest receives focus, its anchor emits a composed, non-bubbling `focus` event for DOM owners without changing document or native window focus. Shared declarations use the standard `/types` export with `import type`; the Host and Client compile through separate tsconfig files. Desktop Browser tabs declare `keepMounted`, so Sidebar preserves their DOM across tab changes, Session switches, collapse and floating.
 
-The page refresh shortcut calls the same reload operation as the toolbar. Its tooltip and ARIA key combination follow the effective binding. Desktop routes accepted shortcuts from an approved guest through its owning window; the focused webview must still carry that guest’s lease. Web leaves browser-reserved combinations unchanged.
+The page refresh shortcut calls the same reload operation as the toolbar. Its tooltip and ARIA key combination follow the effective binding. Tauri Desktop matches main-document shortcuts in the app WebView and native keyboard input in HTML preview frames and Browser guests. Web leaves browser-reserved combinations unchanged.
 
 </details>
 
@@ -106,7 +106,7 @@ The isolation policy deliberately gives up some browser compatibility:
 - Browsers conceal many iframe failures for security: DNS, TLS, mixed-content, CSP, and `X-Frame-Options` failures may emit `load` or no actionable event instead of `error`. The load-failure notice is best-effort.
 - Saved title and URL survive reloads and plugin unload while the tab remains in Sidebar's layout. Closing the tab removes its checkpoint. Restart restoration does not recover page memory, unsaved forms or Chromium's history stack.
 - Local files are rejected and remain owned by Document Preview.
-- Desktop shares process-local storage partitions by canonical workspace CWD; Sessions without a resolved Workspace are isolated separately. Cookies and Web storage do not survive application restart. Guest permissions, downloads and native popups are denied; approved HTTP(S) popup requests open Sidebar tabs. Host-address filtering is not a general private-network or DNS-rebinding firewall.
+- Desktop Browser tabs in one Workspace share an in-memory storage partition; different Workspaces stay isolated, and the partition is discarded when DeepDive exits. Media-capture permissions, downloads and native popups are denied; approved HTTP(S) popup requests open Sidebar tabs. Host-address filtering is not a general private-network or DNS-rebinding firewall.
 
 <a id="dev-note"></a>
 ### Dev Note

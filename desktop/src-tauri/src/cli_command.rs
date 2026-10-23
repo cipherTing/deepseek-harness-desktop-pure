@@ -44,7 +44,10 @@ struct LauncherPlan {
  * @returns the plan, or why this installation cannot offer a launcher.
  */
 fn plan(app: &AppHandle) -> Result<LauncherPlan, String> {
-    let resources = app.path().resource_dir().map_err(|error| error.to_string())?;
+    let resources = app
+        .path()
+        .resource_dir()
+        .map_err(|error| error.to_string())?;
     let entry = resources.join("rt/lib/cli.mjs");
     if !entry.is_file() {
         return Err("The packaged DeepDive CLI entry is missing from this installation".into());
@@ -69,12 +72,7 @@ fn plan(app: &AppHandle) -> Result<LauncherPlan, String> {
 }
 
 /**
- * Resolve where the launcher belongs.
- *
- * macOS and Linux use `~/.local/bin`, the per-user directory distributions
- * already put on PATH. Windows has no such convention for CLI tools, so the
- * launcher goes under the application's local data directory and its directory
- * is appended to the user PATH by {@link add_to_path}.
+ * Resolve the per-user launcher path for macOS or Windows.
  * @returns the absolute launcher path.
  */
 fn launcher_path() -> Result<PathBuf, String> {
@@ -89,7 +87,7 @@ fn launcher_path() -> Result<PathBuf, String> {
             .join("bin")
             .join(format!("{LAUNCHER}.cmd")));
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
         let home = std::env::var_os("HOME")
             .filter(|value| !value.is_empty())
@@ -137,17 +135,20 @@ fn digest(bytes: &[u8]) -> String {
     // A small, self-contained SHA-256: the launcher identity check must not add
     // a dependency to a shell that already ships a Node runtime.
     const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
     ];
     let mut state: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
     ];
     let mut message = bytes.to_vec();
     let bit_length = (bytes.len() as u64) * 8;
@@ -175,15 +176,20 @@ fn digest(bytes: &[u8]) -> String {
         }
         let mut working = state;
         for index in 0..64 {
-            let s1 = working[4].rotate_right(6) ^ working[4].rotate_right(11) ^ working[4].rotate_right(25);
+            let s1 = working[4].rotate_right(6)
+                ^ working[4].rotate_right(11)
+                ^ working[4].rotate_right(25);
             let choice = (working[4] & working[5]) ^ (!working[4] & working[6]);
             let temp1 = working[7]
                 .wrapping_add(s1)
                 .wrapping_add(choice)
                 .wrapping_add(K[index])
                 .wrapping_add(schedule[index]);
-            let s0 = working[0].rotate_right(2) ^ working[0].rotate_right(13) ^ working[0].rotate_right(22);
-            let majority = (working[0] & working[1]) ^ (working[0] & working[2]) ^ (working[1] & working[2]);
+            let s0 = working[0].rotate_right(2)
+                ^ working[0].rotate_right(13)
+                ^ working[0].rotate_right(22);
+            let majority =
+                (working[0] & working[1]) ^ (working[0] & working[2]) ^ (working[1] & working[2]);
             let temp2 = s0.wrapping_add(majority);
             working[7] = working[6];
             working[6] = working[5];
@@ -214,7 +220,8 @@ fn read_receipt(app: &AppHandle) -> Option<Receipt> {
 
 /** Persist the receipt; a failure leaves an unreceipted launcher behind. */
 fn write_receipt(app: &AppHandle, receipt: &Receipt) -> Result<(), String> {
-    let path = receipt_path(app).ok_or_else(|| "Desktop configuration directory is unavailable".to_string())?;
+    let path = receipt_path(app)
+        .ok_or_else(|| "Desktop configuration directory is unavailable".to_string())?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
@@ -235,9 +242,9 @@ pub(crate) async fn desktop_cli_status(app: tauri::AppHandle) -> Result<CliStatu
     // "Ours" means the file still carries the bytes this installation wrote; a
     // launcher the user edited or replaced is theirs to keep.
     let ours = present
-        && receipt
-            .as_ref()
-            .is_some_and(|receipt| digest(&fs::read(&target).unwrap_or_default()) == receipt.digest);
+        && receipt.as_ref().is_some_and(|receipt| {
+            digest(&fs::read(&target).unwrap_or_default()) == receipt.digest
+        });
     Ok(CliStatus {
         path: target.to_string_lossy().to_string(),
         installed: ours,
@@ -249,10 +256,11 @@ pub(crate) async fn desktop_cli_status(app: tauri::AppHandle) -> Result<CliStatu
 
 /** @returns whether the launcher's directory is already on PATH. */
 fn on_path(launcher: &Path) -> bool {
-    let Some(directory) = launcher.parent() else { return false };
-    std::env::var_os("PATH").is_some_and(|value| {
-        std::env::split_paths(&value).any(|entry| entry == directory)
-    })
+    let Some(directory) = launcher.parent() else {
+        return false;
+    };
+    std::env::var_os("PATH")
+        .is_some_and(|value| std::env::split_paths(&value).any(|entry| entry == directory))
 }
 
 /**
@@ -301,20 +309,21 @@ pub(crate) async fn desktop_cli_install(app: tauri::AppHandle) -> Result<CliStat
 /** @returns whether the existing file matches the receipt this installation wrote. */
 fn existing_is_ours(app: &AppHandle, path: &Path) -> bool {
     read_receipt(app).is_some_and(|receipt| {
-        receipt.path == path.to_string_lossy() && digest(&fs::read(path).unwrap_or_default()) == receipt.digest
+        receipt.path == path.to_string_lossy()
+            && digest(&fs::read(path).unwrap_or_default()) == receipt.digest
     })
 }
 
-/** Mark the launcher executable on every Unix target. */
+/** Mark the macOS launcher executable. */
 fn set_executable(path: &Path) -> std::io::Result<()> {
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     {
         use std::os::unix::fs::PermissionsExt;
         let mut permissions = fs::metadata(path)?.permissions();
         permissions.set_mode(0o755);
         return fs::set_permissions(path, permissions);
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
         let _ = path;
         Ok(())
@@ -324,7 +333,9 @@ fn set_executable(path: &Path) -> std::io::Result<()> {
 #[cfg(windows)]
 /** Append the launcher's directory to the user PATH, once. */
 fn add_to_path(launcher: &Path) -> Result<(), String> {
-    let Some(directory) = launcher.parent() else { return Ok(()) };
+    let Some(directory) = launcher.parent() else {
+        return Ok(());
+    };
     let directory = directory.to_string_lossy();
     let current = std::env::var("PATH").unwrap_or_default();
     if std::env::split_paths(&current).any(|entry| entry.to_string_lossy() == directory) {

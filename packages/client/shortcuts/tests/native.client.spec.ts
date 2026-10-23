@@ -165,3 +165,54 @@ it('checks the focused browser guest lease before dispatch and retains its embed
     off()
   }
 })
+
+it('routes native guest input to its unique connected anchor without changing document focus', () => {
+  const registry = new ShortcutRegistry('desktop', 'macos')
+  const run = vi.fn()
+  const resolve = vi.fn(() => ({ status: 'handled' as const, run }))
+  registry.register({ id: 'browser.new' as ShortcutCommandId, label: () => 'Browser', aliases: [],
+    defaults: { 'desktop:macos': { code: 'KeyT', modifiers: ['primary'] } }, regions: ['page'], modals: [],
+    resolve })
+  let deliver: (input: DesktopShortcutInput) => void = () => {}
+  const release = vi.fn()
+  const off = installNativeKeyboard(window, {
+    subscribe: (listener) => { deliver = listener; return release }, closeWindow: vi.fn(),
+  }, registry, () => registry.config.getSnapshot())
+  const input: DesktopShortcutInput = { kind: 'webview', frameName: 'native-guest', revision: registry.config.getSnapshot().revision,
+    code: 'KeyT', control: false, alt: false, shift: false, meta: true, repeat: false }
+  const anchor = document.createElement('div')
+  anchor.setAttribute('name', 'native-guest')
+  anchor.dataset.sidebarBrowserAnchor = 'true'
+  anchor.dataset.sidebarBrowserFrame = 'webview'
+  document.body.append(anchor)
+  const field = document.createElement('input')
+  document.body.append(field)
+  field.focus()
+  const activeElement = document.activeElement
+  try {
+    deliver({ ...input, frameName: 'other-lease' })
+    deliver({ ...input, kind: 'iframe' })
+    expect(run).not.toHaveBeenCalled()
+    deliver(input)
+    expect(run).toHaveBeenCalledOnce()
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ target: anchor, source: 'webview' }))
+    expect(document.activeElement).toBe(activeElement)
+
+    const duplicate = anchor.cloneNode(true) as HTMLDivElement
+    document.body.append(duplicate)
+    deliver(input)
+    expect(run).toHaveBeenCalledOnce()
+    duplicate.remove()
+
+    anchor.dataset.sidebarBrowserAnchor = 'false'
+    deliver(input)
+    expect(run).toHaveBeenCalledOnce()
+    anchor.dataset.sidebarBrowserAnchor = 'true'
+    anchor.remove()
+    deliver(input)
+    expect(run).toHaveBeenCalledOnce()
+  } finally {
+    off()
+    expect(release).toHaveBeenCalledOnce()
+  }
+})

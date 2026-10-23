@@ -183,10 +183,10 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  height: 52px;
+  height: 40px;
   box-sizing: border-box;
   margin: -6px calc(-1 * var(--dsh-sidebar-inline-padding)) 0;
-  /* The 2px foot centres the 28px toggle at y 25, level with the collapsed
+  /* The 2px foot centres the 28px toggle at y 19, level with the traffic lights
      seat (ui-layout .leadingSeat, top 11) and the conversation title row, so
      collapse/expand never shifts it vertically. */
   padding: 0 12px 2px;
@@ -198,9 +198,8 @@
   justify-content: flex-start;
 }
 
-/* The strip's full 52px foot leaves the wordmark too low; the content column
-   tucks 12px back under it, still clear of the toggle (28px control centered
-   in the strip ends at y 40). */
+/* Tuck the brand row 12px under the strip while keeping its contents below the
+   centered 28px toggle. */
 .topStrip + .logoRow {
   margin-top: -12px;
 }
@@ -210,7 +209,7 @@
    the shared entry translation is applied. macOS hiddenInset titlebar: the row
    is marked `data-window-drag` in markup (SidebarRoot), so ui-web base.css's
    single darwin rule carries the drag over its own box — below the top strip
-   (40–100px: the strip's 52px foot with the row's -12px tuck). The brand rides
+   (28–88px: the strip's 40px height with the row's -12px tuck). The brand rides
    that box (SidebarRoot renders the wordmark as a plain span there, so the
    global interactive no-drag rule never subtracts it); the dedicated New
    Session button below keeps the pointer and keyboard paths. Safe as a drag

@@ -110,8 +110,6 @@ function loadClientUi({
       assets: {
         macos: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-macos-arm64-${releaseVersion}.dmg`,
         windows: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-windows-x64-${releaseVersion}.exe`,
-        linuxAppImage: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-linux-x64-${releaseVersion}.AppImage`,
-        linuxDeb: `https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/${releaseTag}/deepdive-linux-x64-${releaseVersion}.deb`,
       },
     } : { latest: absentLatest === 'null' ? null : undefined },
   })
@@ -395,26 +393,6 @@ test('Windows update action targets the matching installer asset', async () => {
     start.getAttribute('href'),
     'https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/v0.2.0/deepdive-windows-x64-0.2.0.exe',
   )
-})
-
-test('Linux x64 update action targets the AppImage asset', async () => {
-  const { components, t } = loadClientUi({ userAgent: 'Mozilla/5.0 (X11; Linux x86_64)' })
-  const UpdateBadge = components.get('settings.update')
-  const view = render(React.createElement(UpdateBadge, { wide: true, t }))
-  fireEvent.click(await view.findByRole('button', { name: '更新' }))
-  const start = await view.findByRole('link', { name: /开始更新/ })
-  assert.equal(start.getAttribute('href'),
-    'https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/download/v0.2.0/deepdive-linux-x64-0.2.0.AppImage')
-})
-
-test('unsupported Linux architecture links to release details', async () => {
-  const { components, t } = loadClientUi({ userAgent: 'Mozilla/5.0 (X11; Linux aarch64)' })
-  const UpdateBadge = components.get('settings.update')
-  const view = render(React.createElement(UpdateBadge, { wide: true, t }))
-  fireEvent.click(await view.findByRole('button', { name: '更新' }))
-  const start = await view.findByRole('link', { name: /开始更新/ })
-  assert.equal(start.getAttribute('href'),
-    'https://github.com/cipherTing/deepseek-harness-desktop-pure/releases/tag/v0.2.0')
 })
 
 test('Desktop file drops scope the overlay without replacing DSH admission', () => {

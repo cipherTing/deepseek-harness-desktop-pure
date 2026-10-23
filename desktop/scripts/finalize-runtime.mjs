@@ -38,7 +38,9 @@ async function rewriteRuntimeManifest() {
   const manifest = JSON.parse(await readFile(path, 'utf8'))
   const dependencies = {}
   for (const name of Object.keys(manifest.dependencies ?? {})) {
-    dependencies[name] = await installedVersion(name) ?? '0.0.0'
+    const version = await installedVersion(name)
+    if (version === undefined) throw new Error(`desktop runtime dependency is missing: ${name}`)
+    dependencies[name] = version
   }
   const kept = {}
   for (const key of ['name', 'version', 'private', 'license', 'type', 'repository', 'author', 'exports']) {

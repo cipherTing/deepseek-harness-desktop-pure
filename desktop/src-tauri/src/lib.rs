@@ -1,3 +1,6 @@
+#[cfg(target_os = "linux")]
+compile_error!("DeepDive Desktop supports macOS and Windows only");
+
 #[cfg(any(target_os = "windows", test))]
 use std::ffi::OsString;
 use std::{
@@ -25,8 +28,10 @@ use url::Url;
 
 mod browser_window;
 mod cli_command;
+mod devlog;
 mod file_handlers;
 mod keybindings;
+mod keyboard;
 mod mandatory;
 mod sidecar_process;
 mod tray;
@@ -60,8 +65,10 @@ struct DesktopState {
      */
     stderr_tail: Mutex<Vec<u8>>,
     exiting: AtomicBool,
-    /** Live Sidebar Browser guests, one native window per tab. */
+    /** Live Sidebar Browser guests, one native view per tab. */
     browser: browser_window::BrowserRegistry,
+    /** Accepted shortcut bindings and per-view physical key state. */
+    keyboard: keyboard::KeyboardState,
     /** Release feed schedule and its remembered answer. */
     updates: update::UpdateMonitor,
 }
@@ -676,9 +683,7 @@ async fn desktop_save_session(
  * @returns the machine description, or an error when the host is not running.
  */
 #[tauri::command]
-async fn desktop_device_info(
-    state: tauri::State<'_, DesktopState>,
-) -> Result<String, String> {
+async fn desktop_device_info(state: tauri::State<'_, DesktopState>) -> Result<String, String> {
     #[derive(Deserialize)]
     struct DeviceInfo {
         #[serde(rename = "deviceInfo")]
@@ -1044,6 +1049,7 @@ pub fn run() {
             desktop_save_file_as,
             desktop_save_session,
             desktop_device_info,
+            devlog::desktop_log,
             desktop_credentials_present,
             browser_window::desktop_browser_acquire,
             browser_window::desktop_browser_bounds,
@@ -1057,6 +1063,7 @@ pub fn run() {
             cli_command::desktop_cli_remove,
             keybindings::desktop_keybindings_read,
             keybindings::desktop_keybindings_write,
+            keyboard::desktop_keyboard_configure,
             update::desktop_release_state,
             update::desktop_release_check,
             mandatory::desktop_mandatory_state,
@@ -1128,9 +1135,7 @@ pub fn run() {
                             // controls like the account "Contact us" link and the
                             // sidebar browser's external button did nothing.
                             if target.scheme() == "http" || target.scheme() == "https" {
-                                let _ = popup_handle
-                                    .opener()
-                                    .open_url(target, None::<&str>);
+                                let _ = popup_handle.opener().open_url(target, None::<&str>);
                             }
                             tauri::webview::NewWindowResponse::Deny
                         });
@@ -1143,12 +1148,37 @@ pub fn run() {
                             // so the window's sidebar material shows through,
                             // exactly as the Electron product configures it.
                             .transparent(true)
-                            .effects(tauri::window::EffectsBuilder::new()
-                                .effect(tauri::window::Effect::Sidebar)
-                                .state(tauri::window::EffectState::Active)
-                                .build());
+                            .effects(
+                                tauri::window::EffectsBuilder::new()
+                                    .effect(tauri::window::Effect::Sidebar)
+                                    .state(tauri::window::EffectState::Active)
+                                    .build(),
+                            );
                         match window.build() {
                             Ok(_) => {
+                                if let Some(webview) = handle.get_webview("main") {
+                                    match keyboard::install(&handle, &webview, "main").await {
+                                        Ok(hook) => handle
+                                            .state::<DesktopState>()
+                                            .keyboard
+                                            .retain_main_hook(hook),
+                                        Err(error) => {
+                                            show_error_and_exit(
+                                                &handle,
+                                                format!("Desktop keyboard integration failed:\n{error}"),
+                                                1,
+                                            );
+                                            return;
+                                        }
+                                    }
+                                } else {
+                                    show_error_and_exit(
+                                        &handle,
+                                        "Desktop keyboard integration failed: main view is unavailable",
+                                        1,
+                                    );
+                                    return;
+                                }
                                 // A tray with no icon leaves the user without a way
                                 // back from a hidden window, so a failed build is
                                 // reported instead of silently degrading.
@@ -1182,30 +1212,23 @@ pub fn run() {
             Ok(())
         });
 
+    devlog::install_panic_hook();
     let app = builder
         .build(tauri::generate_context!())
         .expect("failed to build DeepDive");
+    devlog::init(app.handle());
     app.run(|app, event| {
         match event {
             RunEvent::ExitRequested { code, api, .. } => {
                 let state = app.state::<DesktopState>();
+                devlog::write(format_args!(
+                    "exit requested: code={code:?} exiting={} windows={:?}",
+                    state.exiting.load(Ordering::SeqCst),
+                    app.webview_windows().keys().collect::<Vec<_>>(),
+                ));
                 if !state.exiting.load(Ordering::SeqCst) {
                     api.prevent_exit();
                     begin_graceful_exit(app, code.unwrap_or(0));
-                }
-            }
-            // The page observes the same transitions and re-sends addresses,
-            // but a drag delivers fewer main-window events than the guest
-            // needs, so the native half re-applies the last known address.
-            RunEvent::WindowEvent {
-                label,
-                event: tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_),
-                ..
-            } => {
-                if label == "main" {
-                    if let Some(window) = app.get_webview_window("main") {
-                        browser_window::follow(app, &window);
-                    }
                 }
             }
             // A close hides the window and keeps the sidecar running, or quits,
@@ -1221,6 +1244,18 @@ pub fn run() {
                     api.prevent_close();
                     tray::handle_close_request(app);
                 }
+            }
+            // A destroyed window is the only thing that can make the runtime
+            // decide the process has no windows left, so name it.
+            RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } => {
+                devlog::write(format_args!(
+                    "window destroyed: {label}; windows={:?}",
+                    app.webview_windows().keys().collect::<Vec<_>>(),
+                ));
             }
             // Dock icon activation on macOS after every window was hidden.
             #[cfg(target_os = "macos")]
@@ -1294,14 +1329,14 @@ mod tests {
             "http://localhost:5173/?token=launch-token"
         );
         for bad in [
-            "http://127.0.0.1:5173",                    // missing launch token
-            "http://127.0.0.1/?token=x",                // no explicit port
-            "https://127.0.0.1:5173/?token=x",          // not http
-            "http://192.168.1.10:5173/?token=x",        // not loopback
-            "http://127.0.0.1:5173/path?token=x",       // not the origin root
-            "http://127.0.0.1:5173/?token=",            // empty launch token
+            "http://127.0.0.1:5173",                     // missing launch token
+            "http://127.0.0.1/?token=x",                 // no explicit port
+            "https://127.0.0.1:5173/?token=x",           // not http
+            "http://192.168.1.10:5173/?token=x",         // not loopback
+            "http://127.0.0.1:5173/path?token=x",        // not the origin root
+            "http://127.0.0.1:5173/?token=",             // empty launch token
             "http://127.0.0.1:5173/?token=x&extra=true", // extra query field
-            "http://user@127.0.0.1:5173/?token=x",      // userinfo
+            "http://user@127.0.0.1:5173/?token=x",       // userinfo
         ] {
             assert!(parse_ready_url(&ready(bad)).is_err(), "must reject {bad}");
         }

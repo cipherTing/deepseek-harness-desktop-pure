@@ -73,7 +73,7 @@ interface DesktopCliApi {
 /**
  * Onboarding capability. The upstream Electron preload exposes the same two
  * members from its native welcome window; here the page owns the whole
- * onboarding flow, so `setActive` only records the overlay's visibility.
+ * onboarding flow, so `setActive` blocks native keyboard input underneath it.
  */
 interface DshOnboarding {
   /** @returns whether any configured model route holds a usable credential. */
@@ -91,12 +91,30 @@ interface DesktopBrowserGuestState {
   readonly loading: boolean
   readonly canGoBack: boolean
   readonly canGoForward: boolean
+  readonly error?: DesktopBrowserLoadFailure
 }
 
-/** One guest lifecycle or navigation notification. */
-interface DesktopBrowserEvent {
+interface DesktopBrowserLoadFailure {
+  readonly code?: number
+  readonly description?: string
+}
+
+/** One guest lifecycle, navigation, focus, or failure notification. */
+type DesktopBrowserEvent = {
   readonly lease: string
-  readonly kind: 'load-started' | 'load-finished' | 'navigated' | 'title'
+  readonly state: DesktopBrowserGuestState
+} & (
+  | {
+    readonly kind: 'load-started' | 'load-finished' | 'navigated' | 'history-changed' | 'title' | 'guest-focused'
+  }
+  | { readonly kind: 'load-failed'; readonly error: DesktopBrowserLoadFailure }
+)
+
+type DesktopBrowserWireEvent = DesktopBrowserEvent | {
+  readonly lease: string
+  readonly kind: 'open-requested'
+  readonly state: DesktopBrowserGuestState
+  readonly url: string
 }
 
 /** Main-approved identity of one guest reservation. */
@@ -108,12 +126,11 @@ interface DesktopBrowserReservation {
 }
 
 /**
- * Native Sidebar Browser carrier. One guest is a borderless window glued to an
- * address the page reports, so every member names that address instead of a
- * DOM element: the page owns layout, the shell owns the window.
+ * Native Sidebar Browser carrier. The page reports each guest view's bounds;
+ * the shell owns the view and its navigation state.
  */
 interface DesktopBrowserBridge {
-  acquire(workspace: string): Promise<DesktopBrowserReservation>
+  acquire(workspace: string, initialUrl: string): Promise<DesktopBrowserReservation>
   release(lease: DesktopBrowserLeaseId): Promise<void>
   onOpenRequested(lease: DesktopBrowserLeaseId, listener: (url: string) => void): () => void
   navigate(lease: DesktopBrowserLeaseId, url: string): Promise<void>
@@ -121,6 +138,8 @@ interface DesktopBrowserBridge {
   command(lease: DesktopBrowserLeaseId, command: 'reload' | 'back' | 'forward'): Promise<void>
   state(lease: DesktopBrowserLeaseId): Promise<DesktopBrowserGuestState>
   onEvent(listener: (event: DesktopBrowserEvent) => void): () => void
+  /** @param message - URL-free page measurement status. @returns after it reaches the shell log. */
+  reportMeasurement(message: string): Promise<void>
   /**
    * @param lease - guest to move.
    * @param rect - address in CSS pixels relative to the main window client area.
@@ -549,20 +568,57 @@ let deviceInfoReading: Promise<string> | undefined
 
 const onboardingApi: DshOnboarding = {
   hasApiKey: () => invoke<boolean>('desktop_credentials_present'),
-  setActive: () => {
-    // The native welcome window owned a second BrowserWindow whose lifetime
-    // this signal controlled. The onboarding overlay lives in this document,
-    // so nothing native has to be shown or hidden and there is nothing to do.
-  },
+  setActive: (active) => { shortcutCarrier.setBlocked(active) },
 }
 
 /**
  * The guest host emits one event stream for every tab; subscribers are the
  * per-tab bridges, which filter by lease and deliver only their own events.
  */
-const browserEventListeners = new Set<(event: DesktopBrowserEvent) => void>()
+/**
+ * Report one failure to the shell's log file.
+ *
+ * A packaged WebView has no readable console, so a page-side failure that ends
+ * in a closed window or a silent retry leaves nothing to inspect afterwards.
+ * @param message - one line describing what failed.
+ */
+function reportToShellLog(message: string): void {
+  void invoke('desktop_log', { message: message.slice(0, 2048) }).catch(() => {})
+}
 
-void listen<DesktopBrowserEvent>('desktop-browser-event', (event) => {
+window.addEventListener('error', (event) => {
+  const kind = event.error instanceof Error ? event.error.name : 'Error'
+  reportToShellLog(`uncaught: ${kind} at line ${event.lineno}`)
+})
+window.addEventListener('unhandledrejection', (event) => {
+  const reason: unknown = event.reason
+  reportToShellLog(`rejection: ${reason instanceof Error ? reason.name : typeof reason}`)
+})
+
+/**
+ * Run one Shell command, recording its failure before rethrowing it.
+ * @param command - Tauri command name.
+ * @param payload - command arguments.
+ * @returns the command result.
+ */
+async function traced<T>(command: string, payload: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(command, payload)
+  } catch (error) {
+    reportToShellLog(`${command} failed: ${error instanceof Error ? error.name : typeof error}`)
+    throw error
+  }
+}
+
+const browserEventListeners = new Set<(event: DesktopBrowserEvent) => void>()
+const browserOpenListeners = new Map<DesktopBrowserLeaseId, Set<(url: string) => void>>()
+
+void listen<DesktopBrowserWireEvent>('desktop-browser-event', (event) => {
+  if (event.payload.kind === 'open-requested') {
+    const listeners = browserOpenListeners.get(event.payload.lease as DesktopBrowserLeaseId)
+    for (const listener of [...listeners ?? []]) listener(event.payload.url)
+    return
+  }
   for (const listener of [...browserEventListeners]) {
     try {
       listener(event.payload)
@@ -573,24 +629,29 @@ void listen<DesktopBrowserEvent>('desktop-browser-event', (event) => {
 })
 
 const browserApi: DesktopBrowserBridge = {
-  acquire: workspace => invoke<DesktopBrowserReservation>('desktop_browser_acquire', { workspace }),
-  release: lease => invoke<void>('desktop_browser_release', { lease }),
-  onOpenRequested: () => () => {
-    // The Electron guest already routes `window.open` through the main process
-    // and re-delivers it per guest. A guest here is an ordinary browser window
-    // whose popups are handled below, so no per-guest channel exists yet.
+  acquire: (workspace, initialUrl) => traced<DesktopBrowserReservation>('desktop_browser_acquire', { workspace, initialUrl }),
+  release: lease => traced<void>('desktop_browser_release', { lease }),
+  onOpenRequested: (lease, listener) => {
+    const listeners = browserOpenListeners.get(lease) ?? new Set()
+    listeners.add(listener)
+    browserOpenListeners.set(lease, listeners)
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) browserOpenListeners.delete(lease)
+    }
   },
-  navigate: (lease, url) => invoke<void>('desktop_browser_navigate', { lease, url }),
-  command: (lease, command) => invoke<void>('desktop_browser_command', { lease, command }),
-  state: lease => invoke<DesktopBrowserGuestState>('desktop_browser_state', { lease }),
+  navigate: (lease, url) => traced<void>('desktop_browser_navigate', { lease, url }),
+  command: (lease, command) => traced<void>('desktop_browser_command', { lease, command }),
+  state: lease => traced<DesktopBrowserGuestState>('desktop_browser_state', { lease }),
   onEvent: (listener) => {
     browserEventListeners.add(listener)
     return () => { browserEventListeners.delete(listener) }
   },
-  place: (lease, rect, visible) => invoke<void>('desktop_browser_bounds', {
+  reportMeasurement: message => traced<void>('desktop_log', { message: `browser measure: ${message}` }),
+  place: (lease, rect, visible) => traced<void>('desktop_browser_bounds', {
     lease, x: rect.x, y: rect.y, width: rect.width, height: rect.height, visible,
   }),
-  setVisible: (lease, visible) => invoke<void>('desktop_browser_visible', { lease, visible }),
+  setVisible: (lease, visible) => traced<void>('desktop_browser_visible', { lease, visible }),
 }
 
 const shortcutCarrier = installShortcuts()

@@ -80,6 +80,7 @@ describe('ui-sidebar-browser apply', () => {
       command: vi.fn(async () => {}),
       state: vi.fn(async () => ({ url: '', title: '', loading: true, canGoBack: false, canGoForward: false })),
       onEvent: vi.fn(() => () => {}),
+      reportMeasurement: vi.fn(async () => {}),
       place: vi.fn(async () => {}),
       setVisible: vi.fn(async () => {}),
     }
@@ -102,7 +103,9 @@ describe('ui-sidebar-browser apply', () => {
         initial: undefined, initialUrl: 'https://example.test/', openTab: vi.fn() })
       expect(replacementStore.getSnapshot().byTab[tabId]).toBeDefined()
       expect(firstStore.getSnapshot().byTab[tabId]).toBeUndefined()
-      if (protocolVersion === 1) await vi.waitFor(() => { expect(acquire).toHaveBeenCalledWith('session:session') })
+      if (protocolVersion === 1) await vi.waitFor(() => {
+        expect(acquire).toHaveBeenCalledWith('session:session', 'https://example.test/')
+      })
       else expect(host.querySelector('iframe')).not.toBeNull()
       h.openTabs.set([{ sessionId: 'other', tabId }, { sessionId: 'session', tabId: 'other-tab' as TabId }])
       signal.abort()

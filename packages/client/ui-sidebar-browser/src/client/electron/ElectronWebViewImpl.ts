@@ -1,7 +1,8 @@
 /** Desktop guest navigation and lifetime, independent from DOM placement. */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
-  DesktopBrowserBridge, DesktopBrowserEvent, DesktopBrowserGuestState, DesktopBrowserLeaseId, DesktopBrowserRect,
+  DesktopBrowserBridge, DesktopBrowserEvent, DesktopBrowserGuestState, DesktopBrowserLeaseId, DesktopBrowserLoadFailure,
+  DesktopBrowserRect,
 } from '../../types.ts'
 import type { AnchorBounds, ElectronWebviewPresentation, GuestAnchor } from './ElectronWebviewPresentation.ts'
 import { emptyBrowserFrame, type BrowserFrame, type BrowserFrameState, type BrowserLoadError } from '../browser/BrowserFrame.ts'
@@ -41,7 +42,6 @@ export class ElectronWebViewImpl implements BrowserFrame {
   private ready = false
   private pending: BrowserTarget | undefined
   private revision = 0
-  private firstDocument = true
   private checkpoint: BrowserTarget | undefined
   private disposal: Promise<void> | undefined
   private attachment: AbortController | undefined
@@ -167,8 +167,10 @@ export class ElectronWebViewImpl implements BrowserFrame {
   private async createGuest(attachmentSignal: AbortSignal): Promise<void> {
     this.workspaceKey ??= await this.workspace(attachmentSignal)
     if (attachmentSignal.aborted) return
-    const reservation = await this.bridge.acquire(this.workspaceKey)
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- The signal can abort while acquire is pending.
+    const initial = this.pending
+    if (initial === undefined) return
+    const revision = this.revision
+    const reservation = await this.bridge.acquire(this.workspaceKey, initial.url)
     if (attachmentSignal.aborted) { await this.release(reservation.lease); return }
     this.lease = reservation.lease
     this.guestLifetime = new AbortController()
@@ -191,14 +193,10 @@ export class ElectronWebViewImpl implements BrowserFrame {
       this.stopFollowing = undefined
       // The guest leaves with the attachment; hiding is what the shell needs
       // when the frame itself outlives this presentation.
-      void this.bridge.setVisible(reservation.lease, false).catch((error: unknown) => {
-        console.error('Desktop browser visibility failed', error)
-      })
+      this.follow(reservation.lease, undefined)
     }, { once: true })
-    // The guest starts blank, so the first document commit is the bootstrap
-    // document rather than a user navigation.
     this.ready = true
-    this.firstDocument = true
+    if (this.revision === revision && this.pending?.url === initial.url) this.pending = undefined
     await this.refresh()
     this.loadPending()
   }
@@ -219,8 +217,23 @@ export class ElectronWebViewImpl implements BrowserFrame {
   /** Apply one host notification to the cached state, then republish frame state. */
   private receive(event: DesktopBrowserEvent): void {
     if (this.lifetime.signal.aborted || event.lease !== this.lease) return
-    this.observed = event.state
-    const committed = event.kind === 'navigated' || event.kind === 'load-finished'
+    if (event.kind === 'guest-focused') {
+      this.presentation.dispatchGuestFocus()
+      return
+    }
+    this.observed = event.kind === 'load-failed'
+      ? { ...event.state, error: event.error }
+      : event.state
+    if (event.kind === 'load-failed') {
+      try { this.observe(false) }
+      catch (error) { this.commandFailed(error) }
+      this.failed(browserLoadError(event.error))
+      return
+    }
+    if (event.kind === 'load-started' && this.store.getSnapshot().error !== undefined) {
+      this.store.set({ ...this.store.getSnapshot(), error: undefined })
+    }
+    const committed = event.kind === 'navigated' || event.kind === 'history-changed' || event.kind === 'load-finished'
       || (event.kind === 'title' && this.store.getSnapshot().address === 'observed')
     try { this.observe(committed) }
     catch (error) { this.commandFailed(error) }
@@ -237,7 +250,8 @@ export class ElectronWebViewImpl implements BrowserFrame {
       return
     }
     if (this.lease !== lease || this.lifetime.signal.aborted) return
-    this.observe(this.store.getSnapshot().address !== 'requested')
+    this.observe(true)
+    if (this.observed.error !== undefined) this.failed(browserLoadError(this.observed.error))
   }
 
   /** Synchronous projection of the cached host state into frame state. */
@@ -247,10 +261,6 @@ export class ElectronWebViewImpl implements BrowserFrame {
     // A blank or unreadable address is not an observation: the requested
     // address stays authoritative until the guest reports a real one.
     const parsed = committed && this.observed.url !== '' ? parseBrowserAddress(this.observed.url) : undefined
-    if (parsed?.ok && this.firstDocument) {
-      // The lease-bearing bootstrap document is not a user history entry.
-      this.firstDocument = false
-    }
     let target = current.target
     let address = current.address
     if (parsed?.ok) {
@@ -277,8 +287,14 @@ export class ElectronWebViewImpl implements BrowserFrame {
   private follow(lease: DesktopBrowserLeaseId, bounds: AnchorBounds | undefined): void {
     if (this.lifetime.signal.aborted || lease !== this.lease) return
     if (bounds === undefined) {
-      void this.bridge.setVisible(lease, false).catch((error: unknown) => {
-        console.error('Desktop browser visibility failed', error)
+      this.placementPending = undefined
+      this.placement = this.placement.then(async () => {
+        if (this.lease !== lease || this.lifetime.signal.aborted) return
+        try {
+          await this.bridge.setVisible(lease, false)
+        } catch (error) {
+          console.error('Desktop browser visibility failed', error)
+        }
       })
       return
     }
@@ -321,7 +337,6 @@ export class ElectronWebViewImpl implements BrowserFrame {
     this.presentation.clear()
     this.anchor = undefined
     this.ready = false
-    this.firstDocument = true
     this.observed = UNOBSERVED
     const lease = this.lease
     this.lease = undefined
@@ -335,4 +350,9 @@ export class ElectronWebViewImpl implements BrowserFrame {
     this.releases.add(released)
     return released
   }
+}
+
+/** Project nullable host diagnostics into the frame's optional fields. */
+function browserLoadError(error: DesktopBrowserLoadFailure): BrowserLoadError {
+  return { code: error.code, description: error.description }
 }

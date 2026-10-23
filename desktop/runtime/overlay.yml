@@ -1,5 +1,5 @@
-# Desktop overlay: the sidecar boots the upstream `web` profile with
-# `--host 127.0.0.1 --port 0 --no-open`, and the WebView loads that loopback
+# Desktop overlay: the sidecar boots the upstream `web` profile on loopback,
+# preferring port 47821 and falling back to an ephemeral port, and the WebView loads that loopback
 # host directly. This layer replaces only native system interactions and adds
 # Desktop surface/client glue; Connection remains the upstream authenticated
 # browser transport.
@@ -8,6 +8,9 @@
   disabled: true
 
 - id: settings-controller
+  disabled: true
+
+- id: rea-mcp
   disabled: true
 
 # The upstream bundle enables the sandboxed Browser tabs only for the Electron

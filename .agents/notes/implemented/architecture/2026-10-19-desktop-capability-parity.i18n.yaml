@@ -6,20 +6,20 @@
   en: ec4756d292491895
   zh: 7e91779f32b1d9d8
 /agent-note-desktop-capability-parity-with-the-electron-product-layer/problem:
-  en: b8ee2b3c8b73775c
-  zh: f8f72ee02117f526
+  en: bcba5b791757d4fe
+  zh: 23b51a62e7004943
 /agent-note-desktop-capability-parity-with-the-electron-product-layer/decision:
-  en: 28e410555a817b86
-  zh: 82b6f0faaa6c0468
+  en: fc31dddbb3d8e116
+  zh: 569efa3c16944a9c
 /agent-note-desktop-capability-parity-with-the-electron-product-layer/update-feed:
-  en: 36031460e2e06e4d
-  zh: 15da2287720ad2cd
-/agent-note-desktop-capability-parity-with-the-electron-product-layer/why-the-dom-keyboard-forwarder:
-  en: 66d06694e44a4f2c
-  zh: 6744950ed2c3b274
+  en: b29d9427588fe72f
+  zh: 297441eea95bf0ac
+/agent-note-desktop-capability-parity-with-the-electron-product-layer/keyboard-input-ownership:
+  en: d6cad06f393127ab
+  zh: 9ca89c2df4e24de2
 /agent-note-desktop-capability-parity-with-the-electron-product-layer/alternatives-considered:
-  en: 834ac8474edd3da9
-  zh: ad25673e086ae2eb
+  en: ff3f940ce450079a
+  zh: f35da33909379709
 /agent-note-desktop-capability-parity-with-the-electron-product-layer/consequences:
-  en: 7ce5f95ca963de4f
-  zh: 2b08a40af732f513
+  en: abd72c65115db011
+  zh: f43232246f254cd3

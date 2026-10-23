@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { win32 } from 'node:path'
 import test from 'node:test'
@@ -6,19 +7,12 @@ import { load } from 'js-yaml'
 
 const readJson = (url) => JSON.parse(readFileSync(url, 'utf8'))
 
-test('Linux packages use a private Node binary without replacing system Node.js', () => {
-  const config = readJson(new URL('../src-tauri/tauri.linux.conf.json', import.meta.url))
-  assert.deepEqual(config.bundle.targets, ['deb', 'appimage'])
-  assert.deepEqual(config.bundle.externalBin, ['binaries/deepdive-node'])
-  assert.deepEqual(config.bundle.linux.deb.depends, ['xdg-user-dirs'])
-  assert.deepEqual(config.bundle.linux.appimage.files, { '/usr/bin/xdg-user-dir': '/usr/bin/xdg-user-dir' })
-})
-
 test('Desktop version and root shortcuts use the Desktop package', () => {
   const rootPackage = readJson(new URL('../../package.json', import.meta.url))
   const desktopPackage = readJson(new URL('../package.json', import.meta.url))
   const runtimePackage = readJson(new URL('../runtime/package.json', import.meta.url))
   const tauriConfig = readJson(new URL('../src-tauri/tauri.conf.json', import.meta.url))
+  const macOSBuild = readFileSync(new URL('../src-tauri/build.rs', import.meta.url), 'utf8')
   const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')
   const cargoLock = readFileSync(new URL('../src-tauri/Cargo.lock', import.meta.url), 'utf8')
 
@@ -28,10 +22,26 @@ test('Desktop version and root shortcuts use the Desktop package', () => {
   assert.equal(cargoLock.match(/\[\[package\]\]\nname = "deepseek-harness-desktop"\nversion = "([^"]+)"/m)?.[1], desktopPackage.version)
   assert.equal(tauriConfig.productName, 'DeepDive')
   assert.equal(tauriConfig.version, '../package.json')
+  assert.equal(tauriConfig.bundle.macOS.minimumSystemVersion, '13.0')
+  assert.match(macOSBuild, /-mmacosx-version-min=13\.0/)
+  assert.deepEqual(tauriConfig.bundle.targets, ['dmg', 'nsis'])
   assert.equal(rootPackage.scripts['desktop:dev'], 'pnpm --filter @deepseek-ai/dsh-desktop run dev')
   assert.equal(rootPackage.scripts['desktop:build'], 'pnpm --filter @deepseek-ai/dsh-desktop run build')
   assert.equal(rootPackage.scripts['desktop:version:check'], 'pnpm --filter @deepseek-ai/dsh-desktop run version:check')
   assert.equal(rootPackage.scripts['desktop:version:set'], 'pnpm --filter @deepseek-ai/dsh-desktop run version:set')
+  const hostGuard = readFileSync(new URL('../scripts/ensure-supported-host.mjs', import.meta.url), 'utf8')
+  assert.match(hostGuard, /process\.platform === 'darwin' \|\| process\.platform === 'win32'/)
+  const desktopShortcutBridge = readFileSync(new URL('../bridge/src/shortcuts.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(desktopShortcutBridge, /platform: 'linux', mark: 'linux'/)
+})
+
+test('Desktop bundle preparation refuses unsupported Linux hosts', () => {
+  const script = new URL('../scripts/ensure-supported-host.mjs', import.meta.url).href
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval',
+    `Object.defineProperty(process, 'platform', { value: 'linux' }); await import(${JSON.stringify(script)})`],
+  { encoding: 'utf8' })
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /require macOS or Windows/)
 })
 
 test('Desktop workflow builds any manual ref and releases only one frozen master SHA', () => {
@@ -62,17 +72,14 @@ test('Desktop workflow builds any manual ref and releases only one frozen master
   assert.match(workflow, /pattern: deepdive-\*-\$\{\{ needs\.metadata\.outputs\.version \}\}-\*/)
   assert.match(workflow, /platform: macos-arm64/)
   assert.match(workflow, /platform: windows-x64/)
-  assert.match(workflow, /platform: linux-x64/)
-  assert.match(workflow, /runner: ubuntu-22\.04/)
-  assert.match(workflow, /bundle: deb,appimage/)
+  assert.doesNotMatch(workflow, /platform: linux-x64|x86_64-unknown-linux-gnu|Install Linux build dependencies/)
   assert.match(workflow, /workflowArtifactNamePattern: deepdive-\$\{\{ matrix\.platform \}\}-\[version\]-\[bundle\]/)
   assert.match(workflow, /uses: actions\/download-artifact@[0-9a-f]{40} # v8/)
   assert.match(workflow, /merge-multiple: true/)
-  assert.match(workflow, /Expected exactly one DMG, one EXE, one DEB and one AppImage artifact/)
+  assert.match(workflow, /Expected exactly one DMG and one EXE artifact/)
   assert.match(workflow, /release-assets\/deepdive-macos-arm64-\$VERSION\.dmg/)
   assert.match(workflow, /release-assets\/deepdive-windows-x64-\$VERSION\.exe/)
-  assert.match(workflow, /release-assets\/deepdive-linux-x64-\$VERSION\.deb/)
-  assert.match(workflow, /release-assets\/deepdive-linux-x64-\$VERSION\.AppImage/)
+  assert.doesNotMatch(workflow, /linux-x64|AppImage|\.deb/)
   assert.match(workflow, /actions: read/)
   assert.match(workflow, /contents: write/)
   assert.match(workflow, /if: github\.ref == 'refs\/heads\/master'/)
@@ -169,6 +176,10 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   const runtimePackage = readJson(new URL('../runtime/package.json', import.meta.url))
   const overlay = readFileSync(new URL('../runtime/overlay.yml', import.meta.url), 'utf8')
   const sidecar = readFileSync(new URL('../runtime/src/sidecar.ts', import.meta.url), 'utf8')
+  const browserWindow = readFileSync(new URL('../src-tauri/src/browser_window.rs', import.meta.url), 'utf8')
+  const browserStorage = readFileSync(new URL('../src-tauri/src/browser_window/storage.rs', import.meta.url), 'utf8')
+  const browserBootstrap = readFileSync(new URL('../src-tauri/resources/shell/browser-blank.html', import.meta.url), 'utf8')
+  const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')
 
   // No custom URI schemes, no boot snapshot, no plugin allowlist.
   assert.doesNotMatch(rust, /register_uri_scheme_protocol/)
@@ -182,6 +193,15 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   // The bundled frontend dist is served by the harness itself.
   assert.equal(tauriConfig.build.frontendDist, 'resources/shell')
   assert.deepEqual(tauriConfig.bundle.resources, ['rt/**/*'])
+  assert.match(browserWindow, /WebviewUrl::App\("browser-blank\.html"\.into\(\)\)/)
+  assert.match(browserWindow, /payload\.url\(\)/)
+  assert.match(browserWindow, /is_bootstrap_url\(target\)/)
+  assert.match(browserStorage, /\.add_child\(/)
+  assert.match(browserWindow, /is_tauri_app_url/)
+  assert.match(browserBootstrap, /<body>\s*<\/body>/)
+  assert.match(cargo, /features = \["unstable", "tray-icon", "macos-private-api"\]/)
+  assert.deepEqual(capability.webviews, ['main'])
+  assert.equal(capability.windows, undefined)
   assert.equal(existsSync(new URL('../src-tauri/resources/web', import.meta.url)), false)
   // Remote IPC is granted only to the loopback web host.
   assert.deepEqual(capability.remote, { urls: ['http://127.0.0.1:*'] })
@@ -196,6 +216,7 @@ test('Desktop loads the loopback web host without custom protocols', () => {
     'allow-desktop-reveal-file',
     'allow-desktop-save-file-as',
     'allow-desktop-save-session',
+    'allow-desktop-keyboard-configure',
   ]) {
     assert.ok(capability.permissions.includes(command))
   }
@@ -212,6 +233,7 @@ test('Desktop loads the loopback web host without custom protocols', () => {
     'desktop_reveal_file',
     'desktop_save_file_as',
     'desktop_save_session',
+    'desktop_keyboard_configure',
   ]) {
     assert.match(buildScript, new RegExp(`"${command}"`))
   }
@@ -417,7 +439,7 @@ test('Desktop shell supervises the official Tauri Node sidecar without a native 
   // keeps its protocol streams raw, and remains Rust-only.
   const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')
   assert.match(cargo, /tauri-plugin-shell = "=2\.3\.5"/)
-  assert.match(cargo, /\[target\.'cfg\(not\(windows\)\)'\.dev-dependencies\]/)
+  assert.match(cargo, /\[target\.'cfg\(target_os = "macos"\)'\.dev-dependencies\]/)
   assert.match(cargo, /tauri = \{ version = "=2\.11\.5", features = \["test"\] \}/)
   assert.doesNotMatch(cargo, /process-wrap/)
   assert.match(rust, /\.plugin\(tauri_plugin_shell::init\(\)\)/)
@@ -426,7 +448,7 @@ test('Desktop shell supervises the official Tauri Node sidecar without a native 
   assert.match(process, /CommandEvent::Stdout/)
   assert.match(process, /CommandChild/)
   assert.match(process, /child\.kill\(\)/)
-  assert.match(process, /#\[cfg\(all\(test, not\(windows\)\)\)\]/)
+  assert.match(process, /#\[cfg\(all\(test, target_os = "macos"\)\)\]/)
   assert.doesNotMatch(process, /ProcessGroup|JobObject|CreationFlags|KillOnDrop|CREATE_NO_WINDOW|bundled_binary_path/)
   assert.doesNotMatch(JSON.stringify(capability), /shell:/)
 })
@@ -442,6 +464,7 @@ test('Desktop overlay rows match the shipped web composition contract', () => {
   for (const id of ['directory-picker', 'settings-controller']) {
     assert.match(webPatch, new RegExp(`- id: ${id}\\b`), `web patch must define row ${id}`)
   }
+  assert.match(overlay, /- id: rea-mcp\n\s+disabled: true/)
   // Alpha1 keeps the base HMR host and the Web client reload row mounted;
   // the Desktop overlay must not disable either one.
   assert.match(basePatch, /- id: hmr\n\s+name: '@deepseek-ai\/dsh-hmr'/)
@@ -520,6 +543,26 @@ test('Desktop bundles only the three required app icons', () => {
     '../assets/deepseek.ico',
   ])
   assert.equal(existsSync(new URL('../src-tauri/icons', import.meta.url)), false)
+
+  const png = readFileSync(new URL('../assets/deepseek.png', import.meta.url))
+  assert.equal(png.subarray(1, 4).toString(), 'PNG')
+  assert.equal(png.readUInt32BE(16), 1104)
+  assert.equal(png.readUInt32BE(20), 1104)
+
+  const icns = readFileSync(new URL('../assets/deepseek.icns', import.meta.url))
+  assert.equal(icns.subarray(0, 4).toString(), 'icns')
+  assert.equal(icns.readUInt32BE(4), icns.length)
+
+  const ico = readFileSync(new URL('../assets/deepseek.ico', import.meta.url))
+  assert.equal(ico.readUInt16LE(0), 0)
+  assert.equal(ico.readUInt16LE(2), 1)
+  assert.equal(ico.readUInt16LE(4), 7)
+  const iconSizes = Array.from({ length: ico.readUInt16LE(4) }, (_, index) => {
+    const width = ico[6 + index * 16] || 256
+    const height = ico[7 + index * 16] || 256
+    return `${width}x${height}`
+  })
+  assert.deepEqual(iconSizes, ['16x16', '24x24', '32x32', '48x48', '64x64', '128x128', '256x256'])
 })
 
 test('macOS preserves the Node sidecar JIT and native addon permissions', () => {

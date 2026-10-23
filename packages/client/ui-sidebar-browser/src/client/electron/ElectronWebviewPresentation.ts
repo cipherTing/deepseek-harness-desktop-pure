@@ -7,8 +7,7 @@ import css from '../view/Browser.module.css'
 export type GuestAnchor = HTMLElement
 
 /**
- * One measurement of the anchor, or `undefined` when the anchor is not on
- * screen. The rectangle is in CSS pixels relative to the document viewport.
+ * Native guest placement in viewport CSS pixels, inset past the resize handle.
  */
 export interface AnchorBounds {
   readonly x: number
@@ -17,10 +16,11 @@ export interface AnchorBounds {
   readonly height: number
 }
 
-/** Physical attachment notifications; hiding a retained Sidebar body emits neither. */
+/** Guest attachment and placement diagnostics. */
 export interface ElectronPresentationEvents {
   readonly mounted: () => void
   readonly unmounted: () => void
+  readonly diagnostic: (message: string) => void
 }
 
 /** Minimum change that is worth a native reposition. */
@@ -36,6 +36,7 @@ export class ElectronWebviewPresentation implements BrowserPresentation {
   private host: HTMLElement | undefined
   private frame: number | undefined
   private last: AnchorBounds | undefined
+  private lastDiagnostic: string | undefined
 
   constructor(private readonly events: ElectronPresentationEvents) {}
 
@@ -91,6 +92,11 @@ export class ElectronWebviewPresentation implements BrowserPresentation {
     this.anchor?.setAttribute('aria-label', title)
   }
 
+  /** Notify DOM focus owners without moving DOM or native window focus. */
+  dispatchGuestFocus(): void {
+    this.anchor?.dispatchEvent(new FocusEvent('focus', { composed: true }))
+  }
+
   /** Destroy only the anchor; a replacement may use the same mounted container. */
   clear(): void {
     this.anchor?.remove()
@@ -112,7 +118,7 @@ export class ElectronWebviewPresentation implements BrowserPresentation {
    * switch removes the anchor from layout without resizing it. Measuring once
    * per animation frame covers every one of those paths with one mechanism,
    * and a change smaller than {@link POSITION_EPSILON} sends nothing.
-   * @param listener - receives each new on-screen address, or `undefined` once hidden.
+   * @param listener - receives each usable placement, or `undefined` while hidden or covered.
    * @returns disposer stopping measurement.
    */
   follow(listener: (bounds: AnchorBounds | undefined) => void): () => void {
@@ -138,19 +144,98 @@ export class ElectronWebviewPresentation implements BrowserPresentation {
     if (this.frame !== undefined) cancelAnimationFrame(this.frame)
     this.frame = undefined
     this.last = undefined
+    this.lastDiagnostic = undefined
   }
 
   private measure(): AnchorBounds | undefined {
     const anchor = this.anchor
-    if (anchor === undefined || this.host === undefined || !anchor.isConnected) return undefined
+    if (anchor === undefined || this.host === undefined || !anchor.isConnected) {
+      this.reportMeasurement('anchor-unavailable')
+      return undefined
+    }
     // `checkVisibility` reports the `visibility` and `content-visibility`
     // states a collapsed Sidebar uses; the rectangle alone stays non-zero.
     if (typeof anchor.checkVisibility === 'function'
-      && !anchor.checkVisibility({ visibilityProperty: true, contentVisibilityAuto: true })) return undefined
+      && !anchor.checkVisibility({ visibilityProperty: true, contentVisibilityAuto: true })) {
+      this.reportMeasurement(`hidden:check-visibility:${document.visibilityState}`)
+      return undefined
+    }
     const rect = anchor.getBoundingClientRect()
-    if (rect.width < 1 || rect.height < 1) return undefined
+    if (rect.width < 1 || rect.height < 1) {
+      this.reportMeasurement(`zero-size:${Math.round(rect.width)}x${Math.round(rect.height)}:${layoutChain(anchor)}`)
+      return undefined
+    }
+    if (getComputedStyle(anchor).pointerEvents === 'none') {
+      this.reportMeasurement(`hidden:pointer-events-none:dockkit-pointer=${document.querySelector('[data-dockkit-pointer]') !== null}`)
+      return undefined
+    }
+    const cover = obscuringElement(anchor, rect)
+    if (cover !== undefined) {
+      const clearRect = clearOfRightbarHandle(cover, rect)
+      if (clearRect !== undefined) {
+        this.reportMeasurement('ready:clear-of-rightbar-handle')
+        return clearRect
+      }
+      this.reportMeasurement(`hidden:occluded-by:${elementIdentity(cover)}`)
+      return undefined
+    }
+    this.reportMeasurement('ready')
     return { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
   }
+
+  private reportMeasurement(message: string): void {
+    if (message === this.lastDiagnostic) return
+    this.lastDiagnostic = message
+    this.events.diagnostic(message)
+  }
+}
+
+/** Return the first DOM element that prevents the guest from receiving input. */
+function obscuringElement(anchor: GuestAnchor, rect: DOMRect): Element | undefined {
+  const elementFromPoint = document.elementFromPoint
+  if (elementFromPoint === undefined) return undefined
+  const inset = Math.min(2, rect.width / 4, rect.height / 4)
+  const points: readonly [number, number][] = [
+    [rect.left + rect.width / 2, rect.top + rect.height / 2],
+    [rect.left + inset, rect.top + inset],
+    [rect.right - inset, rect.top + inset],
+    [rect.left + inset, rect.bottom - inset],
+    [rect.right - inset, rect.bottom - inset],
+  ]
+  for (const [x, y] of points) {
+    const top = elementFromPoint.call(document, x, y)
+    if (top !== null && top !== anchor && !anchor.contains(top)) return top
+  }
+  return undefined
+}
+
+/** Describe a DOM element without reading page content or non-DOM attributes. */
+function elementIdentity(element: Element): string {
+  const side = element.getAttribute('data-side')
+  return `${element.tagName.toLowerCase()}${side === 'rightbar' ? '[data-side=rightbar]' : ''}`
+}
+
+/** Summarize nearby boxes when the anchor has no measurable area. */
+function layoutChain(anchor: GuestAnchor): string {
+  const entries: string[] = []
+  let element: HTMLElement | null = anchor
+  while (element !== null && entries.length < 6) {
+    const rect = element.getBoundingClientRect()
+    entries.push(`${elementIdentity(element)}=${Math.round(rect.width)}x${Math.round(rect.height)}`)
+    element = element.parentElement
+  }
+  return entries.join('>')
+}
+
+/** Keep the native guest out of the app-frame handle's narrow resize strip. */
+function clearOfRightbarHandle(element: Element, rect: DOMRect): AnchorBounds | undefined {
+  if (element.getAttribute('data-side') !== 'rightbar') return undefined
+  const handle = element.getBoundingClientRect()
+  if (handle.right <= rect.left || handle.left >= rect.left + 12
+    || handle.bottom <= rect.top || handle.top >= rect.bottom) return undefined
+  const x = Math.max(rect.left, handle.right)
+  if (rect.right - x < 1) return undefined
+  return { x, y: rect.top, width: rect.right - x, height: rect.height }
 }
 
 /** Whether two measurements address the same on-screen box. */

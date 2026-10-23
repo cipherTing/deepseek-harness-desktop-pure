@@ -87,7 +87,9 @@ pub(crate) fn reveal(app: &AppHandle) {
 
 /** Hide the main window without touching the sidecar or the Sessions. */
 fn hide(app: &AppHandle) {
-    let Some(window) = main_window(app) else { return };
+    let Some(window) = main_window(app) else {
+        return;
+    };
     // A hidden fullscreen window keeps its Space on macOS and its exclusive
     // mode on Windows, so the window has to leave fullscreen before it goes.
     if window.is_fullscreen().unwrap_or(false) {
@@ -144,9 +146,7 @@ fn ask(app: &AppHandle) {
 /**
  * Create the tray icon and its menu.
  *
- * Linux shows the menu only (the platform delivers no click events); macOS and
- * Windows also reopen the window from a left click, which is what a user tries
- * first.
+ * macOS and Windows reopen the window from a left click.
  * @param app - application handle supplying the menu manager and default icon.
  * @returns the build result; a missing tray is not fatal to startup.
  */

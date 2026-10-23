@@ -9,7 +9,7 @@ const workflow = readFileSync(new URL('../../.github/workflows/build-desktop.yml
 const block = workflow.match(/name: Prepare versioned release assets[\s\S]*?run: \|\n([\s\S]*?)(?=\n      - name:)/)?.[1]
 assert.ok(block, 'release asset preparation step is missing')
 const script = block.split('\n').map(line => line.replace(/^          /, '')).join('\n')
-const inputs = ['mac.dmg', 'windows.exe', 'linux.deb', 'linux.AppImage']
+const inputs = ['mac.dmg', 'windows.exe']
 const options = { skip: process.platform === 'win32' && 'Release staging uses Bash in the Ubuntu publish job' }
 
 function run(t, names) {
@@ -25,14 +25,12 @@ function run(t, names) {
   return { directory, result }
 }
 
-test('release assets retain all four packages under versioned names', options, (t) => {
+test('release assets retain both packages under versioned names', options, (t) => {
   const { directory, result } = run(t, inputs)
   assert.equal(result.status, 0, result.stderr)
   const expected = [
     ['deepdive-macos-arm64-1.2.3.dmg', 'mac.dmg'],
     ['deepdive-windows-x64-1.2.3.exe', 'windows.exe'],
-    ['deepdive-linux-x64-1.2.3.deb', 'linux.deb'],
-    ['deepdive-linux-x64-1.2.3.AppImage', 'linux.AppImage'],
   ]
   assert.deepEqual(readdirSync(join(directory, 'release-assets')).sort(), expected.map(([name]) => name).sort())
   for (const [name, content] of expected) {
@@ -44,12 +42,12 @@ for (const omitted of inputs) {
   test(`release preparation rejects a missing ${omitted}`, options, (t) => {
     const { result } = run(t, inputs.filter(name => name !== omitted))
     assert.equal(result.status, 1)
-    assert.match(result.stdout, /Expected exactly one DMG, one EXE, one DEB and one AppImage artifact/)
+    assert.match(result.stdout, /Expected exactly one DMG and one EXE artifact/)
   })
 }
 
-test('release preparation rejects duplicate Linux bundles', options, (t) => {
-  const { result } = run(t, [...inputs, 'duplicate.AppImage'])
+test('release preparation rejects duplicate Windows installers', options, (t) => {
+  const { result } = run(t, [...inputs, 'duplicate.exe'])
   assert.equal(result.status, 1)
-  assert.match(result.stdout, /Expected exactly one DMG, one EXE, one DEB and one AppImage artifact/)
+  assert.match(result.stdout, /Expected exactly one DMG and one EXE artifact/)
 })

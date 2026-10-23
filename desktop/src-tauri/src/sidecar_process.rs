@@ -7,12 +7,7 @@ use tauri_plugin_shell::{
 };
 use tokio::sync::mpsc;
 
-// Debian installs sidecars in /usr/bin; reserve a name independent of system Node.js.
-const NODE_SIDECAR_NAME: &str = if cfg!(target_os = "linux") {
-    "deepdive-node"
-} else {
-    "node"
-};
+const NODE_SIDECAR_NAME: &str = "node";
 
 /// Events emitted by one owned Node sidecar generation.
 #[derive(Debug)]
@@ -156,7 +151,7 @@ fn terminate_child(child: CommandChild, events: &mpsc::UnboundedSender<SidecarEv
     }
 }
 
-#[cfg(all(test, not(windows)))]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
     use std::{sync::Mutex, time::Duration};

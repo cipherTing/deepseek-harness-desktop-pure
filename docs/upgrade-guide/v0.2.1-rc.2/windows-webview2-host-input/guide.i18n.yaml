@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-rc.2/windows-webview2-host-input/guide.md
+/:
+  en: b8ce92a906b0e7a3
+  zh: 1ca02b23607154ca
+/update-the-windows-webview2-runtime:
+  en: 27bac5ec15408b4e
+  zh: 96f354dc7213fcab
+/update-the-windows-webview2-runtime/change:
+  en: 77727d0d64817ef4
+  zh: 7b9bc1689f22945e
+/update-the-windows-webview2-runtime/migration:
+  en: f9a4e167d0e4d1e6
+  zh: d58466761bc902d3

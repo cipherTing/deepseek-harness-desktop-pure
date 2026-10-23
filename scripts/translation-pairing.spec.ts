@@ -103,11 +103,14 @@ describe('translation pairing index reads', () => {
 describe('translation pairing manifest', () => {
   it('accepts an exclusions-only manifest', () => {
     const manifest = parseTranslationPairingManifest(JSON.stringify({
-      excluded: ['docs/generated/'],
+      excluded: ['desktop/patches/', 'docs/generated/'],
     }))
     expect(manifest).toEqual({
-      excluded: ['docs/generated/'],
+      excluded: ['desktop/patches/', 'docs/generated/'],
     })
+    expect(isTranslationPairingManifestExcluded('desktop/patches/wry/README.md', manifest)).toBe(true)
+    expect(isTranslationPairingManifestExcluded('desktop/patches-notes/README.md', manifest)).toBe(false)
+    expect(translationPairSourcePredicate(manifest)('desktop/patches/wry/README.md')).toBe(false)
     expect(isTranslationPairingManifestExcluded('docs/generated/page.md', manifest)).toBe(true)
     expect(translationPairSourcePredicate(manifest)('docs/generated/page.md')).toBe(false)
     expect(translationPairSourcePredicate(manifest)('docs/guide.md')).toBe(true)

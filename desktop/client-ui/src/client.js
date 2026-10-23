@@ -199,7 +199,7 @@ window.__ModuleLoader__.load({
         ? assets.windows
         : agent.includes("Macintosh")
           ? assets.macos
-          : /Linux (?:x86_64|x64)/.test(agent) ? assets.linuxAppImage : undefined;
+          : undefined;
       return asset ?? release.page ?? "#";
     }
     function fileTransfer(event) {

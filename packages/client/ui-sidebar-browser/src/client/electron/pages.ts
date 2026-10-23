@@ -16,6 +16,11 @@ export function createElectronPage(options: BrowserPageOptions, bridge: DesktopB
   const presentation = new ElectronWebviewPresentation({
     mounted: () => { frame.attach() },
     unmounted: () => { frame.detach() },
+    diagnostic: (message) => {
+      void bridge.reportMeasurement(message).catch((error: unknown) => {
+        console.error('Desktop browser measurement report failed', error)
+      })
+    },
   })
   const frame = new ElectronWebViewImpl(options, bridge, workspace, presentation)
   return { frame, presentation }

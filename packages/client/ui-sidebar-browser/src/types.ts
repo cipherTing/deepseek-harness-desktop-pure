@@ -23,15 +23,27 @@ export interface DesktopBrowserGuestState {
   readonly loading: boolean
   readonly canGoBack: boolean
   readonly canGoForward: boolean
+  readonly error?: DesktopBrowserLoadFailure
 }
 
-/** One guest lifecycle or navigation notification, addressed by lease. */
-export interface DesktopBrowserEvent {
+/** Native guest load failure details, separate from localized UI copy. */
+export interface DesktopBrowserLoadFailure {
+  readonly code?: number
+  readonly description?: string
+}
+
+interface DesktopBrowserEventBase {
   readonly lease: DesktopBrowserLeaseId
-  readonly kind: 'load-started' | 'load-finished' | 'navigated' | 'title'
-  /** The host's cached state at this notification, so no reader has to await it. */
   readonly state: DesktopBrowserGuestState
 }
+
+/** One guest lifecycle, navigation, focus, or failure notification. */
+export type DesktopBrowserEvent = DesktopBrowserEventBase & (
+  | {
+    readonly kind: 'load-started' | 'load-finished' | 'navigated' | 'history-changed' | 'title' | 'guest-focused'
+  }
+  | { readonly kind: 'load-failed'; readonly error: DesktopBrowserLoadFailure }
+)
 
 /** A guest's address in CSS pixels relative to the main window client area. */
 export interface DesktopBrowserRect {
@@ -44,10 +56,14 @@ export interface DesktopBrowserRect {
 /** One history operation the host performs inside the guest page. */
 export type DesktopBrowserCommand = 'reload' | 'back' | 'forward'
 
-/** Origin-scoped operations; no Electron objects or arbitrary IPC cross this interface. */
+/** Guest operations and URL-free measurement reports; no Electron objects or arbitrary IPC cross this interface. */
 export interface DesktopBrowserBridge {
-  /** @param workspace - resolved storage account. @returns one approved guest reservation. */
-  acquire(workspace: string): Promise<DesktopBrowserReservation>
+  /**
+   * @param workspace - resolved storage account.
+   * @param initialUrl - first page loaded by the guest.
+   * @returns one approved guest reservation.
+   */
+  acquire(workspace: string, initialUrl: string): Promise<DesktopBrowserReservation>
   /** @param lease - the caller's reservation. @returns after its guest has been destroyed. */
   release(lease: DesktopBrowserLeaseId): Promise<void>
   /** @param lease - originating guest. @param listener - approved URL consumer. @returns unsubscribe callback. */
@@ -60,6 +76,8 @@ export interface DesktopBrowserBridge {
   state(lease: DesktopBrowserLeaseId): Promise<DesktopBrowserGuestState>
   /** @param listener - every guest event in this window. @returns unsubscribe callback. */
   onEvent(listener: (event: DesktopBrowserEvent) => void): () => void
+  /** @param message - URL-free presentation measurement status. @returns after it is written to the host log. */
+  reportMeasurement(message: string): Promise<void>
   /**
    * @param rect - the address to occupy, in CSS pixels relative to the main client area.
    * @param visible - whether the guest is on screen after moving.

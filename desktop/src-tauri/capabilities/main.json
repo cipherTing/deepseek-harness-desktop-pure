@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
   "description": "The main Harness window can call only application-owned Desktop bridge commands, and only while it is served from the loopback web host.",
-  "windows": ["main"],
+  "webviews": ["main"],
   "permissions": [
     "core:default",
     "core:path:deny-resolve",
@@ -19,6 +19,7 @@
     "allow-desktop-save-file-as",
     "allow-desktop-save-session",
     "allow-desktop-device-info",
+    "allow-desktop-log",
     "allow-desktop-credentials-present",
     "allow-desktop-browser-acquire",
     "allow-desktop-browser-bounds",
@@ -32,6 +33,7 @@
     "allow-desktop-cli-remove",
     "allow-desktop-keybindings-read",
     "allow-desktop-keybindings-write",
+    "allow-desktop-keyboard-configure",
     "allow-desktop-release-state",
     "allow-desktop-release-check"
   ],

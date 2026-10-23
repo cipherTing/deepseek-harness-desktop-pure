@@ -663,6 +663,18 @@
           "markdownDescription": "Enables the desktop_keybindings_write command without any pre-configured scope."
         },
         {
+          "description": "Enables the desktop_keyboard_configure command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-desktop-keyboard-configure",
+          "markdownDescription": "Enables the desktop_keyboard_configure command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the desktop_log command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-desktop-log",
+          "markdownDescription": "Enables the desktop_log command without any pre-configured scope."
+        },
+        {
           "description": "Enables the desktop_mandatory_dismiss command without any pre-configured scope.",
           "type": "string",
           "const": "allow-desktop-mandatory-dismiss",
@@ -829,6 +841,18 @@
           "type": "string",
           "const": "deny-desktop-keybindings-write",
           "markdownDescription": "Denies the desktop_keybindings_write command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the desktop_keyboard_configure command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-desktop-keyboard-configure",
+          "markdownDescription": "Denies the desktop_keyboard_configure command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the desktop_log command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-desktop-log",
+          "markdownDescription": "Denies the desktop_log command without any pre-configured scope."
         },
         {
           "description": "Denies the desktop_mandatory_dismiss command without any pre-configured scope.",

@@ -9,10 +9,7 @@
 use std::{
     fs,
     path::PathBuf,
-    sync::{
-        atomic::AtomicBool,
-        Mutex,
-    },
+    sync::{atomic::AtomicBool, Mutex},
     time::Duration,
 };
 
@@ -110,7 +107,12 @@ fn resolve_manifest(app: &AppHandle) -> Installation {
         feed: None,
         api: None,
     };
-    let Some(path) = app.path().resource_dir().ok().map(|root| root.join("rt/package.json")) else {
+    let Some(path) = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|root| root.join("rt/package.json"))
+    else {
         return unreadable;
     };
     let Ok(raw) = fs::read_to_string(path) else {
@@ -190,7 +192,11 @@ fn api_url(owner: &str, name: &str) -> String {
  */
 pub(crate) fn restore(app: &AppHandle) {
     let remembered = read_state(app).unwrap_or_default();
-    *app.state::<crate::DesktopState>().updates.state.lock().unwrap() = remembered;
+    *app.state::<crate::DesktopState>()
+        .updates
+        .state
+        .lock()
+        .unwrap() = remembered;
 }
 
 impl UpdateMonitor {
@@ -327,8 +333,8 @@ fn fetch_release(url: &str) -> Option<FeedDocument> {
 /**
  * Project a release API response onto the feed's fields.
  *
- * The installer links are keyed by platform so the page picks one without
- * knowing the release's asset names.
+ * macOS arm64 DMG and Windows x64 EXE links are keyed by platform so the page
+ * picks one without knowing the release's asset names.
  * @param document - release API response.
  * @returns the release facts, or `None` when the response names no release.
  */
@@ -336,19 +342,20 @@ fn release_document(document: &serde_json::Value) -> Option<FeedDocument> {
     let version = document.get("tag_name")?.as_str()?.to_string();
     let mut assets = std::collections::BTreeMap::new();
     for asset in document.get("assets")?.as_array()? {
-        let Some(name) = asset.get("name").and_then(|value| value.as_str()) else { continue };
-        let Some(link) = asset.get("browser_download_url").and_then(|value| value.as_str()) else {
+        let Some(name) = asset.get("name").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        let Some(link) = asset
+            .get("browser_download_url")
+            .and_then(|value| value.as_str())
+        else {
             continue;
         };
         // Only the installers a page can offer; checksums and blockmaps stay out.
-        let key = if name.contains("macos") {
+        let key = if name.starts_with("deepdive-macos-arm64-") && name.ends_with(".dmg") {
             "macos"
-        } else if name.contains("windows") {
+        } else if name.starts_with("deepdive-windows-x64-") && name.ends_with(".exe") {
             "windows"
-        } else if name.ends_with(".AppImage") {
-            "linuxAppImage"
-        } else if name.ends_with(".deb") {
-            "linuxDeb"
         } else {
             continue;
         };
@@ -356,7 +363,10 @@ fn release_document(document: &serde_json::Value) -> Option<FeedDocument> {
     }
     Some(FeedDocument {
         version: Some(version),
-        notes: document.get("body").and_then(|value| value.as_str()).map(str::to_string),
+        notes: document
+            .get("body")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
         page: document
             .get("html_url")
             .and_then(|value| value.as_str())
@@ -375,12 +385,13 @@ fn release_document(document: &serde_json::Value) -> Option<FeedDocument> {
  * @returns whether the one-time native reminder should be raised.
  */
 fn absorb(installation: &Installation, document: FeedDocument, state: &mut UpdateState) -> bool {
-    let Some(version) = document.version else { return false };
+    let Some(version) = document.version else {
+        return false;
+    };
     let version = version.trim().trim_start_matches(['v', 'V']).to_string();
-    let known = state
-        .latest
-        .as_deref()
-        .filter(|previous| compare_versions(&version, previous).is_some_and(|ordering| ordering <= 0));
+    let known = state.latest.as_deref().filter(|previous| {
+        compare_versions(&version, previous).is_some_and(|ordering| ordering <= 0)
+    });
     if known.is_some()
         || compare_versions(&version, &installation.version).is_none_or(|ordering| ordering <= 0)
     {
@@ -423,15 +434,19 @@ fn absorb(installation: &Installation, document: FeedDocument, state: &mut Updat
  * @param state - state carrying the release found.
  */
 fn announce(app: &AppHandle, state: &UpdateState) {
-    let Some(version) = state.latest.clone() else { return };
-    let focused = app.get_webview_window("main")
+    let Some(version) = state.latest.clone() else {
+        return;
+    };
+    let focused = app
+        .get_webview_window("main")
         .is_some_and(|window| window.is_focused().unwrap_or(false));
     if focused {
         return;
     }
     // A notification that cancels itself on click stays in the notification
     // center until read, without interrupting whatever the user is doing.
-    let notified = app.notification()
+    let notified = app
+        .notification()
         .builder()
         .title("DeepDive")
         .body(format!("Version {version} is available."))
@@ -459,7 +474,9 @@ pub(crate) fn poll_now(app: &AppHandle) -> bool {
         .as_deref()
         .and_then(fetch_feed)
         .or_else(|| installation.api.as_deref().and_then(fetch_release));
-    let Some(document) = document else { return false };
+    let Some(document) = document else {
+        return false;
+    };
     let state = app.state::<crate::DesktopState>();
     let mut guard = state.updates.state.lock().unwrap();
     let announce_now = absorb(&installation, document, &mut guard);
@@ -647,28 +664,25 @@ mod tests {
                     "browser_download_url": "https://example.test/windows.exe",
                 },
                 {
-                    "name": "deepdive-linux-x64-0.3.0.AppImage",
-                    "browser_download_url": "https://example.test/appimage",
-                },
-                {
-                    "name": "deepdive-linux-x64-0.3.0.deb",
-                    "browser_download_url": "https://example.test/deb",
-                },
-                {
-                    "name": "deepdive-linux-x64-0.3.0.AppImage.sha256",
+                    "name": "deepdive-macos-arm64-0.3.0.dmg.sha256",
                     "browser_download_url": "https://example.test/sha256",
+                },
+                {
+                    "name": "deepdive-windows-x64-0.3.0.exe.blockmap",
+                    "browser_download_url": "https://example.test/blockmap",
                 },
             ],
         });
         let document = release_document(&response).unwrap();
         assert_eq!(document.version.as_deref(), Some("v0.3.0"));
-        assert_eq!(document.page.as_deref(), Some("https://github.com/owner/name/releases/tag/v0.3.0"));
+        assert_eq!(
+            document.page.as_deref(),
+            Some("https://github.com/owner/name/releases/tag/v0.3.0")
+        );
         let assets = document.assets.unwrap();
-        assert_eq!(assets.len(), 4);
+        assert_eq!(assets.len(), 2);
         assert_eq!(assets["macos"], "https://example.test/macos.dmg");
         assert_eq!(assets["windows"], "https://example.test/windows.exe");
-        assert_eq!(assets["linuxAppImage"], "https://example.test/appimage");
-        assert_eq!(assets["linuxDeb"], "https://example.test/deb");
         // Only the feed carries policy, so a release API document never blocks.
         assert!(document.mandatory_minimum.is_none());
     }
@@ -695,7 +709,11 @@ mod tests {
         let mut state = UpdateState::default();
         absorb(&installation, document("0.2.0", Some("0.2.0")), &mut state);
         assert_eq!(state.mandatory_minimum.as_deref(), Some("0.2.0"));
-        absorb(&installation, document("0.3.0", Some("not-a-version")), &mut state);
+        absorb(
+            &installation,
+            document("0.3.0", Some("not-a-version")),
+            &mut state,
+        );
         assert_eq!(state.mandatory_minimum.as_deref(), Some("0.2.0"));
         absorb(&installation, document("0.4.0", Some("0.3.5")), &mut state);
         assert_eq!(state.mandatory_minimum.as_deref(), Some("0.3.5"));

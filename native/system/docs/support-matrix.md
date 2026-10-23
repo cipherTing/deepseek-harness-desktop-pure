@@ -7,7 +7,7 @@
 | darwin-x64 | macos-15-intel | system.node |
 | darwin-arm64 | macos-latest | system.node |
 
-The stable Node-API v8 addon is built once per platform/libc and exercised by CI under Node 20, 22, 24, and 26. macOS builds target 11.0 or later. Linux binding selection uses the running Node process's libc; the static launcher serves both libc variants.
+The stable Node-API v8 addon is built once per platform/libc and exercised by CI under Node 20, 22, 24, and 26. macOS builds target 13.0 or later. Linux binding selection uses the running Node process's libc; the static launcher serves both libc variants.
 
 Landlock additionally requires an enforcing Linux kernel. The functional probe determines full, partial, or unusable enforcement; kernel version alone is not an availability guarantee.
 

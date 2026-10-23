@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在独立的右侧 Sidebar tab 中浏览 HTTP(S) 页面，包括 loopback 服务。Web 使用 iframe 和应用维护的 history；Desktop 使用 Electron `<webview>`、原生导航 history 和保活页面。本包不会向被访问内容注入 Electron 或 Node 能力。
+在独立的右侧 Sidebar tab 中浏览 HTTP(S) 页面，包括 loopback 服务。Web 使用 iframe 和应用维护的 history；DeepDive Desktop 使用 Tauri 原生 child WebView 和原生导航 history，并在应用运行期间为每个 workspace 分配独立的内存存储分区。被访问页面不会获得 Electron 或 Node 能力。
 
 ## 目录
 
@@ -66,11 +66,11 @@ Web 记录 toolbar 提交和 typed tab 打开。导航状态机把每个受控 r
 
 ### Controller
 
-每个 tab 的 `BrowserController` 负责地址校验、命令和显式恢复。`BrowserFrame` 提供与载体无关的导航状态；`IframeImpl` 使用 `BrowserNavigation`，`ElectronWebViewImpl` 观察 Chromium history。`BrowserPresentation` 负责 DOM 的物理挂载。Slot injection 提供 `useBrowserState` 和普通 callback，React body 不接收 provider 对象或 observable。
+每个 tab 的 `BrowserController` 负责地址校验、命令和显式恢复。`BrowserFrame` 提供与载体无关的导航状态；`IframeImpl` 使用 `BrowserNavigation`，沿用旧名称的 `ElectronWebViewImpl` 通过 `DesktopBrowserBridge` 读取 guest 状态。在 DeepDive Desktop 中，Tauri Rust host 创建原生 child WebView，页面侧 bridge 提供其限定范围内的操作。`BrowserPresentation` 负责 Web iframe 与 Desktop 锚点的 DOM 挂载。Slot injection 提供 `useBrowserState` 和普通 callback，React body 不接收 provider 对象或 observable。
 
-Desktop 主进程批准 guest 租约，并执行挂载、导航和权限策略。preload 只暴露限定范围的 Browser 操作。共享声明通过标准 `/types` 出口配合 `import type` 引入；Host 与 Client 使用独立 tsconfig 编译。Desktop Browser tab 声明 `keepMounted`，Sidebar 因而在切 tab、切 Session、收起与浮动期间保留其 DOM。
+Tauri Rust host 批准 guest 租约，并执行挂载、导航和权限策略。页面侧 Desktop bridge 只暴露限定范围的 Browser 操作；Electron preload 行为属于 Electron host，DeepDive Desktop 不使用它。原生 guest 获得焦点时，其 anchor 会发出可穿过 shadow root 的非冒泡 `focus` 事件供 DOM owner 处理，但不会改变 document 或原生窗口焦点。共享声明通过标准 `/types` 出口配合 `import type` 引入；Host 与 Client 使用独立 tsconfig 编译。Desktop Browser tab 声明 `keepMounted`，Sidebar 因而在切 tab、切 Session、收起与浮动期间保留其 DOM。
 
-页面刷新快捷键调用工具栏使用的同一重载操作。其 Tooltip 和 ARIA 组合随有效绑定更新。Desktop 通过所属窗口路由已批准 guest 中的有效快捷键；获焦 webview 必须仍持有该 guest 的租约。Web 保留浏览器专用组合。
+页面刷新快捷键调用工具栏使用的同一重载操作。其 Tooltip 和 ARIA 组合随有效绑定更新。Tauri Desktop 在主应用 WebView 中匹配快捷键，并通过原生键盘输入处理 HTML 预览 frame 和 Browser guest 中的按键。Web 保留浏览器专用组合。
 
 </details>
 
@@ -106,7 +106,7 @@ Desktop 主进程批准 guest 租约，并执行挂载、导航和权限策略�
 - 出于安全原因，浏览器会隐藏很多 iframe 失败：DNS、TLS、mixed-content、CSP 与 `X-Frame-Options` 失败可能触发 `load`，也可能不提供可操作 event，而不是触发 `error`。加载失败 notice 只能作为 best-effort 提示。
 - 只要 tab 仍在 Sidebar 布局中，保存的标题和 URL 就会跨刷新与插件卸载保留。关闭 tab 会删除其检查点。重启恢复不恢复页面内存、未保存的表单或 Chromium history 栈。
 - 本地文件会被拒绝，并继续由 Document Preview 负责。
-- Desktop 按规范化的工作区 CWD 共享进程内存储分区；没有解析到 Workspace 的 Session 单独隔离。Cookie 与 Web storage 不跨应用重启保留。guest 权限、下载与原生 popup 均被拒绝；通过检查的 HTTP(S) popup 请求会打开 Sidebar tab。Host 地址过滤不是通用私网或 DNS-rebinding 防火墙。
+- 同一个 Workspace 中的 Desktop Browser tab 共用内存存储分区；不同 workspace 彼此隔离。DeepDive 退出时会清除这些分区。媒体采集权限、下载与原生 popup 均被拒绝；通过检查的 HTTP(S) popup 请求会打开 Sidebar tab。Host 地址过滤不是通用私网或 DNS-rebinding 防火墙。
 
 <a id="dev-note"></a>
 ### 开发备注

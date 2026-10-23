@@ -2,7 +2,7 @@
 import { vi } from 'vitest'
 import type {
   DesktopBrowserBridge, DesktopBrowserEvent, DesktopBrowserGuestState, DesktopBrowserLeaseId,
-  DesktopBrowserRect, DesktopBrowserReservation,
+  DesktopBrowserLoadFailure, DesktopBrowserRect, DesktopBrowserReservation,
 } from '../src/types.ts'
 import type { BrowserTabState } from '../src/client/browser/BrowserPersistence.ts'
 import { createElectronPage } from '../src/client/electron/pages.ts'
@@ -29,7 +29,7 @@ export function electronFixture(initial?: BrowserTabState) {
     ...idleState(),
   }
   const bridge = {
-    acquire: vi.fn(async (_workspace: string) => reservation),
+    acquire: vi.fn(async (_workspace: string, _initialUrl: string) => reservation),
     release: vi.fn(async (_lease: DesktopBrowserLeaseId) => {}),
     onOpenRequested: vi.fn((_lease: DesktopBrowserLeaseId, listener: (url: string) => void) => {
       opens.add(listener)
@@ -42,6 +42,7 @@ export function electronFixture(initial?: BrowserTabState) {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     }),
+    reportMeasurement: vi.fn(async (_message: string) => {}),
     place: vi.fn(async (_lease: DesktopBrowserLeaseId, _rect: DesktopBrowserRect, _visible: boolean) => {}),
     setVisible: vi.fn(async (_lease: DesktopBrowserLeaseId, _visible: boolean) => {}),
   } satisfies DesktopBrowserBridge
@@ -65,8 +66,14 @@ export function electronFixture(initial?: BrowserTabState) {
     ...page, presentation, bridge, workspace, persist, openRequested, opens, anchors, host, reservation, hostState,
     mount: () => presentation.mount(host.id),
     /** Publish one host notification whose payload is the current `hostState`. */
-    emit: (kind: DesktopBrowserEvent['kind']) => {
+    emit: (kind: Exclude<DesktopBrowserEvent['kind'], 'load-failed'>) => {
       for (const listener of [...listeners]) listener({ lease: reservation.lease, kind, state: { ...hostState } })
+    },
+    emitLoadFailed: (error: DesktopBrowserLoadFailure) => {
+      const state = { ...hostState, error }
+      for (const listener of [...listeners]) {
+        listener({ lease: reservation.lease, kind: 'load-failed', state, error })
+      }
     },
     /** Give the current anchor a fixed box, so measurements are deterministic. */
     moveAnchor: (box: { x: number; y: number; width: number; height: number }) => {

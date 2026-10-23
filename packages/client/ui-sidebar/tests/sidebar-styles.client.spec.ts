@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const css = readFileSync(fileURLToPath(new URL('../src/client/SidebarRoot.module.css', import.meta.url)), 'utf8')
+const sidebarSource = readFileSync(fileURLToPath(new URL('../src/client/SidebarRoot.tsx', import.meta.url)), 'utf8')
 
 /**
  * Declarations of one exact selector, keyed by property.
@@ -71,5 +72,11 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.brandName')?.get('font-size')).toBe('18px')
     expect(declarations('.fallbackBrandName')?.get('font-size')).toBe('17px')
     expect(declarations('.fallbackBrandName')?.get('white-space')).toBe('nowrap')
+  })
+
+  it('keeps the macOS traffic-light strip compact and draggable', () => {
+    expect(declarations('.topStrip')?.get('height')).toBe('40px')
+    expect(declarations('.topStrip + .logoRow')?.get('margin-top')).toBe('-12px')
+    expect(sidebarSource).toMatch(/className=\{css\.topStrip\} data-window-drag/)
   })
 })

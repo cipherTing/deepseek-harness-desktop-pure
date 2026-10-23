@@ -707,9 +707,11 @@ dependencies = [
 name = "deepseek-harness-desktop"
 version = "0.2.0"
 dependencies = [
- "gio",
+ "dispatch2",
+ "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "objc2-web-kit",
  "rmp-serde",
  "rmpv",
  "serde",
@@ -722,10 +724,11 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-shell",
  "tauri-plugin-single-instance",
- "tempfile",
  "tokio",
  "ureq",
  "url",
+ "webview2-com",
+ "windows 0.61.3",
  "windows 0.62.2",
 ]
 
@@ -4082,8 +4085,6 @@ dependencies = [
 [[package]]
 name = "tauri-runtime-wry"
 version = "2.11.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e6fac707727b7a2f48e4ded90976324267371073edbb415ffb73bb0458d203f"
 dependencies = [
  "gtk",
  "http",
@@ -5581,8 +5582,6 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 [[package]]
 name = "wry"
 version = "0.55.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "186f9871daa55fd9c016578b810d149de58367113db7fb72b462d2323ce19514"
 dependencies = [
  "base64 0.22.1",
  "block2",

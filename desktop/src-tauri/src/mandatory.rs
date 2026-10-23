@@ -56,7 +56,12 @@ static OPENING: Mutex<()> = Mutex::new(());
 
 /** @returns the remembered acknowledgement document. */
 fn read_state(app: &AppHandle) -> MandatoryState {
-    let Some(path) = app.path().app_config_dir().ok().map(|root| root.join(STATE_FILE)) else {
+    let Some(path) = app
+        .path()
+        .app_config_dir()
+        .ok()
+        .map(|root| root.join(STATE_FILE))
+    else {
         return MandatoryState::default();
     };
     std::fs::read_to_string(path)
@@ -67,7 +72,12 @@ fn read_state(app: &AppHandle) -> MandatoryState {
 
 /** Persist the acknowledgement; a failure only costs one repeated window. */
 fn write_state(app: &AppHandle, state: &MandatoryState) {
-    let Some(path) = app.path().app_config_dir().ok().map(|root| root.join(STATE_FILE)) else {
+    let Some(path) = app
+        .path()
+        .app_config_dir()
+        .ok()
+        .map(|root| root.join(STATE_FILE))
+    else {
         return;
     };
     if let Some(parent) = path.parent() {
@@ -200,11 +210,7 @@ pub(crate) async fn desktop_mandatory_dismiss(
 ) -> Result<(), String> {
     acknowledge(&app, &minimum);
     if open_page {
-        let page = app
-            .state::<crate::DesktopState>()
-            .updates
-            .snapshot()
-            .page;
+        let page = app.state::<crate::DesktopState>().updates.snapshot().page;
         if let Some(page) = page {
             app.opener()
                 .open_url(page, None::<&str>)
@@ -244,7 +250,10 @@ mod tests {
         let raw = serde_json::to_string(&state).unwrap();
         assert_eq!(raw, "{\"acknowledged\":\"0.3.0\"}");
         assert_eq!(
-            serde_json::from_str::<MandatoryState>(&raw).unwrap().acknowledged.as_deref(),
+            serde_json::from_str::<MandatoryState>(&raw)
+                .unwrap()
+                .acknowledged
+                .as_deref(),
             Some("0.3.0"),
         );
     }
