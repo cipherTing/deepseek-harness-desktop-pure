@@ -107,6 +107,21 @@ impl BrowserPlatformHooks {
             browser_window_windows::remove(view, hooks.clone()).await
         }
     }
+
+    #[cfg(windows)]
+    async fn remove_without_view(&self, app: &tauri::AppHandle) -> Result<(), String> {
+        let Self::Windows(hooks) = self;
+        browser_window_windows::remove_without_view(app, hooks.clone()).await
+    }
+
+    #[cfg(windows)]
+    async fn remove_by_lease(
+        app: &tauri::AppHandle,
+        view: Option<&Webview>,
+        lease: &str,
+    ) -> Result<(), String> {
+        browser_window_windows::remove_by_lease(app, view, lease.to_string()).await
+    }
 }
 
 /** Registry of live guests, keyed by the page-issued lease id. */
@@ -162,6 +177,14 @@ impl BrowserRegistry {
     fn remove(&self, lease: &str) -> Option<BrowserGuest> {
         self.guests.lock().unwrap().remove(lease)
     }
+}
+
+/** Remove Windows Browser hooks and release workspace COM references on the UI thread. */
+#[cfg(windows)]
+pub(crate) fn release_platform_storage() -> Vec<String> {
+    let failures = browser_window_windows::remove_all_hooks();
+    storage::release_platform_storages();
+    failures
 }
 
 /** Parse one absolute browser URL that does not contain credentials. */
@@ -752,14 +775,39 @@ pub(crate) async fn desktop_browser_release(
     lease: String,
 ) -> Result<(), String> {
     let guest = state.browser.remove(&lease);
-    if let Some(view) = app.get_webview(&lease) {
-        if let Some(guest) = guest {
-            guest.keyboard_hook.remove(&view).await?;
-            guest.platform_hooks.remove(&view).await?;
+    let view = app.get_webview(&lease);
+    let mut failures = Vec::new();
+    if let Some(guest) = guest {
+        if let Some(view) = view.as_ref() {
+            if let Err(error) = guest.keyboard_hook.remove(view).await {
+                failures.push(format!("Browser keyboard hook: {error}"));
+            }
+            if let Err(error) = guest.platform_hooks.remove(view).await {
+                failures.push(format!("Browser platform hooks: {error}"));
+            }
+        } else {
+            #[cfg(windows)]
+            if let Err(error) = guest.platform_hooks.remove_without_view(&app).await {
+                failures.push(format!("Browser platform hooks: {error}"));
+            }
         }
-        view.close().map_err(|error| error.to_string())?;
+    } else {
+        #[cfg(windows)]
+        if let Err(error) = BrowserPlatformHooks::remove_by_lease(&app, view.as_ref(), &lease).await
+        {
+            failures.push(format!("Browser platform hooks: {error}"));
+        }
     }
-    Ok(())
+    if let Some(view) = view {
+        if let Err(error) = view.close() {
+            failures.push(format!("Browser WebView close: {error}"));
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
 }
 
 #[cfg(test)]

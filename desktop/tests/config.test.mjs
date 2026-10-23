@@ -565,6 +565,27 @@ test('Desktop bundles only the three required app icons', () => {
   assert.deepEqual(iconSizes, ['16x16', '24x24', '32x32', '48x48', '64x64', '128x128', '256x256'])
 })
 
+test('Windows Browser COM state stays on the UI thread outside managed state', () => {
+  const storage = readFileSync(new URL('../src-tauri/src/browser_window/storage.rs', import.meta.url), 'utf8')
+  const browserWindow = readFileSync(new URL('../src-tauri/src/browser_window.rs', import.meta.url), 'utf8')
+  const windowsHooks = readFileSync(new URL('../src-tauri/src/browser_window/windows.rs', import.meta.url), 'utf8')
+  const shell = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  assert.match(storage, /#\[cfg\(windows\)\]\s+partitions: PartitionCache<\(\)>/)
+  assert.match(storage, /thread_local!\s*\{[\s\S]*?PLATFORM_STORAGES[\s\S]*?HashMap<String, PlatformStorage>/)
+  assert.match(storage, /PLATFORM_STORAGES\.with\(\|storages\|\s*storages\.borrow_mut\(\)\.clear\(\)\)/)
+  assert.match(windowsHooks, /thread_local!\s*\{[\s\S]*?GUEST_HOOKS[\s\S]*?HashMap<String, Vec<EventRegistration>>/)
+  assert.match(windowsHooks, /pub\(crate\) struct GuestHooks\(String\)/)
+  assert.match(windowsHooks, /pub\(crate\) fn remove_all_hooks\(\)[\s\S]*?remove_hooks\(&lease\)/)
+  assert.match(windowsHooks, /let \(cleanup_errors, remaining\) = remove_registrations/)
+  assert.match(browserWindow, /browser_window_windows::remove_all_hooks\(\)[\s\S]*storage::release_platform_storages\(\)/)
+  const release = browserWindow.match(/pub\(crate\) async fn desktop_browser_release\([\s\S]*?\n\}/)?.[0]
+  assert.ok(release)
+  assert.doesNotMatch(release, /\.await\?/)
+  assert.match(release, /Browser platform hooks: \{error\}/)
+  assert.match(release, /view\.close\(\)/)
+  assert.match(shell, /RunEvent::Exit\s*=>\s*\{[\s\S]*?browser_window::release_platform_storage\(\)/)
+})
+
 test('macOS preserves the Node sidecar JIT and native addon permissions', () => {
   const config = readJson(new URL('../src-tauri/tauri.conf.json', import.meta.url))
   const entitlements = readFileSync(new URL('../src-tauri/node-entitlements.plist', import.meta.url), 'utf8')

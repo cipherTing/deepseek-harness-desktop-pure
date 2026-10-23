@@ -1219,6 +1219,12 @@ pub fn run() {
     devlog::init(app.handle());
     app.run(|app, event| {
         match event {
+            #[cfg(windows)]
+            RunEvent::Exit => {
+                for failure in browser_window::release_platform_storage() {
+                    devlog::write(format_args!("Browser shutdown cleanup failed: {failure}"));
+                }
+            }
             RunEvent::ExitRequested { code, api, .. } => {
                 let state = app.state::<DesktopState>();
                 devlog::write(format_args!(

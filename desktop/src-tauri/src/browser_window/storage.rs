@@ -8,7 +8,10 @@ use tokio::sync::{oneshot, Mutex};
 /** Retains a workspace's partition after its final tab closes. */
 #[derive(Default)]
 pub(super) struct WorkspaceStorage {
+    #[cfg(target_os = "macos")]
     partitions: PartitionCache<PlatformStorage>,
+    #[cfg(windows)]
+    partitions: PartitionCache<()>,
 }
 
 struct Partition<T> {
@@ -59,6 +62,19 @@ struct PlatformStorage {
     directory: std::path::PathBuf,
 }
 
+#[cfg(windows)]
+std::thread_local! {
+    // WebView2 COM objects stay on the Tauri UI thread; DesktopState stores only workspace names.
+    static PLATFORM_STORAGES: std::cell::RefCell<HashMap<String, PlatformStorage>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+/** Release UI-thread COM references before Tauri tears down its event loop. */
+#[cfg(windows)]
+pub(super) fn release_platform_storages() {
+    PLATFORM_STORAGES.with(|storages| storages.borrow_mut().clear());
+}
+
 impl WorkspaceStorage {
     /** Attach a tab to the workspace's retained memory store, creating it once. */
     pub(super) async fn create_view(
@@ -75,8 +91,21 @@ impl WorkspaceStorage {
         let app_main = app.clone();
         let (send, receive) = oneshot::channel();
         app.run_on_main_thread(move || {
+            #[cfg(target_os = "macos")]
             let result = configure_builder(&partition.storage, builder)
                 .and_then(|builder| add_child(&app_main, builder));
+            #[cfg(windows)]
+            let result = PLATFORM_STORAGES.with(|storages| {
+                let builder = {
+                    let storages = storages.borrow();
+                    let storage = storages.get(&partition.name).ok_or_else(|| {
+                        "Desktop Browser workspace storage is not available on the UI thread"
+                            .to_string()
+                    })?;
+                    configure_builder(storage, builder)?
+                };
+                add_child(&app_main, builder)
+            });
             let _ = send.send(result);
         })
         .map_err(|error| error.to_string())?;
@@ -132,7 +161,7 @@ fn configure_builder(
 }
 
 #[cfg(windows)]
-async fn create_storage(app: &tauri::AppHandle, name: String) -> Result<PlatformStorage, String> {
+async fn create_storage(app: &tauri::AppHandle, name: String) -> Result<(), String> {
     use tauri::WebviewUrl;
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_13;
     use webview2_windows::core::{Interface, BOOL};
@@ -164,6 +193,10 @@ async fn create_storage(app: &tauri::AppHandle, name: String) -> Result<Platform
         return Err(error.to_string());
     }
     let (send, receive) = oneshot::channel();
+    let storage_name = name.clone();
+    let directory_for_storage = directory.clone();
+    let storage_anchor = anchor.clone();
+    let cleanup_anchor = anchor.clone();
     let inspect = anchor.with_webview(move |platform| {
         // SAFETY: Tauri invokes this callback on the controller's owning thread.
         let result = unsafe {
@@ -178,26 +211,38 @@ async fn create_storage(app: &tauri::AppHandle, name: String) -> Result<Platform
                 Ok(platform.environment())
             })()
         };
-        let _ = send.send(result);
-    });
-    let result = match inspect {
-        Ok(()) => receive
-            .await
-            .map_err(|_| "Desktop Browser storage creation was interrupted".to_string())
-            .and_then(|result| result),
-        Err(error) => Err(error.to_string()),
-    };
-    match result {
-        Ok(environment) => Ok(PlatformStorage {
-            _anchor: anchor,
-            environment,
-            directory,
-        }),
-        Err(error) => {
-            let _ = anchor.close();
-            Err(error)
+        match result {
+            Ok(environment) => {
+                PLATFORM_STORAGES.with(|storages| {
+                    storages.borrow_mut().insert(
+                        storage_name.clone(),
+                        PlatformStorage {
+                            _anchor: storage_anchor,
+                            environment,
+                            directory: directory_for_storage,
+                        },
+                    );
+                });
+                if send.send(Ok(())).is_err() {
+                    PLATFORM_STORAGES.with(|storages| {
+                        storages.borrow_mut().remove(&storage_name);
+                    });
+                    let _ = cleanup_anchor.close();
+                }
+            }
+            Err(error) => {
+                let _ = cleanup_anchor.close();
+                let _ = send.send(Err(error));
+            }
         }
+    });
+    if let Err(error) = inspect {
+        let _ = anchor.close();
+        return Err(error.to_string());
     }
+    receive
+        .await
+        .map_err(|_| "Desktop Browser storage creation was interrupted".to_string())?
 }
 
 #[cfg(windows)]

@@ -2,14 +2,7 @@
 
 #![cfg(windows)]
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
-};
+use std::{cell::RefCell, rc::Rc};
 
 use tauri::{webview::PlatformWebview, AppHandle, Webview};
 use url::{Host, Url};
@@ -36,14 +29,15 @@ struct NavigationTracker {
     current: Option<Navigation>,
 }
 
-/** Event registrations shared by the Browser registry and origin updater. */
-#[derive(Clone)]
-pub(crate) struct GuestHooks(Arc<GuestHookState>);
-
-struct GuestHookState {
-    registrations: Mutex<Option<Vec<EventRegistration>>>,
-    removed: AtomicBool,
+/** UI-thread registry for guest event tokens and their WebView2 interfaces. */
+std::thread_local! {
+    static GUEST_HOOKS: RefCell<std::collections::HashMap<String, Vec<EventRegistration>>> =
+        RefCell::new(std::collections::HashMap::new());
 }
+
+/** Copyable lease key for registrations retained on the WebView UI thread. */
+#[derive(Clone)]
+pub(crate) struct GuestHooks(String);
 
 enum EventRegistration {
     Permission(ICoreWebView2, i64),
@@ -53,22 +47,6 @@ enum EventRegistration {
     NavigationCompleted(ICoreWebView2, i64),
     WebResourceRequested(ICoreWebView2, i64),
     RequestFilter(ICoreWebView2_22, HSTRING),
-}
-
-impl GuestHookState {
-    /** Remove each installed event and filter once, while the view is alive. */
-    fn remove(&self) -> Vec<String> {
-        if self.removed.swap(true, Ordering::AcqRel) {
-            return Vec::new();
-        }
-        let registrations = self
-            .registrations
-            .lock()
-            .unwrap()
-            .take()
-            .unwrap_or_default();
-        remove_registrations(registrations)
-    }
 }
 
 /** Install permission, focus, history, failure, and loopback-request hooks. */
@@ -81,16 +59,26 @@ pub(crate) async fn install(
     let origin = parse_sidecar_origin(origin)?;
     let app = app.clone();
     let lease = lease.to_string();
-    with_platform(view, move |platform| unsafe {
-        install_on_platform(&app, &lease, platform, origin)
+    let install_lease = lease.clone();
+    let result = with_platform(view, move |platform| unsafe {
+        install_on_platform(&app, &install_lease, platform, origin)
     })
-    .await
+    .await;
+    match result {
+        Ok(hooks) => Ok(hooks),
+        Err(error) => match remove(view, GuestHooks(lease)).await {
+            Ok(()) => Err(error),
+            Err(cleanup_error) => Err(format!(
+                "{error}; retrying partial Browser hook cleanup failed: {cleanup_error}"
+            )),
+        },
+    }
 }
 
 /** Remove native handlers before the guest WebView closes. */
 pub(crate) async fn remove(view: &Webview, hooks: GuestHooks) -> Result<(), String> {
     with_platform(view, move |_| {
-        let failures = hooks.0.remove();
+        let failures = remove_hooks(&hooks.0);
         if failures.is_empty() {
             Ok(())
         } else {
@@ -98,6 +86,68 @@ pub(crate) async fn remove(view: &Webview, hooks: GuestHooks) -> Result<(), Stri
         }
     })
     .await
+}
+
+/** Remove guest subscriptions on the UI thread when its Webview handle is gone. */
+pub(crate) async fn remove_without_view(app: &AppHandle, hooks: GuestHooks) -> Result<(), String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        let _ = sender.send(remove_hooks(&hooks.0));
+    })
+    .map_err(|error| error.to_string())?;
+    let failures = receiver
+        .await
+        .map_err(|_| "Browser WebView cleanup ended before returning".to_string())?;
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
+/** Retry one lease's retained handlers on the owning UI thread. */
+pub(crate) async fn remove_by_lease(
+    app: &AppHandle,
+    view: Option<&Webview>,
+    lease: String,
+) -> Result<(), String> {
+    let hooks = GuestHooks(lease);
+    match view {
+        Some(view) => remove(view, hooks).await,
+        None => remove_without_view(app, hooks).await,
+    }
+}
+
+/** Remove remaining guest subscriptions before Tauri destroys its UI thread. */
+pub(crate) fn remove_all_hooks() -> Vec<String> {
+    let leases = GUEST_HOOKS
+        .with(|hooks_by_lease| hooks_by_lease.borrow().keys().cloned().collect::<Vec<_>>());
+    leases
+        .into_iter()
+        .flat_map(|lease| {
+            remove_hooks(&lease)
+                .into_iter()
+                .map(move |failure| format!("lease {lease}: {failure}"))
+        })
+        .collect()
+}
+
+fn remove_hooks(lease: &str) -> Vec<String> {
+    let registrations = GUEST_HOOKS.with(|hooks_by_lease| {
+        hooks_by_lease
+            .borrow_mut()
+            .remove(lease)
+            .unwrap_or_default()
+    });
+    let (failures, remaining) = remove_registrations(registrations);
+    if !remaining.is_empty() {
+        GUEST_HOOKS.with(|hooks_by_lease| {
+            hooks_by_lease
+                .borrow_mut()
+                .insert(lease.to_string(), remaining);
+        });
+    }
+    failures
 }
 
 /** Read back and forward availability from WebView2's native history. */
@@ -373,7 +423,16 @@ unsafe fn install_on_platform(
     })();
 
     if let Err(error) = setup {
-        let cleanup_errors = remove_registrations(std::mem::take(&mut registrations));
+        let (cleanup_errors, remaining) = remove_registrations(std::mem::take(&mut registrations));
+        if !remaining.is_empty() {
+            GUEST_HOOKS.with(|hooks_by_lease| {
+                hooks_by_lease
+                    .borrow_mut()
+                    .entry(lease.to_string())
+                    .or_default()
+                    .extend(remaining);
+            });
+        }
         return Err(if cleanup_errors.is_empty() {
             error
         } else {
@@ -384,34 +443,39 @@ unsafe fn install_on_platform(
         });
     }
 
-    Ok(GuestHooks(Arc::new(GuestHookState {
-        registrations: Mutex::new(Some(registrations)),
-        removed: AtomicBool::new(false),
-    })))
+    GUEST_HOOKS.with(|hooks_by_lease| {
+        hooks_by_lease
+            .borrow_mut()
+            .insert(lease.to_string(), registrations);
+    });
+    Ok(GuestHooks(lease.to_string()))
 }
 
-fn remove_registrations(registrations: Vec<EventRegistration>) -> Vec<String> {
+fn remove_registrations(
+    registrations: Vec<EventRegistration>,
+) -> (Vec<String>, Vec<EventRegistration>) {
     let mut failures = Vec::new();
+    let mut remaining = Vec::new();
     for registration in registrations.into_iter().rev() {
         let result = unsafe {
-            match registration {
+            match &registration {
                 EventRegistration::Permission(webview, token) => {
-                    webview.remove_PermissionRequested(token)
+                    webview.remove_PermissionRequested(*token)
                 }
-                EventRegistration::Focus(controller, token) => controller.remove_GotFocus(token),
-                EventRegistration::History(webview, token) => webview.remove_HistoryChanged(token),
+                EventRegistration::Focus(controller, token) => controller.remove_GotFocus(*token),
+                EventRegistration::History(webview, token) => webview.remove_HistoryChanged(*token),
                 EventRegistration::NavigationStarting(webview, token) => {
-                    webview.remove_NavigationStarting(token)
+                    webview.remove_NavigationStarting(*token)
                 }
                 EventRegistration::NavigationCompleted(webview, token) => {
-                    webview.remove_NavigationCompleted(token)
+                    webview.remove_NavigationCompleted(*token)
                 }
                 EventRegistration::WebResourceRequested(webview, token) => {
-                    webview.remove_WebResourceRequested(token)
+                    webview.remove_WebResourceRequested(*token)
                 }
                 EventRegistration::RequestFilter(webview, filter) => webview
                     .RemoveWebResourceRequestedFilterWithRequestSourceKinds(
-                        &filter,
+                        filter,
                         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
                         COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL,
                     ),
@@ -419,9 +483,11 @@ fn remove_registrations(registrations: Vec<EventRegistration>) -> Vec<String> {
         };
         if let Err(error) = result {
             failures.push(error.to_string());
+            remaining.push(registration);
         }
     }
-    failures
+    remaining.reverse();
+    (failures, remaining)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
