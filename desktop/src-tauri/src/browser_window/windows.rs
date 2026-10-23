@@ -4,7 +4,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use tauri::{webview::PlatformWebview, AppHandle, Webview};
+use tauri::{webview::PlatformWebview, AppHandle, Manager, Webview};
 use url::{Host, Url};
 use webview2_com::{
     take_pwstr, FocusChangedEventHandler, HistoryChangedEventHandler,
@@ -29,7 +29,7 @@ struct NavigationTracker {
     current: Option<Navigation>,
 }
 
-/** UI-thread registry for guest event tokens and their WebView2 interfaces. */
+// Keep WebView2 COM references on the UI thread rather than in DesktopState.
 std::thread_local! {
     static GUEST_HOOKS: RefCell<std::collections::HashMap<String, Vec<EventRegistration>>> =
         RefCell::new(std::collections::HashMap::new());
@@ -406,7 +406,15 @@ unsafe fn install_on_platform(
         let lease_history = lease.to_string();
         let history = HistoryChangedEventHandler::create(Box::new(move |sender, _| {
             if let Some(webview) = sender {
-                let (back, forward) = native_history(&webview)?;
+                let (back, forward) = match native_history(&webview) {
+                    Ok(state) => state,
+                    Err(error) => {
+                        crate::devlog::write(format_args!(
+                            "Browser history state could not be read: {error}"
+                        ));
+                        return Ok(());
+                    }
+                };
                 let mut uri = PWSTR::null();
                 webview.Source(&mut uri)?;
                 update_history(&app_history, &lease_history, back, forward, take_pwstr(uri));

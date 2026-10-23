@@ -201,10 +201,19 @@ async fn create_storage(app: &tauri::AppHandle, name: String) -> Result<(), Stri
         // SAFETY: Tauri invokes this callback on the controller's owning thread.
         let result = unsafe {
             (|| {
-                let view = platform.controller().CoreWebView2()?;
-                let profile = view.cast::<ICoreWebView2_13>()?.Profile()?;
+                let view = platform
+                    .controller()
+                    .CoreWebView2()
+                    .map_err(|error| error.to_string())?;
+                let profile = view
+                    .cast::<ICoreWebView2_13>()
+                    .map_err(|error| error.to_string())?
+                    .Profile()
+                    .map_err(|error| error.to_string())?;
                 let mut private = BOOL::default();
-                profile.IsInPrivateModeEnabled(&mut private)?;
+                profile
+                    .IsInPrivateModeEnabled(&mut private)
+                    .map_err(|error| error.to_string())?;
                 if !private.as_bool() {
                     return Err("Desktop Browser requires WebView2 InPrivate storage".to_string());
                 }

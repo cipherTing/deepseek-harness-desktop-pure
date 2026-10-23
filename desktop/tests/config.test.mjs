@@ -575,8 +575,11 @@ test('Windows Browser COM state stays on the UI thread outside managed state', (
   assert.match(storage, /PLATFORM_STORAGES\.with\(\|storages\|\s*storages\.borrow_mut\(\)\.clear\(\)\)/)
   assert.match(windowsHooks, /thread_local!\s*\{[\s\S]*?GUEST_HOOKS[\s\S]*?HashMap<String, Vec<EventRegistration>>/)
   assert.match(windowsHooks, /pub\(crate\) struct GuestHooks\(String\)/)
+  assert.match(windowsHooks, /use tauri::\{[^}]*Manager/)
+  assert.match(windowsHooks, /match native_history\(&webview\)[\s\S]*crate::devlog::write/)
   assert.match(windowsHooks, /pub\(crate\) fn remove_all_hooks\(\)[\s\S]*?remove_hooks\(&lease\)/)
   assert.match(windowsHooks, /let \(cleanup_errors, remaining\) = remove_registrations/)
+  assert.match(storage, /CoreWebView2\(\)[\s\S]*?map_err\(\|error\| error\.to_string\(\)\)\?/)
   assert.match(browserWindow, /browser_window_windows::remove_all_hooks\(\)[\s\S]*storage::release_platform_storages\(\)/)
   const release = browserWindow.match(/pub\(crate\) async fn desktop_browser_release\([\s\S]*?\n\}/)?.[0]
   assert.ok(release)
