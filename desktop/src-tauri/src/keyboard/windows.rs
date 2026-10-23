@@ -24,8 +24,9 @@ use windows::{
                 Ime::{ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext, GCS_COMPSTR},
                 KeyboardAndMouse::{
                     GetFocus, GetKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx,
-                    VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_RCONTROL,
-                    VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT,
+                    VK_CONTROL, VK_DELETE, VK_DOWN, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT,
+                    VK_LWIN, VK_MENU, VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN,
+                    VK_SHIFT, VK_UP,
                 },
             },
             WindowsAndMessaging::{
@@ -590,6 +591,17 @@ fn decode_message(message: u32, virtual_key: u32, lparam: isize) -> Option<Decod
 fn physical_code(virtual_key: u32, scan_code: u32, extended: bool) -> Option<String> {
     if (0x70..=0x87).contains(&virtual_key) {
         return Some(format!("F{}", virtual_key - 0x6f));
+    }
+    let required_virtual_key = match (scan_code, extended) {
+        (0x48, true) => Some(VK_UP.0 as u32),
+        (0x4b, true) => Some(VK_LEFT.0 as u32),
+        (0x4d, true) => Some(VK_RIGHT.0 as u32),
+        (0x50, true) => Some(VK_DOWN.0 as u32),
+        (0x53, true) => Some(VK_DELETE.0 as u32),
+        _ => None,
+    };
+    if required_virtual_key.is_some_and(|required| virtual_key != required) {
+        return None;
     }
     let code = match (scan_code, extended) {
         (0x01, false) => "Escape",
