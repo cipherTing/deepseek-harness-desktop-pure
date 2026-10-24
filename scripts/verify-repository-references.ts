@@ -4,11 +4,13 @@ import { execFileSync } from 'node:child_process'
 import { lstatSync, readFileSync, readlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { parse as parseToml, type TomlTable, type TomlValue } from 'smol-toml'
 import { canonicalReferenceText } from './verify-public-repository-links.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const organization = ['deepseek', 'harness'].join('-')
 const organizationUrl = new RegExp(`\\bgithub\\.com/${organization}(?![a-z0-9-])`)
+const uvLockfile = 'python/sdk/uv.lock'
 // The independent kit repository owns the engine source and documentation.
 const kitRepositoryUrl = new RegExp(`\\bgithub\\.com/${organization}/libreoffice-kit(?:\\.git)?(?=/|[^a-zA-Z0-9_.-]|$)`, 'g')
 const commitCandidate = /(?<![a-z0-9])[\da-f]{7,40}(?![a-z0-9])/gi
@@ -25,6 +27,28 @@ const desktopGovernance = new RegExp([
 const gitOutputLimit = 64 * 1024 * 1024
 // One 41-byte line per object; 1.2 million objects produce about 49 MiB.
 const objectListingLimit = 1024 * 1024 * 1024
+
+function isTomlTable(value: TomlValue): value is TomlTable {
+  return typeof value === 'object' && !Array.isArray(value)
+}
+
+function uvLockRevisionReferences(source: string, commits: ReadonlySet<string>): number[] {
+  const document = parseToml(source)
+  const packages = document.package
+  if (!Array.isArray(packages)) return []
+  const lines = source.split('\n')
+  const references = new Set<number>()
+  for (const entry of packages) {
+    if (!isTomlTable(entry)) continue
+    const origin = entry.source
+    if (origin === undefined || !isTomlTable(origin) || typeof origin.rev !== 'string') continue
+    const revision = origin.rev
+    if (![...revision.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) continue
+    const line = lines.findIndex(value => value.includes(revision))
+    if (line >= 0) references.add(line)
+  }
+  return [...references]
+}
 
 /** One prohibited reference in a maintained source file. */
 export interface RepositoryReference {
@@ -55,11 +79,16 @@ export function findRepositoryReferences(
 ): RepositoryReference[] {
   if (!isMaintained(file)) return []
   const references: RepositoryReference[] = []
-  for (const [index, line] of source.split('\n').entries()) {
+  const lines = source.split('\n')
+  const commitLines = file === uvLockfile
+    ? new Set(uvLockRevisionReferences(source, commits))
+    : new Set(lines.flatMap((line, index) =>
+      [...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase())) ? [index] : []))
+  for (const [index, line] of lines.entries()) {
     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {
       references.push({ file, line: index + 1, kind: 'organization-url' })
     }
-    if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
+    if (commitLines.has(index)) {
       references.push({ file, line: index + 1, kind: 'commit-hash' })
     }
   }

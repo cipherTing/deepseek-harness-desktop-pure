@@ -161,6 +161,33 @@ describe('maintained repository reference policy', () => {
     expect(scanRepositoryReferences(fixture.root)).toEqual([])
   })
 
+  it('checks uv.lock Git revisions without treating artifact hashes and sizes as commits', () => {
+    const numericPrefix = ['1234', '567'].join('')
+    const revision = `${numericPrefix}${'a'.repeat(33)}`
+    const size = Number(numericPrefix)
+    const digest = `${revision}${'0'.repeat(24)}`
+    const artifactLock = [
+      'version = 1',
+      '[[package]]',
+      'name = "artifact"',
+      'version = "1.0"',
+      `sdist = { url = "https://example.invalid/${revision}", hash = "sha256:${digest}" }`,
+      `wheels = [{ url = "https://example.invalid/wheel.whl", hash = "sha256:${digest}", size = ${size} }]`,
+    ].join('\n')
+    expect(findRepositoryReferences('python/sdk/uv.lock', artifactLock, new Set([revision]))).toEqual([])
+
+    const gitLock = [
+      'version = 1',
+      '[[package]]',
+      'name = "git-package"',
+      'version = "1.0"',
+      `source = { git = "https://example.invalid/package.git", rev = "${revision}" }`,
+    ].join('\n')
+    expect(findRepositoryReferences('python/sdk/uv.lock', gitLock, new Set([revision]))).toEqual([
+      { file: 'python/sdk/uv.lock', line: 5, kind: 'commit-hash' },
+    ])
+  })
+
   it('excludes only ignored new files, vendored sources, frozen notes, and deleted files', (test) => {
     const fixture = repository(test)
     fixture.write('.gitignore', 'ignored.md\ntracked-ignore.md\n')
