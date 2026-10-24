@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { win32 } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { load } from 'js-yaml'
 import { build as esbuildBuild } from 'esbuild'
@@ -329,7 +330,7 @@ test('mandatory update page bundles the public Tauri API', async () => {
   assert.doesNotMatch(rust, /__TAURI_INTERNALS__|BRIDGE_SCRIPT/)
 
   const bundled = await esbuildBuild({
-    entryPoints: [new URL('../scripts/mandatory-page.js', import.meta.url).pathname],
+    entryPoints: [fileURLToPath(new URL('../scripts/mandatory-page.js', import.meta.url))],
     bundle: true,
     platform: 'browser',
     target: ['safari15', 'chrome105'],
