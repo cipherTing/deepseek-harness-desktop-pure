@@ -63,7 +63,7 @@ Download the latest package for your platform from [GitHub Releases](https://git
 
 ## How it runs
 
-DeepDive does not rewrite the Harness backend in Rust or reimplement browser transport. Tauri launches a bundled Node.js sidecar, which starts the standard `web` profile on a random `127.0.0.1` port. The system WebView loads that local address directly. The listener binds only to loopback and is never exposed to the LAN or public Internet.
+DeepDive does not rewrite the Harness backend in Rust or reimplement browser transport. Tauri launches a bundled Node.js sidecar, which starts the standard `web` profile on `127.0.0.1:47821` when available and requests an ephemeral port when that port is occupied. The system WebView loads that local address directly. The listener binds only to loopback and is never exposed to the LAN or public Internet.
 
 ```mermaid
 flowchart LR
@@ -75,7 +75,7 @@ flowchart LR
   H --> D["DSH_HOME / ~/.dsh"]
 ```
 
-The DeepSeek Harness Web Host continues to generate the page, client-plugin bundles, `/api`, event streams, and dynamic-plugin updates. DeepDive owns only the native window, process lifecycle, installers, and required operating-system interactions.
+The DeepSeek Harness Web Host continues to generate the page, client-plugin bundles, `/api`, event streams, and dynamic-plugin updates. DeepDive owns only the native window, process lifecycle, installers, and required operating-system interactions. Desktop release checks separately read release metadata and enforce a minimum supported version; the download action opens the release page without automatically downloading or installing the application.
 
 ## Where an issue belongs
 

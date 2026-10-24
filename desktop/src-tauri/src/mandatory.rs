@@ -33,24 +33,6 @@ pub(crate) struct MandatoryState {
     acknowledged: Option<String>,
 }
 
-/**
- * The single capability surface the blocking document may reach.
- *
- * `__TAURI_INTERNALS__` is always present in Tauri 2, and the document needs
- * exactly two calls; exposing them by name keeps the rest of that object out of
- * reach of the page.
- */
-const BRIDGE_SCRIPT: &str = r#"
-Object.defineProperty(window, 'dshMandatory', {
-  configurable: true,
-  value: Object.freeze({
-    state: () => window.__TAURI_INTERNALS__.invoke('desktop_mandatory_state'),
-    dismiss: (minimum, openPage) =>
-      window.__TAURI_INTERNALS__.invoke('desktop_mandatory_dismiss', { minimum, openPage }),
-  }),
-});
-"#;
-
 /** Serializes window creation, so two polls cannot open two blockers. */
 static OPENING: Mutex<()> = Mutex::new(());
 
@@ -118,9 +100,6 @@ pub(crate) fn enforce(app: &AppHandle, minimum: &str) {
     }
     let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("mandatory.html".into()))
         .title("DeepDive needs an update")
-        // The bundled document has no bundler and no import map; one script
-        // object is the whole bridge it is allowed to use.
-        .initialization_script(BRIDGE_SCRIPT)
         .inner_size(520.0, 420.0)
         .resizable(false)
         .minimizable(false)

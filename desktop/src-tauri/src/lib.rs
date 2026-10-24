@@ -36,6 +36,8 @@ mod mandatory;
 mod sidecar_process;
 mod tray;
 mod update;
+#[cfg(all(windows, feature = "webview2-lifecycle-test"))]
+pub mod webview2_lifecycle_test;
 
 use sidecar_process::{SidecarEvent, SidecarProcess};
 
@@ -65,6 +67,7 @@ struct DesktopState {
      */
     stderr_tail: Mutex<Vec<u8>>,
     exiting: AtomicBool,
+    exit_ready: AtomicBool,
     /** Live Sidebar Browser guests, one native view per tab. */
     browser: browser_window::BrowserRegistry,
     /** Accepted shortcut bindings and per-view physical key state. */
@@ -982,11 +985,7 @@ fn failure_message(state: &DesktopState, summary: &str) -> String {
 /** Show a modal error on the main thread, then exit with the given code. */
 fn show_error_and_exit(app: &AppHandle, message: impl Into<String>, code: i32) {
     let message = message.into();
-    let for_dialog = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        let _ = for_dialog.dialog().message(message).blocking_show();
-    });
-    app.exit(code);
+    request_exit(app, code, Some(message));
 }
 
 async fn stop_sidecar(app: &AppHandle) {
@@ -1014,13 +1013,36 @@ async fn stop_sidecar(app: &AppHandle) {
 }
 
 fn begin_graceful_exit(app: &AppHandle, exit_code: i32) {
+    request_exit(app, exit_code, None);
+}
+
+fn request_exit(app: &AppHandle, exit_code: i32, message: Option<String>) {
     let state = app.state::<DesktopState>();
     if state.exiting.swap(true, Ordering::SeqCst) {
         return;
     }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        for failure in browser_window::shutdown(&app).await {
+            devlog::write(format_args!("Browser shutdown cleanup failed: {failure}"));
+        }
         stop_sidecar(&app).await;
+        if let Some(message) = message {
+            let dialog_app = app.clone();
+            let (sender, receiver) = oneshot::channel();
+            if app
+                .run_on_main_thread(move || {
+                    let _ = dialog_app.dialog().message(message).blocking_show();
+                    let _ = sender.send(());
+                })
+                .is_ok()
+            {
+                let _ = receiver.await;
+            }
+        }
+        app.state::<DesktopState>()
+            .exit_ready
+            .store(true, Ordering::SeqCst);
         app.exit(exit_code);
     });
 }
@@ -1219,12 +1241,6 @@ pub fn run() {
     devlog::init(app.handle());
     app.run(|app, event| {
         match event {
-            #[cfg(windows)]
-            RunEvent::Exit => {
-                for failure in browser_window::release_platform_storage() {
-                    devlog::write(format_args!("Browser shutdown cleanup failed: {failure}"));
-                }
-            }
             RunEvent::ExitRequested { code, api, .. } => {
                 let state = app.state::<DesktopState>();
                 devlog::write(format_args!(
@@ -1232,9 +1248,11 @@ pub fn run() {
                     state.exiting.load(Ordering::SeqCst),
                     app.webview_windows().keys().collect::<Vec<_>>(),
                 ));
-                if !state.exiting.load(Ordering::SeqCst) {
+                if !state.exit_ready.load(Ordering::SeqCst) {
                     api.prevent_exit();
-                    begin_graceful_exit(app, code.unwrap_or(0));
+                    if !state.exiting.load(Ordering::SeqCst) {
+                        begin_graceful_exit(app, code.unwrap_or(0));
+                    }
                 }
             }
             // A close hides the window and keeps the sidecar running, or quits,
@@ -1246,9 +1264,11 @@ pub fn run() {
                 ..
             } => {
                 let state = app.state::<DesktopState>();
-                if label == "main" && !state.exiting.load(Ordering::SeqCst) {
+                if label == "main" && !state.exit_ready.load(Ordering::SeqCst) {
                     api.prevent_close();
-                    tray::handle_close_request(app);
+                    if !state.exiting.load(Ordering::SeqCst) {
+                        tray::handle_close_request(app);
+                    }
                 }
             }
             // A destroyed window is the only thing that can make the runtime

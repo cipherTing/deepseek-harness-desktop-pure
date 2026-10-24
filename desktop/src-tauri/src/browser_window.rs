@@ -130,6 +130,7 @@ pub(crate) struct BrowserRegistry {
     guests: Mutex<HashMap<String, BrowserGuest>>,
     next_lease: AtomicU64,
     storage: storage::WorkspaceStorage,
+    lifecycle: tokio::sync::RwLock<()>,
 }
 
 /** A page-visible reservation; the partition names the guest's storage account. */
@@ -179,12 +180,41 @@ impl BrowserRegistry {
     }
 }
 
-/** Remove Windows Browser hooks and release workspace COM references on the UI thread. */
-#[cfg(windows)]
-pub(crate) fn release_platform_storage() -> Vec<String> {
-    let failures = browser_window_windows::remove_all_hooks();
-    storage::release_platform_storages();
+/** Close Browser guests and release their workspace stores before app exit. */
+pub(crate) async fn shutdown(app: &tauri::AppHandle) -> Vec<String> {
+    let state = app.state::<crate::DesktopState>();
+    let browser = &state.browser;
+    let _lifecycle = browser.lifecycle.write().await;
+    let leases = browser
+        .guests
+        .lock()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut failures = Vec::new();
+    for lease in leases {
+        if let Err(error) = release_guest(app, browser, &lease).await {
+            failures.push(format!("lease {lease}: {error}"));
+        }
+    }
+    #[cfg(windows)]
+    {
+        match browser_window_windows::remove_all_hooks(app).await {
+            Ok(hook_failures) => failures.extend(hook_failures),
+            Err(error) => failures.push(format!("Browser platform hooks: {error}")),
+        }
+        if let Err(errors) = storage::release_platform_storages(&browser.storage, app).await {
+            failures.extend(errors);
+        }
+    }
     failures
+}
+
+#[cfg(all(windows, feature = "webview2-lifecycle-test"))]
+/** Run the Windows WebView2 shutdown regression harness. */
+pub(crate) async fn run_webview2_lifecycle_test(app: &tauri::AppHandle) -> Result<(), String> {
+    storage::run_webview2_lifecycle_test(app).await
 }
 
 /** Parse one absolute browser URL that does not contain credentials. */
@@ -559,6 +589,10 @@ pub(crate) async fn desktop_browser_acquire(
     workspace: String,
     initial_url: String,
 ) -> Result<BrowserReservation, String> {
+    let _lifecycle = state.browser.lifecycle.read().await;
+    if state.exiting.load(Ordering::SeqCst) {
+        return Err("Desktop is shutting down".into());
+    }
     if workspace.is_empty() || workspace.len() > 4096 {
         return Err("Desktop browser requires a workspace storage identity".into());
     }
@@ -774,8 +808,17 @@ pub(crate) async fn desktop_browser_release(
     state: tauri::State<'_, crate::DesktopState>,
     lease: String,
 ) -> Result<(), String> {
-    let guest = state.browser.remove(&lease);
-    let view = app.get_webview(&lease);
+    let _lifecycle = state.browser.lifecycle.read().await;
+    release_guest(&app, &state.browser, &lease).await
+}
+
+async fn release_guest(
+    app: &tauri::AppHandle,
+    browser: &BrowserRegistry,
+    lease: &str,
+) -> Result<(), String> {
+    let guest = browser.remove(lease);
+    let view = app.get_webview(lease);
     let mut failures = Vec::new();
     if let Some(guest) = guest {
         if let Some(view) = view.as_ref() {
@@ -799,7 +842,7 @@ pub(crate) async fn desktop_browser_release(
         }
     }
     if let Some(view) = view {
-        if let Err(error) = view.close() {
+        if let Err(error) = storage::close_view(app, view).await {
             failures.push(format!("Browser WebView close: {error}"));
         }
     }

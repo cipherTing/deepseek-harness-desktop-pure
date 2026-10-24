@@ -1,4 +1,6 @@
-/** Blocking update window: read the release facts, then dismiss. */
+import { invoke } from '@tauri-apps/api/core'
+
+/** Blocking update window: display release facts and accept dismissal. */
 const error = document.getElementById('error')
 const notes = document.getElementById('notes')
 
@@ -33,7 +35,7 @@ async function dismiss(openPage) {
   const minimum = viewed?.minimum
   if (typeof minimum !== 'string') return
   try {
-    await window.dshMandatory.dismiss(minimum, openPage)
+    await invoke('desktop_mandatory_dismiss', { minimum, openPage })
   } catch (cause) {
     fail(cause)
   }
@@ -42,4 +44,4 @@ async function dismiss(openPage) {
 document.getElementById('download').addEventListener('click', () => { void dismiss(true) })
 document.getElementById('ack').addEventListener('click', () => { void dismiss(false) })
 
-window.dshMandatory.state().then(render, fail)
+invoke('desktop_mandatory_state').then(render, fail)

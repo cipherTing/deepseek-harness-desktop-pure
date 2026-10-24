@@ -9,7 +9,6 @@
     "core:path:deny-resolve-directory",
     "core:window:allow-start-dragging",
     "core:window:allow-toggle-maximize",
-    "opener:allow-open-url",
     "allow-desktop-open-external-url",
     "allow-desktop-open-file",
     "allow-desktop-file-handlers",

@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { win32 } from 'node:path'
 import test from 'node:test'
 import { load } from 'js-yaml'
+import { build as esbuildBuild } from 'esbuild'
 
 const readJson = (url) => JSON.parse(readFileSync(url, 'utf8'))
 
@@ -66,6 +67,16 @@ test('Desktop workflow builds any manual ref and releases only one frozen master
   assert.match(workflow, /RELEASE_NOTES_ZH: \$\{\{ inputs\.release_notes_zh \}\}/)
   assert.match(workflow, /RELEASE_NOTES_EN: \$\{\{ inputs\.release_notes_en \}\}/)
   assert.match(workflow, /name: Prepare the Harness bundle\n\s+run: pnpm run bundle:prepare/)
+  const build = load(workflow).jobs.build
+  const runtimeInstall = build.steps.find((step) => step.name === 'Install Evergreen WebView2 Runtime')
+  const lifecycleTest = build.steps.find((step) => step.name === 'Run WebView2 profile lifecycle test')
+  assert.equal(runtimeInstall.if, "runner.os == 'Windows'")
+  assert.equal(runtimeInstall.shell, 'pwsh')
+  assert.match(runtimeInstall.run, /LinkId=2124703/)
+  assert.match(runtimeInstall.run, /\/silent.*\/install/)
+  assert.equal(lifecycleTest.if, "runner.os == 'Windows'")
+  assert.match(lifecycleTest.run, /--features webview2-lifecycle-test --bin webview2-lifecycle-test/)
+  assert.ok(build.steps.indexOf(runtimeInstall) < build.steps.indexOf(lifecycleTest))
   assert.match(workflow, /uses: tauri-apps\/tauri-action@v1/)
   assert.match(workflow, /uploadWorkflowArtifacts: true/)
   assert.match(workflow, /releaseAssetNamePattern: deepdive-\$\{\{ matrix\.platform \}\}-\[version\]\[ext\]/)
@@ -205,6 +216,7 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   assert.equal(existsSync(new URL('../src-tauri/resources/web', import.meta.url)), false)
   // Remote IPC is granted only to the loopback web host.
   assert.deepEqual(capability.remote, { urls: ['http://127.0.0.1:*'] })
+  assert.ok(!capability.permissions.includes('opener:allow-open-url'))
   // Tauri blocks undeclared application commands from remote origins. The
   // loopback page receives only these business-level Desktop operations.
   for (const command of [
@@ -301,6 +313,39 @@ test('Desktop loads the loopback web host without custom protocols', () => {
   assert.match(rust, /fn note_stderr/)
   assert.match(rust, /fn failure_message/)
   assert.doesNotMatch(rust, /宿主进程多次重启失败/)
+})
+
+test('mandatory update page bundles the public Tauri API', async () => {
+  const source = readFileSync(new URL('../scripts/mandatory-page.js', import.meta.url), 'utf8')
+  const rust = readFileSync(new URL('../src-tauri/src/mandatory.rs', import.meta.url), 'utf8')
+  const buildScript = readFileSync(new URL('../scripts/build-runtime.mjs', import.meta.url), 'utf8')
+
+  assert.match(source, /import \{ invoke \} from '@tauri-apps\/api\/core'/)
+  assert.match(source, /invoke\('desktop_mandatory_state'\)/)
+  assert.match(source, /invoke\('desktop_mandatory_dismiss'/)
+  assert.match(buildScript, /scripts\/mandatory-page\.js/)
+  assert.match(buildScript, /resources\/shell\/mandatory\.js/)
+  assert.equal(existsSync(new URL('../src-tauri/resources/shell/mandatory-page.js', import.meta.url)), false)
+  assert.doesNotMatch(rust, /__TAURI_INTERNALS__|BRIDGE_SCRIPT/)
+
+  const bundled = await esbuildBuild({
+    entryPoints: [new URL('../scripts/mandatory-page.js', import.meta.url).pathname],
+    bundle: true,
+    platform: 'browser',
+    target: ['safari15', 'chrome105'],
+    format: 'esm',
+    write: false,
+    logLevel: 'silent',
+  })
+  assert.doesNotMatch(bundled.outputFiles[0].text, /from ['"]@tauri-apps\/api\/core['"]/)
+})
+
+test('macOS Browser removes stored rules when a guest closes during compilation', () => {
+  const native = readFileSync(new URL('../src-tauri/src/browser_window_macos.m', import.meta.url), 'utf8')
+
+  assert.match(native, /removeContentRuleListForIdentifier:identifier/)
+  assert.match(native, /NSString \*identifier = self\.currentRuleList\.identifier/)
+  assert.match(native, /ruleList != nil && \(error != nil \|\| currentGuest == nil\)/)
 })
 
 test('Desktop leaves image drops to the browser attachment flow', () => {
@@ -565,28 +610,36 @@ test('Desktop bundles only the three required app icons', () => {
   assert.deepEqual(iconSizes, ['16x16', '24x24', '32x32', '48x48', '64x64', '128x128', '256x256'])
 })
 
-test('Windows Browser COM state stays on the UI thread outside managed state', () => {
+test('Windows Browser profiles close before their temporary directories are removed', () => {
   const storage = readFileSync(new URL('../src-tauri/src/browser_window/storage.rs', import.meta.url), 'utf8')
   const browserWindow = readFileSync(new URL('../src-tauri/src/browser_window.rs', import.meta.url), 'utf8')
   const windowsHooks = readFileSync(new URL('../src-tauri/src/browser_window/windows.rs', import.meta.url), 'utf8')
   const shell = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')
   assert.match(storage, /#\[cfg\(windows\)\]\s+partitions: PartitionCache<\(\)>/)
   assert.match(storage, /thread_local!\s*\{[\s\S]*?PLATFORM_STORAGES[\s\S]*?HashMap<String, PlatformStorage>/)
-  assert.match(storage, /PLATFORM_STORAGES\.with\(\|storages\|\s*storages\.borrow_mut\(\)\.clear\(\)\)/)
+  assert.match(storage, /PLATFORM_STORAGES\.with\(\|storages\|\s*std::mem::take\(&mut \*storages\.borrow_mut\(\)\)/)
+  assert.match(storage, /_anchor\.close\(\)[\s\S]*drop\(_anchor\)[\s\S]*drop\(environment\)/)
+  assert.match(storage, /tokio::fs::remove_dir_all\(directory\)/)
+  assert.match(storage, /run_on_main_thread\(move \|\|\s*\{\s*let result = view\.close\(\)/)
+  assert.match(storage, /run_webview2_lifecycle_test[\s\S]*browser_window_windows::install[\s\S]*super::shutdown\(app\)/)
   assert.match(windowsHooks, /thread_local!\s*\{[\s\S]*?GUEST_HOOKS[\s\S]*?HashMap<String, Vec<EventRegistration>>/)
   assert.match(windowsHooks, /pub\(crate\) struct GuestHooks\(String\)/)
   assert.match(windowsHooks, /use tauri::\{[^}]*Manager/)
   assert.match(windowsHooks, /match native_history\(&webview\)[\s\S]*crate::devlog::write/)
-  assert.match(windowsHooks, /pub\(crate\) fn remove_all_hooks\(\)[\s\S]*?remove_hooks\(&lease\)/)
+  assert.match(windowsHooks, /pub\(crate\) async fn remove_all_hooks\(app: &AppHandle\)[\s\S]*?run_on_main_thread[\s\S]*?remove_all_hooks_on_ui_thread/)
+  assert.match(windowsHooks, /fn remove_all_hooks_on_ui_thread\(\)[\s\S]*?remove_hooks\(&lease\)/)
   assert.match(windowsHooks, /let \(cleanup_errors, remaining\) = remove_registrations/)
   assert.match(storage, /CoreWebView2\(\)[\s\S]*?map_err\(\|error\| error\.to_string\(\)\)\?/)
-  assert.match(browserWindow, /browser_window_windows::remove_all_hooks\(\)[\s\S]*storage::release_platform_storages\(\)/)
+  assert.match(browserWindow, /pub\(crate\) async fn shutdown[\s\S]*?lifecycle\.write\(\)\.await[\s\S]*?remove_all_hooks\(app\)\.await[\s\S]*?release_platform_storages/)
   const release = browserWindow.match(/pub\(crate\) async fn desktop_browser_release\([\s\S]*?\n\}/)?.[0]
   assert.ok(release)
-  assert.doesNotMatch(release, /\.await\?/)
-  assert.match(release, /Browser platform hooks: \{error\}/)
-  assert.match(release, /view\.close\(\)/)
-  assert.match(shell, /RunEvent::Exit\s*=>\s*\{[\s\S]*?browser_window::release_platform_storage\(\)/)
+  assert.match(release, /lifecycle\.read\(\)\.await[\s\S]*release_guest\(&app, &state\.browser, &lease\)\.await/)
+  assert.match(shell, /fn request_exit[\s\S]*spawn\(async move \{[\s\S]*browser_window::shutdown\(&app\)\.await[\s\S]*stop_sidecar\(&app\)\.await[\s\S]*app\.exit\(exit_code\)/)
+  assert.doesNotMatch(shell, /RunEvent::Exit\s*=>/)
+  assert.match(cargo, /webview2-lifecycle-test = \[\]/)
+  assert.match(cargo, /required-features = \["webview2-lifecycle-test"\]/)
+  assert.ok(existsSync(new URL('../src-tauri/src/webview2_lifecycle_test_bin.rs', import.meta.url)))
 })
 
 test('Tao catches macOS AppKit event panics without dropping the original event', () => {

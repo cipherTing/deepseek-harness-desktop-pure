@@ -118,18 +118,33 @@ pub(crate) async fn remove_by_lease(
     }
 }
 
-/** Remove remaining guest subscriptions before Tauri destroys its UI thread. */
-pub(crate) fn remove_all_hooks() -> Vec<String> {
+/** Retry guest subscriptions and release their final COM references before profile cleanup. */
+pub(crate) async fn remove_all_hooks(app: &AppHandle) -> Result<Vec<String>, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        let _ = sender.send(remove_all_hooks_on_ui_thread());
+    })
+    .map_err(|error| error.to_string())?;
+    receiver
+        .await
+        .map_err(|_| "Browser hook cleanup ended before the UI thread responded".to_string())
+}
+
+fn remove_all_hooks_on_ui_thread() -> Vec<String> {
     let leases = GUEST_HOOKS
         .with(|hooks_by_lease| hooks_by_lease.borrow().keys().cloned().collect::<Vec<_>>());
-    leases
+    let failures = leases
         .into_iter()
         .flat_map(|lease| {
             remove_hooks(&lease)
                 .into_iter()
                 .map(move |failure| format!("lease {lease}: {failure}"))
         })
-        .collect()
+        .collect();
+    let remaining =
+        GUEST_HOOKS.with(|hooks_by_lease| std::mem::take(&mut *hooks_by_lease.borrow_mut()));
+    drop(remaining);
+    failures
 }
 
 fn remove_hooks(lease: &str) -> Vec<String> {

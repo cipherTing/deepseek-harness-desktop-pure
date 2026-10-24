@@ -51,4 +51,5 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 desktop/runtime/src/bridge-script.generated.ts
+desktop/src-tauri/resources/shell/mandatory.js
 native/system/test/bin/

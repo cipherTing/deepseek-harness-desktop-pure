@@ -188,6 +188,16 @@ typedef void (*DshBrowserRuleCallback)(void *context, int success, const char *e
 
 @end
 
+static void DshBrowserRemoveStoredRuleList(NSString *identifier) {
+  [[WKContentRuleListStore defaultStore]
+      removeContentRuleListForIdentifier:identifier
+                      completionHandler:^(NSError *error) {
+    if (error != nil) {
+      NSLog(@"DeepDive Browser rule cleanup failed: %@", error.localizedDescription);
+    }
+  }];
+}
+
 static BOOL DshViewIsInsideView(NSView *view, NSView *ancestor) {
   for (NSView *current = view; current != nil; current = current.superview) {
     if (current == ancestor) {
@@ -298,11 +308,15 @@ static BOOL DshViewIsInsideView(NSView *view, NSView *ancestor) {
     if (webView.UIDelegate == self.proxy) {
       webView.UIDelegate = self.proxy.originalUIDelegate;
     }
-    if (self.currentRuleList != nil) {
-      [webView.configuration.userContentController removeContentRuleList:self.currentRuleList];
-      self.currentRuleList = nil;
-    }
     [webView.configuration.userContentController removeScriptMessageHandlerForName:@"dshBrowserHistory"];
+  }
+  if (self.currentRuleList != nil) {
+    if (webView != nil) {
+      [webView.configuration.userContentController removeContentRuleList:self.currentRuleList];
+    }
+    NSString *identifier = self.currentRuleList.identifier;
+    self.currentRuleList = nil;
+    DshBrowserRemoveStoredRuleList(identifier);
   }
   if (self.eventMonitor != nil) {
     [NSEvent removeMonitor:self.eventMonitor];
@@ -430,6 +444,9 @@ static void DshBrowserInstallLoopbackBlockRule(DshBrowserHook *hook,
       dispatch_async(dispatch_get_main_queue(), ^{
         WKWebView *currentGuest = hook.webView;
         if (error != nil || ruleList == nil || currentGuest == nil) {
+          if (ruleList != nil && (error != nil || currentGuest == nil)) {
+            DshBrowserRemoveStoredRuleList(identifier);
+          }
           NSError *failure = error;
           if (failure == nil) {
             failure = [NSError errorWithDomain:@"DeepDiveBrowser"

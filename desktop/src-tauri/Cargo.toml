@@ -11,6 +11,14 @@ rust-version = "1.96.0"
 name = "deepseek_harness_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+webview2-lifecycle-test = []
+
+[[bin]]
+name = "webview2-lifecycle-test"
+path = "src/webview2_lifecycle_test_bin.rs"
+required-features = ["webview2-lifecycle-test"]
+
 [build-dependencies]
 tauri-build = { version = "=2.6.3", features = [] }
 

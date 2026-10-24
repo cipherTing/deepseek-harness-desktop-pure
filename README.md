@@ -63,7 +63,7 @@ DeepDive 将 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 ## 它如何运行
 
-DeepDive 不把 Harness 后端重写进 Rust，也不重新实现浏览器传输。Tauri 启动随包 Node.js sidecar；sidecar 以标准 `web` profile 在随机 `127.0.0.1` 端口运行，系统 WebView 直接加载该本地地址。端口只绑定回环地址，不会暴露到局域网或公网。
+DeepDive 不把 Harness 后端重写进 Rust，也不重新实现浏览器传输。Tauri 启动随包 Node.js sidecar；sidecar 以标准 `web` profile 优先使用 `127.0.0.1:47821`，该端口被占用时再请求临时端口，系统 WebView 直接加载该本地地址。端口只绑定回环地址，不会暴露到局域网或公网。
 
 ```mermaid
 flowchart LR
@@ -75,7 +75,7 @@ flowchart LR
   H --> D["DSH_HOME / ~/.dsh"]
 ```
 
-DeepSeek Harness Web Host 继续生成页面、客户端插件 bundle、`/api`、事件流和动态插件更新；DeepDive 只拥有原生窗口、进程生命周期、安装包和必需的操作系统交互。
+DeepSeek Harness Web Host 继续生成页面、客户端插件 bundle、`/api`、事件流和动态插件更新；DeepDive 只拥有原生窗口、进程生命周期、安装包和必需的操作系统交互。Desktop 自身的发布检查读取发布信息并执行最低版本策略；下载操作会打开发布页，不会自动下载或安装应用。
 
 ## 问题该提到哪里
 

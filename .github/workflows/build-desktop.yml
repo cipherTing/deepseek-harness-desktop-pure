@@ -140,6 +140,23 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
         working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
 
+      - name: Install Evergreen WebView2 Runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'WebView2Bootstrapper.exe'
+          Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
+          $install = Start-Process -FilePath $installer -ArgumentList '/silent', '/install' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "WebView2 Runtime install failed with exit code $($install.ExitCode)" }
+
+      - name: Run WebView2 profile lifecycle test
+        if: runner.os == 'Windows'
+        timeout-minutes: 10
+        run: >-
+          cargo run --manifest-path src-tauri/Cargo.toml
+          --features webview2-lifecycle-test --bin webview2-lifecycle-test
+        working-directory: ${{ steps.windows-source.outputs.workspace || github.workspace }}/desktop
+
       - name: Build and upload Desktop package
         uses: tauri-apps/tauri-action@v1
         with:

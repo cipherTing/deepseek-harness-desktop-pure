@@ -1,5 +1,7 @@
 //! Process-lifetime, workspace-isolated Browser storage.
 
+#[cfg(windows)]
+use std::path::{Path, PathBuf};
 use std::{collections::HashMap, future::Future, sync::Arc};
 
 use tauri::{LogicalPosition, LogicalSize, Manager, Webview, WebviewBuilder};
@@ -69,10 +71,84 @@ std::thread_local! {
         std::cell::RefCell::new(HashMap::new());
 }
 
-/** Release UI-thread COM references before Tauri tears down its event loop. */
+/** Close one WebView on Tauri's UI thread and wait for Wry to release its controller. */
+pub(super) async fn close_view(app: &tauri::AppHandle, view: Webview) -> Result<(), String> {
+    let (send, receive) = oneshot::channel();
+    app.run_on_main_thread(move || {
+        let result = view.close().map_err(|error| error.to_string());
+        drop(view);
+        let _ = send.send(result);
+    })
+    .map_err(|error| error.to_string())?;
+    receive
+        .await
+        .map_err(|_| "WebView close ended before the UI thread confirmed release".to_string())?
+}
+
+/** Close workspace anchors before releasing their WebView2 environments and profiles. */
 #[cfg(windows)]
-pub(super) fn release_platform_storages() {
-    PLATFORM_STORAGES.with(|storages| storages.borrow_mut().clear());
+pub(super) async fn release_platform_storages(
+    storage: &WorkspaceStorage,
+    app: &tauri::AppHandle,
+) -> Result<Vec<PathBuf>, Vec<String>> {
+    let (send, receive) = oneshot::channel();
+    app.run_on_main_thread(move || {
+        let storages =
+            PLATFORM_STORAGES.with(|storages| std::mem::take(&mut *storages.borrow_mut()));
+        let mut directories = Vec::with_capacity(storages.len());
+        let mut failures = Vec::new();
+        for (workspace, storage) in storages {
+            let PlatformStorage {
+                _anchor,
+                environment,
+                directory,
+            } = storage;
+            if let Err(error) = _anchor.close() {
+                failures.push(format!("workspace {workspace} anchor close: {error}"));
+            }
+            drop(_anchor);
+            drop(environment);
+            directories.push(directory);
+        }
+        let _ = send.send((directories, failures));
+    })
+    .map_err(|error| vec![error.to_string()])?;
+
+    let (directories, mut failures) = receive
+        .await
+        .map_err(|_| vec!["Browser storage release ended before the UI thread responded".into()])?;
+    for directory in &directories {
+        if let Err(error) = remove_profile_directory(directory).await {
+            failures.push(format!(
+                "WebView2 profile {} could not be removed: {error}",
+                directory.display()
+            ));
+        }
+    }
+    storage.partitions.partitions.lock().await.clear();
+    if failures.is_empty() {
+        Ok(directories)
+    } else {
+        Err(failures)
+    }
+}
+
+#[cfg(windows)]
+async fn remove_profile_directory(directory: &Path) -> Result<(), String> {
+    const ATTEMPTS: u32 = 7;
+    for attempt in 0..ATTEMPTS {
+        match tokio::fs::remove_dir_all(directory).await {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error)
+                if attempt + 1 < ATTEMPTS && matches!(error.raw_os_error(), Some(5 | 32 | 33)) =>
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(25 * (1 << attempt))).await;
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Ok(())
 }
 
 impl WorkspaceStorage {
@@ -175,7 +251,7 @@ async fn create_storage(app: &tauri::AppHandle, name: String) -> Result<(), Stri
     std::fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     let directory = root.join(format!("{}-{process_nonce}-{name}", std::process::id()));
     std::fs::create_dir(&directory).map_err(|error| error.to_string())?;
-    let anchor = add_child(
+    let anchor = match add_child(
         app,
         WebviewBuilder::new(
             format!("{name}-storage"),
@@ -187,16 +263,27 @@ async fn create_storage(app: &tauri::AppHandle, name: String) -> Result<(), Stri
         .on_navigation(|url| url.as_str() == "about:blank")
         .on_download(|_, _| false)
         .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny),
-    )?;
+    ) {
+        Ok(anchor) => anchor,
+        Err(error) => {
+            let _ = remove_profile_directory(&directory).await;
+            return Err(error);
+        }
+    };
     if let Err(error) = anchor.hide() {
-        let _ = anchor.close();
-        return Err(error.to_string());
+        let mut failures = vec![error.to_string()];
+        if let Err(error) = close_view(app, anchor).await {
+            failures.push(format!("Browser storage anchor close: {error}"));
+        }
+        if let Err(error) = remove_profile_directory(&directory).await {
+            failures.push(format!("WebView2 profile cleanup: {error}"));
+        }
+        return Err(failures.join("; "));
     }
     let (send, receive) = oneshot::channel();
     let storage_name = name.clone();
     let directory_for_storage = directory.clone();
     let storage_anchor = anchor.clone();
-    let cleanup_anchor = anchor.clone();
     let inspect = anchor.with_webview(move |platform| {
         // SAFETY: Tauri invokes this callback on the controller's owning thread.
         let result = unsafe {
@@ -233,25 +320,50 @@ async fn create_storage(app: &tauri::AppHandle, name: String) -> Result<(), Stri
                     );
                 });
                 if send.send(Ok(())).is_err() {
-                    PLATFORM_STORAGES.with(|storages| {
-                        storages.borrow_mut().remove(&storage_name);
+                    let storage = PLATFORM_STORAGES.with(|storages| {
+                        storages.borrow_mut().remove(&storage_name)
                     });
-                    let _ = cleanup_anchor.close();
+                    if let Some(storage) = storage {
+                        let directory = storage.directory.clone();
+                        let _ = storage._anchor.close();
+                        drop(storage);
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(error) = remove_profile_directory(&directory).await {
+                                eprintln!("WebView2 profile cleanup after cancelled acquire failed: {error}");
+                            }
+                        });
+                    }
                 }
             }
             Err(error) => {
-                let _ = cleanup_anchor.close();
                 let _ = send.send(Err(error));
             }
         }
     });
     if let Err(error) = inspect {
-        let _ = anchor.close();
-        return Err(error.to_string());
+        let mut failures = vec![error.to_string()];
+        if let Err(error) = close_view(app, anchor).await {
+            failures.push(format!("Browser storage anchor close: {error}"));
+        }
+        if let Err(error) = remove_profile_directory(&directory).await {
+            failures.push(format!("WebView2 profile cleanup: {error}"));
+        }
+        return Err(failures.join("; "));
     }
-    receive
+    let result = receive
         .await
-        .map_err(|_| "Desktop Browser storage creation was interrupted".to_string())?
+        .unwrap_or_else(|_| Err("Desktop Browser storage creation was interrupted".into()));
+    if let Err(error) = result {
+        let mut failures = vec![error];
+        if let Err(error) = close_view(app, anchor).await {
+            failures.push(format!("Browser storage anchor close: {error}"));
+        }
+        if let Err(error) = remove_profile_directory(&directory).await {
+            failures.push(format!("WebView2 profile cleanup: {error}"));
+        }
+        return Err(failures.join("; "));
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -263,6 +375,144 @@ fn configure_builder(
         .incognito(true)
         .data_directory(storage.directory.clone())
         .with_environment(storage.environment.clone()))
+}
+
+#[cfg(all(windows, feature = "webview2-lifecycle-test"))]
+pub(super) async fn run_webview2_lifecycle_test(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri::WebviewUrl;
+
+    let state = app.state::<crate::DesktopState>();
+    *state.origin.write().unwrap() = Some("http://127.0.0.1:47821".into());
+    let workspace = format!("webview2-lifecycle-test-{}", std::process::id());
+    let mut guests = Vec::new();
+    let mut partition = None;
+    let mut failures = Vec::new();
+    for label in ["browser-lifecycle-first", "browser-lifecycle-second"] {
+        let builder =
+            WebviewBuilder::new(label, WebviewUrl::External("about:blank".parse().unwrap()))
+                .focused(false);
+        match state
+            .browser
+            .storage
+            .create_view(app, &workspace, builder)
+            .await
+        {
+            Ok((view, name)) => {
+                if partition
+                    .as_ref()
+                    .is_some_and(|partition| partition != &name)
+                {
+                    failures.push("workspace tabs did not reuse their storage partition".into());
+                }
+                partition.get_or_insert(name);
+                if let Err(error) = super::browser_window_windows::install(
+                    app,
+                    label,
+                    &view,
+                    "http://127.0.0.1:47821",
+                )
+                .await
+                {
+                    failures.push(format!("Browser hook installation failed: {error}"));
+                }
+                guests.push(view);
+            }
+            Err(error) => {
+                failures.push(format!("Browser guest creation failed: {error}"));
+                break;
+            }
+        }
+    }
+    let profiles = match profile_directories(app).await {
+        Ok(profiles) => profiles,
+        Err(error) => {
+            failures.push(format!(
+                "WebView2 workspace profiles could not be inspected: {error}"
+            ));
+            Vec::new()
+        }
+    };
+    for view in &guests {
+        if let Err(error) = verify_guest_in_private_mode(view).await {
+            failures.push(format!("Browser guest profile check failed: {error}"));
+        }
+    }
+    while let Some(view) = guests.pop() {
+        if let Err(error) = close_view(app, view).await {
+            failures.push(format!("Browser guest close failed: {error}"));
+        }
+    }
+    failures.extend(super::shutdown(app).await);
+    if profiles.len() != 1 {
+        failures.push(format!(
+            "expected one WebView2 workspace profile, found {}",
+            profiles.len()
+        ));
+    }
+    if profiles.iter().any(|profile| profile.exists()) {
+        failures.push("a WebView2 workspace profile remained after shutdown".into());
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
+#[cfg(all(windows, feature = "webview2-lifecycle-test"))]
+async fn profile_directories(app: &tauri::AppHandle) -> Result<Vec<PathBuf>, String> {
+    let (send, receive) = oneshot::channel();
+    app.run_on_main_thread(move || {
+        let directories = PLATFORM_STORAGES.with(|storages| {
+            storages
+                .borrow()
+                .values()
+                .map(|storage| storage.directory.clone())
+                .collect::<Vec<_>>()
+        });
+        let _ = send.send(directories);
+    })
+    .map_err(|error| error.to_string())?;
+    receive
+        .await
+        .map_err(|_| "WebView2 profile inspection ended before the UI thread responded".into())
+}
+
+#[cfg(all(windows, feature = "webview2-lifecycle-test"))]
+async fn verify_guest_in_private_mode(view: &Webview) -> Result<(), String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_13;
+    use webview2_windows::core::{Interface, BOOL};
+
+    let (send, receive) = oneshot::channel();
+    view.with_webview(move |platform| {
+        let result = unsafe {
+            (|| {
+                let core = platform
+                    .controller()
+                    .CoreWebView2()
+                    .map_err(|error| error.to_string())?;
+                let profile = core
+                    .cast::<ICoreWebView2_13>()
+                    .map_err(|error| error.to_string())?
+                    .Profile()
+                    .map_err(|error| error.to_string())?;
+                let mut enabled = BOOL::default();
+                profile
+                    .IsInPrivateModeEnabled(&mut enabled)
+                    .map_err(|error| error.to_string())?;
+                if enabled.as_bool() {
+                    Ok(())
+                } else {
+                    Err("WebView2 did not create an InPrivate guest".to_string())
+                }
+            })()
+        };
+        let _ = send.send(result);
+    })
+    .map_err(|error| error.to_string())?;
+    receive
+        .await
+        .map_err(|_| "WebView2 profile check ended before returning".to_string())?
 }
 
 #[cfg(test)]
