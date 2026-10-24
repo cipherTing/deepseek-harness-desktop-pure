@@ -26,7 +26,7 @@
 
 <p align="center">简体中文 · <a href="README.en.md">English</a></p>
 
-> **当前集成的 DSH 内核：`0.2.0-rc.2`（`dsh-v0.2.0-rc.2`）**
+> **当前集成的 DSH 内核：`0.2.1-rc.3`（`dsh-v0.2.1-rc.3`）**
 
 > **独立发行说明**
 >
