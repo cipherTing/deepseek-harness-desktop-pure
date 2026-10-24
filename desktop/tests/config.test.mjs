@@ -589,6 +589,15 @@ test('Windows Browser COM state stays on the UI thread outside managed state', (
   assert.match(shell, /RunEvent::Exit\s*=>\s*\{[\s\S]*?browser_window::release_platform_storage\(\)/)
 })
 
+test('Tao catches macOS AppKit event panics without dropping the original event', () => {
+  const cargo = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')
+  const tao = readFileSync(new URL('../patches/tao/src/platform_impl/macos/app.rs', import.meta.url), 'utf8')
+  assert.match(cargo, /tao = \{ path = "\.\.\/patches\/tao" \}/)
+  assert.match(tao, /let result = catch_unwind\(AssertUnwindSafe/)
+  assert.match(tao, /if !forwarded \{[\s\S]*?sendEvent: event/)
+  assert.match(tao, /panic while dispatching macOS AppKit event at \{stage\}/)
+})
+
 test('macOS preserves the Node sidecar JIT and native addon permissions', () => {
   const config = readJson(new URL('../src-tauri/tauri.conf.json', import.meta.url))
   const entitlements = readFileSync(new URL('../src-tauri/node-entitlements.plist', import.meta.url), 'utf8')

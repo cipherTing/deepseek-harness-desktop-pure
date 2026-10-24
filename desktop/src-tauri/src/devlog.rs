@@ -10,6 +10,7 @@
 //! rather than clearing it so recent crashes survive the relaunch that follows.
 
 use std::{
+    backtrace::Backtrace,
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
@@ -108,15 +109,19 @@ fn bounded_line(message: &str) -> String {
 }
 
 /**
- * Record a panic before the default hook unwinds, then defer to it.
+ * Record a panic and its Rust backtrace before the default hook runs.
  *
- * Tauri panics on the main thread abort the process, so the line this writes is
- * the only record of what went wrong.
+ * A panic crossing a Cocoa callback aborts the process, so the callback frame
+ * is needed to identify which native event caused it.
  */
 pub(crate) fn install_panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         write(format_args!("panic: {info}"));
+        write(format_args!(
+            "panic backtrace: {}",
+            Backtrace::force_capture()
+        ));
         previous(info);
     }));
 }

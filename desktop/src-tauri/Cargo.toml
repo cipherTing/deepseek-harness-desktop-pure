@@ -53,5 +53,6 @@ webview2-windows = { package = "windows", version = "=0.61.3", features = ["Win3
 tauri = { version = "=2.11.5", features = ["test"] }
 
 [patch.crates-io]
+tao = { path = "../patches/tao" }
 tauri-runtime-wry = { path = "../patches/tauri-runtime-wry" }
 wry = { path = "../patches/wry" }
